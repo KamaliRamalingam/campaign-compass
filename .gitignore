@@ -1,0 +1,28 @@
+# Client data: never commit raw exports (even in a private repo)
+data/raw/*
+!data/raw/.gitkeep
+
+# Secrets and credentials
+.env
+*.env
+*.key
+*.pem
+secrets/
+credentials*.json
+token*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Review results/ before every commit: they must not contain account IDs,
+# client names or anything the owner has not approved.

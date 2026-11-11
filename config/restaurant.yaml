@@ -1,0 +1,14 @@
+# Client-specific settings. Values below are PLACEHOLDERS: fill in after the
+# go/no-go checks. Do not put account IDs or credentials in this file.
+client: restaurant_chain
+currency: SEK
+primary_conversions: []      # names of the conversion actions that count
+min_conversions: 10          # volume threshold (decide and justify)
+min_days_active: 14
+# Optional: remove these if campaign names do not show location/offer
+# location_rule:
+#   source: campaign_name
+#   pattern: ""
+# offer_rule:
+#   source: campaign_name
+#   pattern: ""
