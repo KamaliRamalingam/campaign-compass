@@ -67,14 +67,30 @@ def _page_overview(tables, caveat, date_range, updated):
     _context(caveat, date_range, updated)
     groups = dashboard_data.overview_groups(tables["group_summary"])
     st.subheader("Spend and tracked actions by group")
-    st.dataframe(dashboard_data.display_table(groups),
-                 use_container_width=True)
+    st.dataframe(
+        dashboard_data.display_table(groups),
+        use_container_width=True,
+        column_config={
+            "group": st.column_config.TextColumn(
+                "Group", width="large"),
+        },
+    )
     core = dashboard_data.core_campaigns(
         tables["campaign_summary_day"],
         tables["recommendations_by_campaign"])
     st.subheader("Core campaigns")
-    st.dataframe(dashboard_data.display_table(core),
-                 use_container_width=True)
+    st.dataframe(
+        dashboard_data.display_table(core),
+        use_container_width=True,
+        column_config={
+            "campaign": st.column_config.TextColumn(
+                "Campaign", width="large"),
+            "label": st.column_config.TextColumn(
+                "Label", width="medium"),
+            "action_text": st.column_config.TextColumn(
+                "Action", width="large"),
+        },
+    )
 
 
 def _page_comparison(tables, caveat, date_range, updated):
@@ -101,8 +117,18 @@ def _page_comparison(tables, caveat, date_range, updated):
         "Campaigns marked insufficient_data are not ranked; "
         "they are listed below the chart."
     )
-    st.dataframe(dashboard_data.display_table(comparison),
-                 use_container_width=True)
+    st.dataframe(
+        dashboard_data.display_table(comparison),
+        use_container_width=True,
+        column_config={
+            "campaign": st.column_config.TextColumn(
+                "Campaign", width="large"),
+            "label": st.column_config.TextColumn(
+                "Label", width="medium"),
+            "action_text": st.column_config.TextColumn(
+                "Action", width="large"),
+        },
+    )
 
 
 def _page_runs(tables, caveat, date_range, updated):
@@ -207,22 +233,33 @@ def _page_trend(tables, caveat, date_range, updated):
 
 
 def _page_recommendations(tables, caveat, date_range, updated):
-    """Recommendations: label, status, recent trend, action, reason."""
+    """Recommendations: small table, then one block per campaign."""
     st.header("Recommendations")
     _context(caveat, date_range, updated)
     table = dashboard_data.recommendations_display(
         tables["recommendations_by_campaign"])
     st.dataframe(
-        table, use_container_width=True,
+        table[["campaign", "label", "status_now",
+               "recent_trend"]],
+        use_container_width=True,
         column_config={
+            "campaign": st.column_config.TextColumn(
+                "Campaign", width="large"),
             "label": st.column_config.TextColumn(
                 "Label", width="medium"),
-            "action_text": st.column_config.TextColumn(
-                "Action", width="large"),
-            "reason": st.column_config.TextColumn(
-                "Reason", width="large"),
         },
     )
+    for _, row in table.iterrows():
+        st.subheader(row["campaign"])
+        st.markdown(
+            f"**Label:** {row['label']}  \n"
+            f"**Status:** {row['status_now']}  \n"
+            f"**Recent trend:** {row['recent_trend']}  \n"
+            "**Ratio vs run average:** "
+            f"{dashboard_data.format_ratio(row['ratio_vs_run_average'])}  \n"
+            f"**Action:** {row['action_text']}  \n"
+            f"**Reason:** {row['reason']}"
+        )
 
 
 PAGES = {
@@ -238,6 +275,7 @@ PAGES = {
 
 def main():
     """Load the result tables and show the selected page."""
+    st.set_page_config(layout="wide")
     st.title("CampaignCompass")
     config = dashboard_data.load_config()
     caveat = dashboard_data.caveat_text(config)
