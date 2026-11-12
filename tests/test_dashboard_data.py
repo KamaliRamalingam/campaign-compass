@@ -315,11 +315,14 @@ def test_weekly_for_campaign_returns_one_campaign():
 def test_recommendations_display_hides_group_and_runs():
     recs = _recommendations()
     recs["recent_trend"] = ["worsening", "not_active"]
+    recs["ratio_vs_run_average"] = [1.5, None]
     table = dashboard_data.recommendations_display(recs)
     assert list(table.columns) == [
         "campaign", "label", "status_now", "recent_trend",
-        "action_text", "reason"]
+        "ratio_vs_run_average", "action_text", "reason"]
     assert list(table["recent_trend"]) == ["worsening", "not_active"]
+    assert table.iloc[0]["ratio_vs_run_average"] == 1.5
+    assert pd.isna(table.iloc[1]["ratio_vs_run_average"])
 
 
 def test_recommendations_display_without_recent_trend():
@@ -338,14 +341,20 @@ def test_display_table_renames_only_the_copy(tmp_path):
     display = dashboard_data.display_table(original)
     assert list(display.columns) == [
         "campaign", "tracked actions",
-        "cost per tracked action", "tracked action rate",
-        "share of campaign tracked actions",
+        "cost per tracked action",
+        "tracked actions per click (%)",
+        "share of campaign tracked actions (%)",
         "all tracked actions"]
+    # Rates are percentages with two decimals: 0.2 is 20.00%.
+    assert display.iloc[0]["tracked actions per click (%)"] == 20.0
+    assert display.iloc[0][
+        "share of campaign tracked actions (%)"] == 50.0
     # The input table is unchanged.
     assert list(original.columns) == [
         "campaign", "conversions", "cost_per_conversion",
         "conversion_rate", "share_of_campaign_conversions",
         "all_conversions"]
+    assert original.iloc[0]["conversion_rate"] == 0.2
     # Writing the original table to a CSV keeps the file format.
     path = tmp_path / "table.csv"
     original.to_csv(path, index=False)
@@ -353,6 +362,59 @@ def test_display_table_renames_only_the_copy(tmp_path):
     assert header == ("campaign,conversions,cost_per_conversion,"
                       "conversion_rate,share_of_campaign_conversions,"
                       "all_conversions")
+
+
+def test_weekday_display_keeps_tracked_columns():
+    # T11b: the Weekday page lost the tracked actions and cost
+    # per tracked action columns. They must survive the display
+    # renaming, in either order, with no duplicate column name.
+    weekday = pd.DataFrame([
+        _weekday_row("Mon"),
+        _weekday_row("Fri"),
+    ])
+    display = dashboard_data.display_table(
+        dashboard_data.weekday_core_table(weekday))
+    assert "tracked actions" in list(display.columns)
+    assert "cost per tracked action" in list(display.columns)
+    assert len(display.columns) == len(set(display.columns))
+    # They come right after the weekday, so they stay visible.
+    assert list(display.columns)[:3] == [
+        "weekday", "tracked actions", "cost per tracked action"]
+    by_campaign = pd.DataFrame([
+        {**_weekday_row("Mon"), "campaign": "Alpha"},
+        {**_weekday_row("Fri"), "campaign": "Alpha"},
+    ])
+    display = dashboard_data.display_table(
+        dashboard_data.weekday_campaign_table(
+            by_campaign, "Alpha"))
+    assert "tracked actions" in list(display.columns)
+    assert "cost per tracked action" in list(display.columns)
+    assert len(display.columns) == len(set(display.columns))
+
+
+def test_display_table_never_makes_duplicate_names():
+    # A table with both conversions and tracked_actions holds
+    # the same numbers twice; renaming both would make two
+    # columns called "tracked actions", and one would disappear
+    # from the dashboard. The duplicate is dropped instead.
+    original = pd.DataFrame([
+        {"campaign": "Alpha", "conversions": 20.0,
+         "tracked_actions": 20.0, "cost_per_conversion": 5.0},
+    ])
+    display = dashboard_data.display_table(original)
+    assert list(display.columns).count("tracked actions") == 1
+    assert len(display.columns) == len(set(display.columns))
+    assert list(original.columns) == [
+        "campaign", "conversions", "tracked_actions",
+        "cost_per_conversion"]
+
+
+def test_format_ratio():
+    assert dashboard_data.format_ratio(1.5) == "1.50"
+    assert dashboard_data.format_ratio(1.0) == "1.00"
+    assert dashboard_data.format_ratio(None) == "—"
+    import math
+    assert dashboard_data.format_ratio(math.nan) == "—"
 
 
 def test_share_pct_has_two_decimals():

@@ -276,9 +276,15 @@ def weekday_core_table(weekday_core):
         columns=["weekday_no"])
     table["tracked_actions"] = table["conversions"]
     table["cost_per_tracked_action"] = table["cost_per_conversion"]
-    return table.drop(
-        columns=["conversions", "cost_per_conversion"]).reset_index(
-        drop=True)
+    table = table.drop(
+        columns=["conversions", "cost_per_conversion"])
+    # Tracked actions and cost per tracked action first, so
+    # they are visible even in a narrow table.
+    first = ["weekday", "tracked_actions",
+             "cost_per_tracked_action"]
+    rest = [column for column in table.columns
+            if column not in first]
+    return table[first + rest].reset_index(drop=True)
 
 
 def weekday_campaign_table(weekday_by_campaign, campaign):
@@ -315,17 +321,27 @@ def recommendations_view(recommendations):
 def recommendations_display(recommendations):
     """Recommendations for the Recommendations page.
 
-    Only campaign, label, status_now, recent_trend, action_text
-    and reason. The group and run columns are hidden. Older
-    result files without recent_trend get an empty value.
+    Campaign, label, status_now, recent_trend, ratio against
+    the run average, action_text and reason. The group and run
+    columns are hidden. Older result files without recent_trend
+    or the ratio get an empty value.
     """
     table = recommendations.copy()
     if "recent_trend" not in table.columns:
         table["recent_trend"] = ""
+    if "ratio_vs_run_average" not in table.columns:
+        table["ratio_vs_run_average"] = None
     columns = ["campaign", "label", "status_now", "recent_trend",
-               "action_text", "reason"]
+               "ratio_vs_run_average", "action_text", "reason"]
     return table[columns].sort_values(
         "campaign").reset_index(drop=True)
+
+
+def format_ratio(ratio):
+    """Ratio vs run average with two decimals, or a dash."""
+    if ratio is None or pd.isna(ratio):
+        return "—"
+    return f"{float(ratio):.2f}"
 
 
 def weekly_for_campaign(weekly_df, campaign):
@@ -347,19 +363,46 @@ def display_table(table):
     """A copy of a table with display wording, for the dashboard.
 
     "conversions" becomes "tracked actions" and
-    "cost_per_conversion" becomes "cost per tracked action"
-    (and conversion_rate becomes "tracked action rate"). This
-    renames at display time only: the returned copy is renamed,
-    the input table and the CSV files are unchanged.
+    "cost_per_conversion" becomes "cost per tracked action".
+    Rates are shown as percentages with two decimals:
+    conversion_rate (a fraction) becomes "tracked actions per
+    click (%)", and shares that are already percentages
+    (share_of_campaign_conversions, share_of_spend,
+    share_of_conversions) become "... (%)", rounded to two
+    decimals. This renames and converts at display time only:
+    the returned copy is changed, the input table and the CSV
+    files are unchanged.
+
+    If a table has both "conversions" and "tracked_actions"
+    they hold the same numbers and would both rename to
+    "tracked actions", so the "conversions" column is dropped
+    instead of producing two columns with the same name.
     """
+    result = table.copy()
+    if ("conversions" in result.columns
+            and "tracked_actions" in result.columns):
+        result = result.drop(columns=["conversions"])
+    if "conversion_rate" in result.columns:
+        result["conversion_rate"] = (
+            result["conversion_rate"] * 100.0).round(2)
+    for column in ("share_of_campaign_conversions",
+                   "share_of_spend", "share_of_conversions"):
+        if column in result.columns:
+            result[column] = result[column].round(2)
     renamed = {}
-    for column in table.columns:
+    for column in result.columns:
+        if column == "conversion_rate":
+            renamed[column] = "tracked actions per click (%)"
+            continue
+        if column in ("share_of_campaign_conversions",
+                      "share_of_spend", "share_of_conversions"):
+            name = column.replace("conversions", "tracked actions")
+            renamed[column] = name.replace("_", " ") + " (%)"
+            continue
         name = column
         name = name.replace("cost_per_conversion",
                             "cost per tracked action")
         name = name.replace("conversions", "tracked actions")
-        name = name.replace("conversion_rate",
-                            "tracked action rate")
         name = name.replace("_", " ")
         renamed[column] = name
-    return table.rename(columns=renamed)
+    return result.rename(columns=renamed)
