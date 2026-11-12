@@ -12,3 +12,36 @@ min_days_active: 14
 # offer_rule:
 #   source: campaign_name
 #   pattern: ""
+
+# Input exports (T1). Paths are relative to the repo root.
+# Column names are the actual headers in the exported files.
+# Do not put account IDs or credentials in this file.
+input:
+  title_lines: 2
+  encoding: utf-8-sig
+  delimiter: ","
+  decimal: "."
+  thousands: ","
+  files:
+    day:
+      path: data/raw/campaign_by_day_2023-2026_2026-11-12.csv
+      output: outputs/interim/campaign_by_day.csv
+    month:
+      path: data/raw/campaign_by_month_2015-2023_2026-11-12.csv
+      output: outputs/interim/campaign_by_month.csv
+
+# Columns: logical name -> header in the exported file.
+# The date header differs by file (Day in the day file, Month in
+# the month file), so it is given per kind. Impressions is optional:
+# its header name is not known, so it is null — do not guess it.
+columns:
+  date:
+    day: Day
+    month: Month
+  campaign: Campaign
+  cost: Cost
+  clicks: Clicks
+  conversions: Conversions
+  impressions: null
+
+required_columns: [date, campaign, cost, clicks, conversions]

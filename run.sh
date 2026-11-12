@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Local runner (T0c). One command for the student:
-#   ./run.sh [--config config/validation.yaml]
+#   bash run.sh [--config config/validation.yaml]
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation now; the pipeline later).
+# stages that exist so far (validation, then load).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
 # the same name exists under config/local/ (for example
 # config/local/validation.yaml), that local file is used instead.
 # config/local/ is git-ignored and optional; nothing requires it.
+# The load stage uses config/restaurant.yaml (or
+# config/local/restaurant.yaml if it exists).
 #
 # Prints only PASS/FAIL/INFO lines, counts, sums and dates. Never
 # rows, title lines or file contents. Exit 1 if any stage fails.
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "ERROR: unknown argument: $1" >&2
-            echo "Usage: ./run.sh [--config config/validation.yaml]" >&2
+            echo "Usage: bash run.sh [--config config/validation.yaml]" >&2
             exit 1
             ;;
     esac
@@ -53,7 +55,20 @@ if ! .venv/bin/python src/validate_exports.py --config "$CONFIG" --out "$REPORT"
 fi
 echo "Report: $REPORT"
 
-# Later stages (pipeline, etc.) run here, setting STATUS=1 on failure.
+# Stage 2: load the exports (T1). Writes standardised tables under
+# outputs/interim/. Uses config/restaurant.yaml, or its local
+# override config/local/restaurant.yaml if it exists.
+LOAD_CONFIG="config/restaurant.yaml"
+if [ -f "config/local/restaurant.yaml" ]; then
+    LOAD_CONFIG="config/local/restaurant.yaml"
+fi
+echo "Load config: $LOAD_CONFIG"
+if ! .venv/bin/python src/load.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Later stages (cleaning, metrics, etc.) run here, setting STATUS=1
+# on failure.
 
 if [ "$STATUS" -ne 0 ]; then
     echo "FAIL: one or more stages failed (see above)"
