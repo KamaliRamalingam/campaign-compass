@@ -1,0 +1,84 @@
+# Export validation config (T0b).
+# Fill ui_expected in from the Google Ads UI after the exports,
+# before running: python src/validate_exports.py --config config/validation.yaml --out docs/validation-report.md
+# Leave a value empty (null) to skip that one check.
+# Column names below are the actual headers read from the exported files.
+# Do not put account IDs, credentials or client names in this file.
+# UI totals noted on 2026-11-12. Dates are left null on purpose: the UI dates are the
+# selected range, while the files only hold days or months with activity.
+# Cross-file tolerances are absolute values, placeholders for the
+# student to confirm: clicks 2, cost 5.00, conversions 0.05.
+cross_file_tolerance:
+  clicks: 2
+  cost: 5.00
+  conversions: 0.05
+files:
+  - path: data/raw/campaign_by_day_2023-2026_2026-11-12.csv
+    kind: campaign_by_day
+    columns:
+      clicks: Clicks
+      cost: Cost
+      conversions: Conversions
+      date: Day
+      campaign: Campaign
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 41699
+      clicks: 120635
+      cost: 197321.56
+      conversions: 35849.84
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01
+  - path: data/raw/campaign_by_month_2015-2023_2026-11-12.csv
+    kind: campaign_by_month
+    columns:
+      clicks: Clicks
+      cost: Cost
+      conversions: Conversions
+      date: Month
+      campaign: Campaign
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 3515
+      clicks: 24083
+      cost: 68135.19
+      conversions: 4140.00
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01
+  - path: data/raw/monthly_totals_2026-11-12.csv
+    kind: monthly_totals
+    columns:
+      clicks: Clicks
+      cost: Cost
+      conversions: Conversions
+      date: Month
+      campaign: null
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 132
+      clicks: 144717
+      cost: 265454.62
+      conversions: 39989.84
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01
