@@ -42,7 +42,7 @@ columns:
   cost: Cost
   clicks: Clicks
   conversions: Conversions
-  impressions: null
+  impressions: "Impr."
 
 required_columns: [date, campaign, cost, clicks, conversions]
 
@@ -61,8 +61,48 @@ analysis:
   # Do not guess any names: fill these in from the overview table.
   include_campaigns: []
   exclude_campaigns: []
+  # Campaign groups (T3). Provisional, until the owner answers
+  # the two questions in docs/decision-log.md. A campaign in no
+  # group goes to "ungrouped" and is reported, never dropped.
+  # sep_2026_group matches exact names and any name starting
+  # with the given prefix.
+  campaign_groups:
+    core:
+      - The South Indian Stockholm
+      - Authentic Indian Restaurant
+      - Restaurang The South Indian
+      - South Indian Restaurant
+      - Indisk Mat i Södertälje
+      - Website traffic-Performance Max-2
+    sep_2026_group:
+      exact:
+        - Super Sales Campaign
+        - The South Indian Sweden Campaign
+      prefix: "The South Indian Campaign"
+    monthly_history_only:
+      - Ny Restaurang i Örebro
+      - Brand awareness and reach-Display-1
+      - Grand Opening
+      - Halal Restaurant
+      - The South Indian Kista
+      - The South Indian Sodermalm
+    exclude_pending_owner:
+      - DrTiwari
+      - DrTiwariPersonal
+      - Lorry booking
+      - Yoga Mela - Yoga och Gratis Music Konsert
+      - Campaign #2
+      - Sales-Search-8
+  # Volume rule (T3). Provisional, to be confirmed by the student.
+  volume_rule:
+    min_conversions: 10
+    min_days_active: 14
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
     report: outputs/reports/cleaning-report.md
     overview: outputs/reports/campaign-overview.csv
+    campaign_summary_day: outputs/results/campaign_summary_day.csv
+    campaign_summary_month: outputs/results/campaign_summary_month.csv
+    group_summary: outputs/results/group_summary.csv
+    metrics_report: outputs/reports/metrics-report.md
