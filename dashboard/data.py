@@ -103,26 +103,45 @@ def last_updated(paths):
 
 
 def conversion_shares(mix_by_campaign):
-    """Share of Conversions by action, with its action group."""
+    """Share of tracked actions by action, with its action group.
+
+    The Conversions column is the tracked actions; the column is
+    renamed so the dashboard says "tracked actions" everywhere.
+    """
     grouped = mix_by_campaign.groupby(
         ["action", "action_group"], as_index=False).agg(
-        conversions=("conversions", "sum"),
+        tracked_actions=("conversions", "sum"),
         all_conversions=("all_conversions", "sum"),
     )
-    total = float(grouped["conversions"].sum())
-    grouped["share"] = grouped["conversions"] / total if total else 0.0
+    total = float(grouped["tracked_actions"].sum())
+    grouped["share"] = grouped["tracked_actions"] / total if total else 0.0
+    grouped["share_pct"] = grouped["share"] * 100.0
     return grouped.sort_values(
-        "conversions", ascending=False).reset_index(drop=True)
+        "tracked_actions", ascending=False).reset_index(drop=True)
 
 
 def engagement_share(mix_by_campaign):
-    """Share of Conversions from the engagement action group."""
+    """Share of tracked actions from the engagement action group."""
     total = float(mix_by_campaign["conversions"].sum())
     if not total:
         return 0.0
     engagement = float(mix_by_campaign.loc[
         mix_by_campaign["action_group"] == "engagement",
         "conversions"].sum())
+    return engagement / total
+
+
+def engagement_share_all(mix_by_campaign):
+    """Share of All conv. from the engagement action group.
+
+    Calculated from the data, not typed in.
+    """
+    total = float(mix_by_campaign["all_conversions"].sum())
+    if not total:
+        return 0.0
+    engagement = float(mix_by_campaign.loc[
+        mix_by_campaign["action_group"] == "engagement",
+        "all_conversions"].sum())
     return engagement / total
 
 

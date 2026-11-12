@@ -84,11 +84,16 @@ def test_caveat_text_comes_from_config():
 
 def test_conversion_shares_and_engagement():
     shares = dashboard_data.conversion_shares(_mix())
-    # Menu views is the biggest action: 30 of 45 conversions.
+    # Menu views is the biggest action: 30 of 45 tracked actions.
     assert shares.iloc[0]["action"] == "Local actions - Menu views"
+    assert shares.iloc[0]["tracked_actions"] == 30.0
     assert shares.iloc[0]["share"] == pytest.approx(30.0 / 45.0)
+    assert shares.iloc[0]["share_pct"] == pytest.approx(100.0 * 30.0 / 45.0)
     assert dashboard_data.engagement_share(_mix()) == \
         pytest.approx(30.0 / 45.0)
+    # Engagement is 300 of 450 All conv.
+    assert dashboard_data.engagement_share_all(_mix()) == \
+        pytest.approx(300.0 / 450.0)
 
 
 def test_core_campaigns_table():
