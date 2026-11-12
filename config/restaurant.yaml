@@ -105,6 +105,15 @@ analysis:
   time_groups: [core]
   weekday_min_conversions: 5
   run_gap_days: 14
+  # Recommendation rules (T5). Provisional, the student's
+  # decision, 2026-11-12. The benchmark is calculated, not
+  # typed in: core group overall cost per conversion = sum of
+  # core spend / sum of core conversions.
+  recommendation_rules:
+    continue_max_ratio: 1.0
+    test_max_ratio: 2.0
+    pause_above_ratio: 2.0
+    repeat_min_runs: 2
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
@@ -120,3 +129,6 @@ analysis:
     timeline_by_campaign: outputs/results/timeline_by_campaign.csv
     runs: outputs/results/runs.csv
     time_report: outputs/reports/time-report.md
+    recommendations_by_run: outputs/results/recommendations_by_run.csv
+    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv
+    recommend_report: outputs/reports/recommend-report.md
