@@ -31,7 +31,7 @@ synthetic Company B dataset, clearly labelled synthetic).
 ## Workflow
 - Muse builds on branches, and CI checks every pull request.
 - I merge in the GitHub web UI.
-- I run `./run.sh` locally. It creates `.venv` if needed, installs
+- I run `bash run.sh` locally. It creates `.venv` if needed, installs
   `requirements.txt`, and runs the stages that exist so far
   (validation now; the pipeline later).
 - Outputs stay in the ignored `outputs/` folder and never go to GitHub.

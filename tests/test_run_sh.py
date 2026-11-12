@@ -22,6 +22,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
     (project / "data" / "raw").mkdir(parents=True)
     shutil.copy(REPO / "src" / "validate_exports.py",
                 project / "src" / "validate_exports.py")
+    shutil.copy(REPO / "src" / "load.py",
+                project / "src" / "load.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -38,6 +40,36 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "Alpha,2026-01-01,6,100,12.00,2.00\n"
         "Alpha,2026-01-02,4,80,8.00,2.00\n"
         "Total,0,0,0,0\n"
+    )
+    # Tiny made-up month file, for the load stage in run.sh.
+    (project / "data" / "raw" / "month.csv").write_text(
+        "Made-up title\n"
+        "Made-up date range line\n"
+        "Campaign,Month,Clicks,Cost,Conversions\n"
+        "Alpha,December 2025,10,20.00,5.00\n"
+    )
+    (project / "config" / "restaurant.yaml").write_text(
+        "input:\n"
+        "  title_lines: 2\n"
+        "  encoding: utf-8-sig\n"
+        "  delimiter: ','\n"
+        "  decimal: '.'\n"
+        "  thousands: ','\n"
+        "  files:\n"
+        "    day:\n"
+        "      path: data/raw/day.csv\n"
+        "      output: outputs/interim/campaign_by_day.csv\n"
+        "    month:\n"
+        "      path: data/raw/month.csv\n"
+        "      output: outputs/interim/campaign_by_month.csv\n"
+        "columns:\n"
+        "  date: {day: Day, month: Month}\n"
+        "  campaign: Campaign\n"
+        "  cost: Cost\n"
+        "  clicks: Clicks\n"
+        "  conversions: Conversions\n"
+        "  impressions: null\n"
+        "required_columns: [date, campaign, cost, clicks, conversions]\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -68,6 +100,9 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     report = project / "outputs" / "reports" / "validation-report.md"
     assert report.is_file()
     assert "Overall: **PASS**" in report.read_text()
+    # The load stage also ran: standardised tables under outputs/.
+    assert (project / "outputs" / "interim" / "campaign_by_day.csv").is_file()
+    assert (project / "outputs" / "interim" / "campaign_by_month.csv").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout
