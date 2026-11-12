@@ -156,3 +156,31 @@ def test_missing_column_fails_with_clear_message(tmp_path):
         assert "NoSuchColumn" in str(exc)
     else:
         raise AssertionError("expected ValueError for a missing column")
+
+
+def test_cross_file_tolerance_inside_passes_outside_fails():
+    from datetime import date
+
+    tolerance = {"clicks": 2, "cost": 5.00, "conversions": 0.05}
+    day = _result("campaign_by_day", 2, 10, 20.0, 4.0, date(2026, 1, 1), date(2026, 1, 2))
+    month = _result("campaign_by_month", 1, 5, 10.0, 1.0, date(2025, 12, 1), date(2025, 12, 1))
+    # Combined: clicks 15, cost 30.00, conversions 5.00.
+    # Inside tolerance: clicks off by 2, cost off by 5.00, conversions off by 0.05.
+    inside = _result("monthly_totals", 3, 17, 35.0, 5.05, date(2025, 12, 1), date(2026, 1, 2))
+    assert cross_file_check([day, month, inside], tolerance)["status"] == "PASS"
+    # Outside tolerance: clicks off by 3, cost off by 5.01.
+    outside = _result("monthly_totals", 3, 18, 35.01, 5.0, date(2025, 12, 1), date(2026, 1, 2))
+    assert cross_file_check([day, month, outside], tolerance)["status"] == "FAIL"
+
+
+def test_no_overlap_ranges_do_not_report_overlap():
+    from datetime import date
+
+    day = _result("campaign_by_day", 2, 10, 20.0, 4.0, date(2026, 1, 1), date(2026, 1, 2))
+    month = _result("campaign_by_month", 1, 5, 10.0, 1.0, date(2025, 12, 1), date(2025, 12, 1))
+    totals = _result("monthly_totals", 3, 15, 30.0, 5.0, date(2025, 12, 1), date(2026, 1, 2))
+    # Day is Jan 2026, month is Dec 2025: ranges do not intersect.
+    result = cross_file_check([day, month, totals])
+    assert result["overlap"] is None
+    assert result["date_ranges"]["campaign_by_day"] == (date(2026, 1, 1), date(2026, 1, 2))
+    assert result["date_ranges"]["campaign_by_month"] == (date(2025, 12, 1), date(2025, 12, 1))

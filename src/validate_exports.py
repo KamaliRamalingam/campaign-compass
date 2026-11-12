@@ -225,14 +225,32 @@ def validate_file(entry, result):
     return metrics
 
 
-def cross_file_check(results):
-    """Compare day + month totals with monthly totals, within tolerance."""
+def cross_file_check(results, tolerance=None):
+    """Compare day + month totals with monthly totals, within tolerance.
+
+    Tolerance comes from config cross_file_tolerance (absolute values).
+    Defaults are the placeholders in config/validation.yaml, for the
+    student to confirm: clicks 2, cost 5.00, conversions 0.05.
+    Overlap is only reported if the two date ranges actually intersect.
+    """
+    if tolerance is None:
+        tolerance = {"clicks": 2, "cost": 5.00, "conversions": 0.05}
     by_kind = {r["kind"]: r for r in results}
     day = by_kind.get("campaign_by_day")
     month = by_kind.get("campaign_by_month")
     totals = by_kind.get("monthly_totals")
+    date_ranges = {
+        kind: (r["date_start"], r["date_end"]) for kind, r in by_kind.items()
+    }
     if not (day and month and totals):
-        return {"status": "SKIP", "note": "needs all three kinds", "rows": []}
+        return {
+            "status": "SKIP",
+            "note": "needs all three kinds",
+            "rows": [],
+            "tolerance": tolerance,
+            "date_ranges": date_ranges,
+            "overlap": None,
+        }
     combined = {
         "clicks": day["clicks"] + month["clicks"],
         "cost": day["cost"] + month["cost"],
@@ -240,22 +258,28 @@ def cross_file_check(results):
     }
     rows = []
     overall = "PASS"
-    for name, tol, exact in [
-        ("clicks", 0, True),
-        ("cost", 0.05, False),
-        ("conversions", 0.01, False),
-    ]:
-        status, diff = _status(combined[name], totals[name], tol, exact)
+    for name in ("clicks", "cost", "conversions"):
+        tol = tolerance.get(name, 0)
+        status, diff = _status(combined[name], totals[name], tol, False)
         if status == "FAIL":
             overall = "FAIL"
         rows.append((name, totals[name], combined[name], diff, status))
     overlap = None
-    if day["date_start"] and month["date_end"]:
-        start = max(day["date_start"], month["date_start"] or day["date_start"])
-        end = min(day["date_end"], month["date_end"] or day["date_end"])
+    if (
+        day["date_start"] and day["date_end"]
+        and month["date_start"] and month["date_end"]
+    ):
+        start = max(day["date_start"], month["date_start"])
+        end = min(day["date_end"], month["date_end"])
         if start <= end:
             overlap = f"{start} to {end}"
-    return {"status": overall, "rows": rows, "overlap": overlap}
+    return {
+        "status": overall,
+        "rows": rows,
+        "tolerance": tolerance,
+        "date_ranges": date_ranges,
+        "overlap": overlap,
+    }
 
 
 def _fmt(value):
@@ -296,6 +320,10 @@ def write_report(results, cross, out_path, generated_at):
         lines.append(f"- Lines in file: {result['line_count']}")
         lines.append(f"- SHA-256: {result['sha256']}")
         lines.append(f"- Totals rows dropped: {result['total_rows_dropped']}")
+        lines.append(
+            f"- Date range in file: {_fmt(result['date_start'])} "
+            f"to {_fmt(result['date_end'])}"
+        )
         lines.append("")
         lines.append("| Metric | Expected | Actual | Difference | Result |")
         lines.append("|---|---|---|---|---|")
@@ -310,12 +338,23 @@ def write_report(results, cross, out_path, generated_at):
     lines.append(
         "campaign_by_day + campaign_by_month compared with monthly_totals."
     )
+    tol = cross.get("tolerance") or {}
+    lines.append(
+        "Tolerances used (absolute): "
+        f"clicks {_fmt(tol.get('clicks'))}, "
+        f"cost {_fmt(tol.get('cost'))}, "
+        f"conversions {_fmt(tol.get('conversions'))}."
+    )
+    for kind, (start, end) in (cross.get("date_ranges") or {}).items():
+        lines.append(f"- {kind}: {_fmt(start)} to {_fmt(end)}")
     if cross.get("overlap"):
         lines.append(f"Date ranges overlap: {cross['overlap']}.")
         lines.append(
             "Overlap must be handled in cleaning (deduplicate on "
             "date + campaign) so it is not double-counted."
         )
+    else:
+        lines.append("No overlap: date ranges do not intersect.")
     lines.append("")
     lines.append(f"Result: **{cross['status']}**")
     lines.append("")
@@ -363,12 +402,13 @@ def main(argv=None):
         for name, exp, act, diff, status in result["metrics"]:
             print(f"  {name}: {_fmt(exp)} vs {_fmt(act)} -> {status}")
         results.append(result)
-    cross = cross_file_check(results)
+    cross = cross_file_check(results, config.get("cross_file_tolerance"))
     if cross["status"] == "FAIL":
         failed = True
     generated_at = datetime.now().isoformat(timespec="seconds")
     overall = write_report(results, cross, args.out, generated_at)
-    print(f"Cross-file check: {cross['status']}")
+    print(f"Cross-file check: {cross['status']} "
+          f"(tolerances: {cross.get('tolerance')})")
     print(f"Overall: {overall} (report: {args.out})")
     return 1 if failed else 0
 
