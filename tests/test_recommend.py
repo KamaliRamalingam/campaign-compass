@@ -12,10 +12,12 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.recommend import (CAVEAT, action_text, compute_benchmark,
+from src.recommend import (action_text, compute_benchmark,
                            label_run, main, recommend_campaigns,
                            recommend_runs, sensitivity_table,
                            write_recommend_report)
+
+CAVEAT = "Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers."
 
 RULES = {
     "continue_max_ratio": 1.0,
@@ -85,7 +87,7 @@ def test_insufficient_data_always_wins():
 
 
 def test_recommend_runs_labels_and_reasons():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
     alpha1 = recs[(recs["campaign"] == "Alpha")
                   & (recs["run_number"] == 1)].iloc[0]
     alpha2 = recs[(recs["campaign"] == "Alpha")
@@ -106,8 +108,8 @@ def test_recommend_runs_labels_and_reasons():
 
 
 def test_repeat_eligible_needs_two_runs():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
-    campaigns = recommend_campaigns(recs, _day_summary(), RULES)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     alpha = campaigns[campaigns["campaign"] == "Alpha"].iloc[0]
     beta = campaigns[campaigns["campaign"] == "Beta"].iloc[0]
     gamma = campaigns[campaigns["campaign"] == "Gamma"].iloc[0]
@@ -138,9 +140,9 @@ def test_latest_run_with_volume_wins():
          "conversions": 1.0, "cost_per_conversion": 1.0,
          "volume_flag": "insufficient_data"},
     ])
-    recs = recommend_runs(runs, 5.0, RULES, VOLUME)
+    recs = recommend_runs(runs, 5.0, RULES, VOLUME, CAVEAT)
     campaigns = recommend_campaigns(
-        recs, _day_summary().iloc[[0]], RULES)
+        recs, _day_summary().iloc[[0]], RULES, CAVEAT)
     alpha = campaigns.iloc[0]
     # Latest run has no volume, so the label comes from run 1.
     assert alpha["label"] == "continue"
@@ -148,8 +150,8 @@ def test_latest_run_with_volume_wins():
 
 
 def test_report_has_no_names(tmp_path):
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
-    campaigns = recommend_campaigns(recs, _day_summary(), RULES)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     sens = sensitivity_table(recs, _day_summary(), RULES)
     report = tmp_path / "recommend-report.md"
     write_recommend_report(report, recs, campaigns, sens, 5.0)
@@ -168,6 +170,7 @@ def test_main_writes_recommendations(tmp_path, capsys):
     _day_summary().to_csv(day, index=False)
     config = {
         "analysis": {
+            "caveat_text": CAVEAT,
             "recommendation_rules": RULES,
             "volume_rule": VOLUME,
             "outputs": {

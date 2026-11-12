@@ -28,7 +28,9 @@ continue, test or pause.
 Reuse: change the data file and the config file. Tested on: (restaurant account;
 synthetic Company B dataset, clearly labelled synthetic).
 
-## Workflow
+## How to run the dashboard
+Run `bash run.sh` first, then `bash dashboard.sh` and open the address it prints.
+
 - Muse builds on branches, and CI checks every pull request.
 - I merge in the GitHub web UI.
 - I run `bash run.sh` locally. It creates `.venv` if needed, installs

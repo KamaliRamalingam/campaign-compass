@@ -33,10 +33,9 @@ repeat_eligible is true only when the campaign has at least
 repeat_min_runs runs with enough volume.
 
 Every row gets a plain-language reason built from the numbers
-and a caveat column: "Tracked conversions only. Campaign
-performance, not proof that an offer brought extra customers."
-No claim of extra customers is made anywhere; the wording is
-always "tracked conversions".
+and a caveat column holding the caveat text from
+analysis.caveat_text in the config. No claim of extra customers
+is made anywhere; the wording is always "tracked conversions".
 
 Only counts per label are printed, never campaign names or rows.
 """
@@ -54,8 +53,6 @@ except ImportError:  # running as `python src/recommend.py`
     from clean import load_config
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
-CAVEAT = ("Tracked conversions only. Campaign performance, not "
-          "proof that an offer brought extra customers.")
 LABEL_INSUFFICIENT = "insufficient_data"
 LABEL_CONTINUE = "continue"
 LABEL_TEST = "test"
@@ -85,7 +82,8 @@ def label_run(ratio, volume_flag, rules):
     return LABEL_PAUSE
 
 
-def recommend_runs(runs_df, benchmark, rules, volume_rule):
+def recommend_runs(runs_df, benchmark, rules, volume_rule,
+                    caveat):
     """Recommend per run, with ratio, label, reason and caveat."""
     runs = runs_df.copy()
     rows = []
@@ -128,7 +126,7 @@ def recommend_runs(runs_df, benchmark, rules, volume_rule):
                 "ratio_to_benchmark": ratio,
                 "label": label,
                 "reason": reason,
-                "caveat": CAVEAT,
+                "caveat": caveat,
             })
     table = pd.DataFrame(rows)
     if table.empty:
@@ -167,7 +165,7 @@ def action_text(label, status_now, repeat_eligible, best_run,
     return text
 
 
-def recommend_campaigns(run_recs, day_summary, rules):
+def recommend_campaigns(run_recs, day_summary, rules, caveat):
     """Recommend per campaign from its runs.
 
     The label is the label of its latest run with enough volume,
@@ -246,7 +244,7 @@ def recommend_campaigns(run_recs, day_summary, rules):
                 label, status_now, repeat_eligible, best_run,
                 latest_run_number),
             "reason": reason,
-            "caveat": CAVEAT,
+            "caveat": caveat,
         })
     table = pd.DataFrame(rows)
     if table.empty:
@@ -378,12 +376,13 @@ def main(argv=None):
         return 1
     try:
         benchmark = compute_benchmark(day_summary)
+        caveat = analysis["caveat_text"]
         run_recs = recommend_runs(runs_df, benchmark, rules,
-                                  volume_rule)
+                                  volume_rule, caveat)
         campaign_recs = recommend_campaigns(
-            run_recs, day_summary, rules)
+            run_recs, day_summary, rules, caveat)
         sensitivity = sensitivity_table(run_recs, day_summary, rules)
-    except ValueError as exc:
+    except (KeyError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
