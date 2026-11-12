@@ -97,6 +97,14 @@ analysis:
   volume_rule:
     min_conversions: 10
     min_days_active: 14
+  # Time patterns (T4). Analysis uses only the groups in
+  # time_groups; sep_2026_group gets runs only. A weekday cell
+  # below weekday_min_conversions is flagged insufficient_data.
+  # A gap of more than run_gap_days with no activity starts a
+  # new run. Both values are provisional.
+  time_groups: [core]
+  weekday_min_conversions: 5
+  run_gap_days: 14
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
@@ -106,3 +114,9 @@ analysis:
     campaign_summary_month: outputs/results/campaign_summary_month.csv
     group_summary: outputs/results/group_summary.csv
     metrics_report: outputs/reports/metrics-report.md
+    weekday_by_campaign: outputs/results/weekday_by_campaign.csv
+    weekday_core: outputs/results/weekday_core.csv
+    monthly_by_campaign: outputs/results/monthly_by_campaign.csv
+    timeline_by_campaign: outputs/results/timeline_by_campaign.csv
+    runs: outputs/results/runs.csv
+    time_report: outputs/reports/time-report.md
