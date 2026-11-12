@@ -28,6 +28,10 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "clean.py")
     shutil.copy(REPO / "src" / "overview.py",
                 project / "src" / "overview.py")
+    shutil.copy(REPO / "src" / "groups.py",
+                project / "src" / "groups.py")
+    shutil.copy(REPO / "src" / "metrics.py",
+                project / "src" / "metrics.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -80,11 +84,18 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  monthly_end: '2023-09-30'\n"
         "  include_campaigns: []\n"
         "  exclude_campaigns: []\n"
+        "  campaign_groups:\n"
+        "    core: [Alpha]\n"
+        "  volume_rule: {min_conversions: 10, min_days_active: 14}\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
         "    report: outputs/reports/cleaning-report.md\n"
         "    overview: outputs/reports/campaign-overview.csv\n"
+        "    campaign_summary_day: outputs/results/campaign_summary_day.csv\n"
+        "    campaign_summary_month: outputs/results/campaign_summary_month.csv\n"
+        "    group_summary: outputs/results/group_summary.csv\n"
+        "    metrics_report: outputs/reports/metrics-report.md\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -124,6 +135,11 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "reports" / "cleaning-report.md").is_file()
     # The overview stage also ran: one row per campaign.
     assert (project / "outputs" / "reports" / "campaign-overview.csv").is_file()
+    # The metrics stage also ran: result tables and a report.
+    assert (project / "outputs" / "results" / "campaign_summary_day.csv").is_file()
+    assert (project / "outputs" / "results" / "campaign_summary_month.csv").is_file()
+    assert (project / "outputs" / "results" / "group_summary.csv").is_file()
+    assert (project / "outputs" / "reports" / "metrics-report.md").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout
