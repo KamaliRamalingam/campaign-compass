@@ -45,6 +45,61 @@ DEFAULT_PATHS = {
 REQUIRED_TABLES = list(DEFAULT_PATHS)
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
             "Saturday", "Sunday"]
+# Short names map to the same weekday numbers (Monday = 0).
+WEEKDAY_ALIASES = {
+    "mon": 0, "monday": 0,
+    "tue": 1, "tues": 1, "tuesday": 1,
+    "wed": 2, "wednesday": 2,
+    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+}
+
+
+def weekday_number(value):
+    """Weekday number (Monday = 0) for a weekday value.
+
+    Accepts full names, short names and any capitalisation
+    ("Monday", "mon", "MON"), and numbers 0-6 (Monday = 0, as in
+    pandas day_of_week) or 7 for Sunday (the 1-7 scheme).
+    Raises ValueError for anything else.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        number = int(value)
+        if 0 <= number <= 6:
+            return number
+        if number == 7:
+            return 6
+        raise ValueError(f"unknown weekday value: {value!r}")
+    text = str(value).strip().lower()
+    if text.isdigit():
+        return weekday_number(int(text))
+    if text in WEEKDAY_ALIASES:
+        return WEEKDAY_ALIASES[text]
+    raise ValueError(f"unknown weekday value: {value!r}")
+
+
+def weekday_numbers(values):
+    """Weekday numbers for a column of weekday values.
+
+    Raises ValueError listing only the unknown values, never
+    crashing with a bare list.index error.
+    """
+    numbers = []
+    unknown = []
+    for value in values:
+        try:
+            numbers.append(weekday_number(value))
+        except ValueError:
+            unknown.append(str(value))
+    if unknown:
+        seen = sorted(set(unknown))
+        raise ValueError(
+            "Unknown weekday value(s): " + ", ".join(seen)
+            + ". Expected a weekday name or a number 0-6."
+        )
+    return numbers
 
 
 def load_config(config_path=None):
@@ -214,7 +269,7 @@ def runs_for_campaign(runs_df, campaign):
 def weekday_core_table(weekday_core):
     """Pooled core weekday table, Monday to Sunday."""
     table = weekday_core.copy()
-    table["weekday_no"] = table["weekday"].apply(WEEKDAYS.index)
+    table["weekday_no"] = weekday_numbers(table["weekday"])
     table = table.sort_values("weekday_no").drop(
         columns=["weekday_no"])
     table["tracked_actions"] = table["conversions"]

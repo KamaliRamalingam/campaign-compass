@@ -153,6 +153,82 @@ def test_weekday_tables_ordered_monday_to_sunday():
     assert table.iloc[0]["tracked_actions"] == 4.0
 
 
+def _weekday_row(weekday):
+    return {"weekday": weekday, "active_days": 1, "spend": 10.0,
+            "clicks": 10, "conversions": 2.0,
+            "cost_per_conversion": 5.0, "conversion_rate": 0.2,
+            "share_of_campaign_conversions": 0.5,
+            "volume_flag": "ok"}
+
+
+def test_weekday_number_accepts_every_format():
+    assert dashboard_data.weekday_number("Monday") == 0
+    assert dashboard_data.weekday_number("monday") == 0
+    assert dashboard_data.weekday_number("MONDAY") == 0
+    assert dashboard_data.weekday_number("Mon") == 0
+    assert dashboard_data.weekday_number("mon") == 0
+    assert dashboard_data.weekday_number("Tue") == 1
+    assert dashboard_data.weekday_number("Tues") == 1
+    assert dashboard_data.weekday_number("tuesday") == 1
+    assert dashboard_data.weekday_number("Wed") == 2
+    assert dashboard_data.weekday_number("Thu") == 3
+    assert dashboard_data.weekday_number("Thurs") == 3
+    assert dashboard_data.weekday_number("Fri") == 4
+    assert dashboard_data.weekday_number("Sat") == 5
+    assert dashboard_data.weekday_number("Sun") == 6
+    assert dashboard_data.weekday_number("sunday") == 6
+    assert dashboard_data.weekday_number(0) == 0
+    assert dashboard_data.weekday_number(6) == 6
+    assert dashboard_data.weekday_number(7) == 6
+    assert dashboard_data.weekday_number("3") == 3
+
+
+def test_weekday_table_accepts_short_names():
+    weekday = pd.DataFrame([
+        _weekday_row("Fri"),
+        _weekday_row("Mon"),
+        _weekday_row("sun"),
+    ])
+    table = dashboard_data.weekday_core_table(weekday)
+    assert list(table["weekday"]) == ["Mon", "Fri", "sun"]
+
+
+def test_weekday_table_accepts_numbers():
+    weekday = pd.DataFrame([
+        _weekday_row(5),
+        _weekday_row(0),
+        _weekday_row(7),
+    ])
+    table = dashboard_data.weekday_core_table(weekday)
+    assert list(table["weekday"]) == [0, 5, 7]
+
+
+def test_weekday_table_unknown_value_lists_only_unknown():
+    weekday = pd.DataFrame([
+        _weekday_row("Mon"),
+        _weekday_row("Funday"),
+        _weekday_row("Someday"),
+        _weekday_row("Funday"),
+    ])
+    with pytest.raises(ValueError) as exc_info:
+        dashboard_data.weekday_core_table(weekday)
+    message = str(exc_info.value)
+    assert "Funday" in message
+    assert "Someday" in message
+    assert "Mon" not in message
+    assert "Monday" not in message
+
+
+def test_weekday_campaign_table_accepts_short_names():
+    by_campaign = pd.DataFrame([
+        {**_weekday_row("Fri"), "campaign": "Alpha"},
+        {**_weekday_row("Mon"), "campaign": "Alpha"},
+    ])
+    table = dashboard_data.weekday_campaign_table(
+        by_campaign, "Alpha")
+    assert list(table["weekday"]) == ["Mon", "Fri"]
+
+
 def test_trend_for_campaign_keeps_source():
     timeline = pd.DataFrame([
         {"campaign": "Alpha", "month": "2025-12", "source": "month",
