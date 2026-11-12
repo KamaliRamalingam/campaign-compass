@@ -45,3 +45,17 @@ columns:
   impressions: null
 
 required_columns: [date, campaign, cost, clicks, conversions]
+
+# Analysis ranges (T2). Decided by the student, 2026-11-12.
+# Daily data is used from daily_start to daily_end. Monthly data
+# is used for long-term trends only, up to monthly_end; there is
+# no monthly start limit. Missing days are NOT filled: a missing
+# day means no activity.
+analysis:
+  daily_start: "2023-10-13"
+  daily_end: "2026-11-12"
+  monthly_end: "2023-09-30"
+  outputs:
+    day: outputs/interim/clean_day.csv
+    month: outputs/interim/clean_month.csv
+    report: outputs/reports/cleaning-report.md
