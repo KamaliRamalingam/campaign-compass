@@ -55,7 +55,14 @@ analysis:
   daily_start: "2023-10-13"
   daily_end: "2026-11-12"
   monthly_end: "2023-09-30"
+  # Campaign selection (T3a). Both empty means use all campaigns.
+  # If include_campaigns is not empty, only those campaigns are
+  # used. exclude_campaigns removes campaigns after that.
+  # Do not guess any names: fill these in from the overview table.
+  include_campaigns: []
+  exclude_campaigns: []
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
     report: outputs/reports/cleaning-report.md
+    overview: outputs/reports/campaign-overview.csv

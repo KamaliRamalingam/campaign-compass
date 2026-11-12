@@ -26,6 +26,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "load.py")
     shutil.copy(REPO / "src" / "clean.py",
                 project / "src" / "clean.py")
+    shutil.copy(REPO / "src" / "overview.py",
+                project / "src" / "overview.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -76,10 +78,13 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  daily_start: '2023-10-13'\n"
         "  daily_end: '2026-11-12'\n"
         "  monthly_end: '2023-09-30'\n"
+        "  include_campaigns: []\n"
+        "  exclude_campaigns: []\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
         "    report: outputs/reports/cleaning-report.md\n"
+        "    overview: outputs/reports/campaign-overview.csv\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -117,6 +122,8 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "interim" / "clean_day.csv").is_file()
     assert (project / "outputs" / "interim" / "clean_month.csv").is_file()
     assert (project / "outputs" / "reports" / "cleaning-report.md").is_file()
+    # The overview stage also ran: one row per campaign.
+    assert (project / "outputs" / "reports" / "campaign-overview.csv").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout

@@ -90,7 +90,24 @@ def detect_gaps(dates, min_gap_days=GAP_DAYS):
     return gaps
 
 
-def _clean_table(df, start=None, end=None):
+def filter_campaigns(df, include=None, exclude=None):
+    """Keep only the campaigns the config selects.
+
+    If include is not empty, keep only those campaigns. Then
+    remove any in exclude. If both are empty, keep everything.
+    Returns (filtered DataFrame, rows removed).
+    """
+    include = list(include or [])
+    exclude = list(exclude or [])
+    before = len(df)
+    if include:
+        df = df.loc[df["campaign"].isin(include)].copy()
+    if exclude:
+        df = df.loc[~df["campaign"].isin(exclude)].copy()
+    return df, before - len(df)
+
+
+def _clean_table(df, start=None, end=None, include=None, exclude=None):
     """Shared cleaning for one table.
 
     Filters to start..end (either bound may be None), drops
@@ -115,6 +132,10 @@ def _clean_table(df, start=None, end=None):
     duplicated = df.duplicated(subset=["date", "campaign"], keep="first")
     stats["duplicates_removed"] = int(duplicated.sum())
     df = df.loc[~duplicated].copy()
+
+    # Campaign selection from the config (T3a).
+    df, removed = filter_campaigns(df, include, exclude)
+    stats["rows_excluded_by_campaign_filter"] = int(removed)
 
     df["flags"] = df.apply(lambda row: ";".join(_flag_row(row)), axis=1)
     stats["flagged_rows"] = int((df["flags"] != "").sum())
@@ -141,14 +162,16 @@ def _clean_table(df, start=None, end=None):
     return df, stats
 
 
-def clean_day(df, daily_start, daily_end):
+def clean_day(df, daily_start, daily_end, include=None, exclude=None):
     """Clean the day table to the daily range."""
-    return _clean_table(df, start=daily_start, end=daily_end)
+    return _clean_table(df, start=daily_start, end=daily_end,
+                        include=include, exclude=exclude)
 
 
-def clean_month(df, monthly_end):
+def clean_month(df, monthly_end, include=None, exclude=None):
     """Clean the month table up to monthly_end (no start limit)."""
-    cleaned, stats = _clean_table(df, start=None, end=monthly_end)
+    cleaned, stats = _clean_table(df, start=None, end=monthly_end,
+                                  include=include, exclude=exclude)
     # For the month table the count is active months, not days.
     cleaned = cleaned.rename(columns={"active_days": "active_months"})
     return cleaned, stats
@@ -164,6 +187,8 @@ def write_report(report_path, day_stats, month_stats, gaps):
         lines.append(f"- Rows before: {stats['rows_before']}")
         lines.append(f"- Rows outside range: {stats['rows_outside_range']}")
         lines.append(f"- Duplicates removed: {stats['duplicates_removed']}")
+        lines.append(f"- Rows excluded by campaign filter: "
+                     f"{stats.get('rows_excluded_by_campaign_filter', 0)}")
         lines.append(f"- Flagged rows kept: {stats['flagged_rows']}")
         lines.append(f"- Rows after: {stats['rows_after']}")
         lines.append(f"- First active date: {stats['first_active_date']}")
@@ -219,10 +244,14 @@ def main(argv=None):
         return 1
 
     day_clean, day_stats = clean_day(
-        day_df, analysis["daily_start"], analysis["daily_end"]
+        day_df, analysis["daily_start"], analysis["daily_end"],
+        include=analysis.get("include_campaigns"),
+        exclude=analysis.get("exclude_campaigns"),
     )
     month_clean, month_stats = clean_month(
-        month_df, analysis["monthly_end"]
+        month_df, analysis["monthly_end"],
+        include=analysis.get("include_campaigns"),
+        exclude=analysis.get("exclude_campaigns"),
     )
     gaps = detect_gaps(day_clean["date"])
 
