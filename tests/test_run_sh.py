@@ -34,6 +34,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "metrics.py")
     shutil.copy(REPO / "src" / "time_patterns.py",
                 project / "src" / "time_patterns.py")
+    shutil.copy(REPO / "src" / "recommend.py",
+                project / "src" / "recommend.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -92,6 +94,11 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  time_groups: [core]\n"
         "  weekday_min_conversions: 5\n"
         "  run_gap_days: 14\n"
+        "  recommendation_rules:\n"
+        "    continue_max_ratio: 1.0\n"
+        "    test_max_ratio: 2.0\n"
+        "    pause_above_ratio: 2.0\n"
+        "    repeat_min_runs: 2\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
@@ -107,6 +114,9 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    timeline_by_campaign: outputs/results/timeline_by_campaign.csv\n"
         "    runs: outputs/results/runs.csv\n"
         "    time_report: outputs/reports/time-report.md\n"
+        "    recommendations_by_run: outputs/results/recommendations_by_run.csv\n"
+        "    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv\n"
+        "    recommend_report: outputs/reports/recommend-report.md\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -158,6 +168,10 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "results" / "timeline_by_campaign.csv").is_file()
     assert (project / "outputs" / "results" / "runs.csv").is_file()
     assert (project / "outputs" / "reports" / "time-report.md").is_file()
+    # The recommend stage also ran: recommendations and a report.
+    assert (project / "outputs" / "results" / "recommendations_by_run.csv").is_file()
+    assert (project / "outputs" / "results" / "recommendations_by_campaign.csv").is_file()
+    assert (project / "outputs" / "reports" / "recommend-report.md").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout

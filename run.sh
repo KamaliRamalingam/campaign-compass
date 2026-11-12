@@ -3,7 +3,7 @@
 #   bash run.sh [--config config/validation.yaml]
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, clean, overview, metrics, time).
+# stages that exist so far (validation, load, clean, overview, metrics, time, recommend).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -95,8 +95,15 @@ if ! .venv/bin/python src/time_patterns.py --config "$LOAD_CONFIG"; then
     STATUS=1
 fi
 
-# Later stages (recommendations, etc.) run here, setting STATUS=1
-# on failure.
+# Stage 7: recommendations (T5). Writes result tables under
+# outputs/results/ and a report under outputs/reports/.
+# Prints counts per label only.
+if ! .venv/bin/python src/recommend.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Later stages (charts, dashboard, etc.) run here, setting
+# STATUS=1 on failure.
 
 if [ "$STATUS" -ne 0 ]; then
     echo "FAIL: one or more stages failed (see above)"
