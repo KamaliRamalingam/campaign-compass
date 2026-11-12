@@ -126,6 +126,16 @@ analysis:
     active_window_days: 14
     sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]
     sensitivity_test_max_ratio: [1.5, 2.0, 3.0]
+  # Recent trend (T11). Provisional, the student's decision,
+  # 2026-11-12. The last conversion_lag_days of data are
+  # excluded from recent windows, because tracked actions can
+  # be reported with a delay; that lag is not verified.
+  recent_trend:
+    recent_window_days: 28
+    conversion_lag_days: 3
+    worsening_ratio: 1.5
+    improving_ratio: 0.67
+    min_tracked_actions_in_window: 30
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
@@ -145,6 +155,9 @@ analysis:
     recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv
     recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv
     recommend_report: outputs/reports/recommend-report.md
+    recent_trend: outputs/results/recent_trend.csv
+    weekly_by_campaign: outputs/results/weekly_by_campaign.csv
+    recent_trend_report: outputs/reports/recent-trend-report.md
 
 # Conversion breakdown (T10). The conversion-by-campaign-month
 # export has 2 title lines, then a header. Column names are the

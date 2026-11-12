@@ -38,6 +38,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "recommend.py")
     shutil.copy(REPO / "src" / "conversion_mix.py",
                 project / "src" / "conversion_mix.py")
+    shutil.copy(REPO / "src" / "recent_trend.py",
+                project / "src" / "recent_trend.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -114,6 +116,12 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    active_window_days: 14\n"
         "    sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]\n"
         "    sensitivity_test_max_ratio: [1.5, 2.0, 3.0]\n"
+        "  recent_trend:\n"
+        "    recent_window_days: 28\n"
+        "    conversion_lag_days: 3\n"
+        "    worsening_ratio: 1.5\n"
+        "    improving_ratio: 0.67\n"
+        "    min_tracked_actions_in_window: 30\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
@@ -133,6 +141,9 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv\n"
         "    recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv\n"
         "    recommend_report: outputs/reports/recommend-report.md\n"
+        "    recent_trend: outputs/results/recent_trend.csv\n"
+        "    weekly_by_campaign: outputs/results/weekly_by_campaign.csv\n"
+        "    recent_trend_report: outputs/reports/recent-trend-report.md\n"
         "conversion_breakdown:\n"
         "  file: {path: data/raw/conv.csv, title_lines: 2}\n"
         "  columns: {campaign: Campaign, month: Month, action: Conversion action, conversions: Conversions, all_conversions: 'All conv.'}\n"
@@ -208,6 +219,14 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "results" / "conversion_mix_by_run.csv").is_file()
     assert (project / "outputs" / "results" / "campaign_summary_intent.csv").is_file()
     assert (project / "outputs" / "reports" / "conversion-breakdown-report.md").is_file()
+    # The recent trend stage also ran: trend and weekly tables,
+    # a report, and the new columns on the recommendations.
+    assert (project / "outputs" / "results" / "recent_trend.csv").is_file()
+    assert (project / "outputs" / "results" / "weekly_by_campaign.csv").is_file()
+    assert (project / "outputs" / "reports" / "recent-trend-report.md").is_file()
+    recs = (project / "outputs" / "results" / "recommendations_by_campaign.csv").read_text()
+    assert "recent_trend" in recs.splitlines()[0]
+    assert "ratio_vs_run_average" in recs.splitlines()[0]
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout

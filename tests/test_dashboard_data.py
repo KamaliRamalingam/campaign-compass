@@ -88,7 +88,7 @@ def test_conversion_shares_and_engagement():
     assert shares.iloc[0]["action"] == "Local actions - Menu views"
     assert shares.iloc[0]["tracked_actions"] == 30.0
     assert shares.iloc[0]["share"] == pytest.approx(30.0 / 45.0)
-    assert shares.iloc[0]["share_pct"] == pytest.approx(100.0 * 30.0 / 45.0)
+    assert shares.iloc[0]["share_pct"] == pytest.approx(66.67, abs=0.01)
     assert dashboard_data.engagement_share(_mix()) == \
         pytest.approx(30.0 / 45.0)
     # Engagement is 300 of 450 All conv.
@@ -293,3 +293,70 @@ def test_load_tables_reads_all_tables(tmp_path):
     tables = dashboard_data.load_tables(config, root=root)
     assert set(tables) == set(dashboard_data.REQUIRED_TABLES)
     assert list(tables["runs"]["campaign"]) == ["Alpha"]
+
+
+def test_weekly_for_campaign_returns_one_campaign():
+    weekly = pd.DataFrame([
+        {"campaign": "Alpha", "week_start": "2026-01-12",
+         "active_days": 3, "spend": 30.0, "tracked_actions": 6.0,
+         "cost_per_tracked_action": 5.0},
+        {"campaign": "Alpha", "week_start": "2026-01-05",
+         "active_days": 2, "spend": 20.0, "tracked_actions": 4.0,
+         "cost_per_tracked_action": 5.0},
+        {"campaign": "Beta", "week_start": "2026-01-05",
+         "active_days": 1, "spend": 10.0, "tracked_actions": 2.0,
+         "cost_per_tracked_action": 5.0},
+    ])
+    table = dashboard_data.weekly_for_campaign(weekly, "Alpha")
+    assert list(table["week_start"]) == ["2026-01-05", "2026-01-12"]
+    assert list(table["tracked_actions"]) == [4.0, 6.0]
+
+
+def test_recommendations_display_hides_group_and_runs():
+    recs = _recommendations()
+    recs["recent_trend"] = ["worsening", "not_active"]
+    table = dashboard_data.recommendations_display(recs)
+    assert list(table.columns) == [
+        "campaign", "label", "status_now", "recent_trend",
+        "action_text", "reason"]
+    assert list(table["recent_trend"]) == ["worsening", "not_active"]
+
+
+def test_recommendations_display_without_recent_trend():
+    table = dashboard_data.recommendations_display(
+        _recommendations())
+    assert list(table["recent_trend"]) == ["", ""]
+
+
+def test_display_table_renames_only_the_copy(tmp_path):
+    original = pd.DataFrame([
+        {"campaign": "Alpha", "conversions": 20.0,
+         "cost_per_conversion": 5.0, "conversion_rate": 0.2,
+         "share_of_campaign_conversions": 50.0,
+         "all_conversions": 100.0},
+    ])
+    display = dashboard_data.display_table(original)
+    assert list(display.columns) == [
+        "campaign", "tracked actions",
+        "cost per tracked action", "tracked action rate",
+        "share of campaign tracked actions",
+        "all tracked actions"]
+    # The input table is unchanged.
+    assert list(original.columns) == [
+        "campaign", "conversions", "cost_per_conversion",
+        "conversion_rate", "share_of_campaign_conversions",
+        "all_conversions"]
+    # Writing the original table to a CSV keeps the file format.
+    path = tmp_path / "table.csv"
+    original.to_csv(path, index=False)
+    header = path.read_text().splitlines()[0]
+    assert header == ("campaign,conversions,cost_per_conversion,"
+                      "conversion_rate,share_of_campaign_conversions,"
+                      "all_conversions")
+
+
+def test_share_pct_has_two_decimals():
+    shares = dashboard_data.conversion_shares(_mix())
+    assert shares.iloc[0]["share_pct"] == pytest.approx(66.67, abs=0.01)
+    assert shares.iloc[0]["share_pct"] == round(
+        shares.iloc[0]["share_pct"], 2)

@@ -39,11 +39,11 @@ def _page_conversion(tables, caveat, date_range, updated):
         tables["conversion_mix_by_campaign"])
     import altair as alt
     chart = alt.Chart(shares).mark_bar().encode(
-        x=alt.X("share", axis=alt.Axis(format="%"),
+        x=alt.X("share", axis=alt.Axis(format=".2%"),
                 title="Share of tracked actions"),
         y=alt.Y("action", sort="-x", title="Action"),
         tooltip=["action", "action_group", "tracked_actions",
-                 alt.Tooltip("share", format=".1%")],
+                 alt.Tooltip("share", format=".2%")],
     )
     st.altair_chart(chart, use_container_width=True)
     display = shares[["action", "action_group", "tracked_actions",
@@ -56,7 +56,7 @@ def _page_conversion(tables, caveat, date_range, updated):
     st.write(
         "Engagement actions (menu views, website visits, other "
         "engagements) are "
-        f"{engagement_all:.1%} of All conv. but are not counted "
+        f"{engagement_all:.2%} of All conv. but are not counted "
         "as tracked actions."
     )
 
@@ -67,12 +67,14 @@ def _page_overview(tables, caveat, date_range, updated):
     _context(caveat, date_range, updated)
     groups = dashboard_data.overview_groups(tables["group_summary"])
     st.subheader("Spend and tracked actions by group")
-    st.dataframe(groups, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(groups),
+                 use_container_width=True)
     core = dashboard_data.core_campaigns(
         tables["campaign_summary_day"],
         tables["recommendations_by_campaign"])
     st.subheader("Core campaigns")
-    st.dataframe(core, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(core),
+                 use_container_width=True)
 
 
 def _page_comparison(tables, caveat, date_range, updated):
@@ -99,7 +101,8 @@ def _page_comparison(tables, caveat, date_range, updated):
         "Campaigns marked insufficient_data are not ranked; "
         "they are listed below the chart."
     )
-    st.dataframe(comparison, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(comparison),
+                 use_container_width=True)
 
 
 def _page_runs(tables, caveat, date_range, updated):
@@ -112,14 +115,16 @@ def _page_runs(tables, caveat, date_range, updated):
     table = dashboard_data.runs_for_campaign(runs, campaign)
     import altair as alt
     chart = alt.Chart(table).mark_bar().encode(
-        x=alt.X("run_number", title="Run"),
+        x=alt.X("run_number", axis=alt.Axis(format="d"),
+                title="Run"),
         y=alt.Y("cost_per_tracked_action",
                 title="Cost per tracked action (SEK)"),
         tooltip=["run_number", "start", "end", "spend",
                  "cost_per_tracked_action", "volume_flag"],
     )
     st.altair_chart(chart, use_container_width=True)
-    st.dataframe(table, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(table),
+                 use_container_width=True)
 
 
 def _page_weekday(tables, caveat, date_range, updated):
@@ -143,7 +148,8 @@ def _page_weekday(tables, caveat, date_range, updated):
                  "cost_per_tracked_action"],
     )
     st.altair_chart(chart, use_container_width=True)
-    st.dataframe(pooled, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(pooled),
+                 use_container_width=True)
     by_campaign = tables["weekday_by_campaign"]
     campaign = st.selectbox(
         "Campaign", sorted(by_campaign["campaign"].unique()))
@@ -154,18 +160,35 @@ def _page_weekday(tables, caveat, date_range, updated):
         st.error(str(exc))
         st.stop()
     st.subheader(f"Weekday for {campaign}")
-    st.dataframe(table, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(table),
+                 use_container_width=True)
 
 
 def _page_trend(tables, caveat, date_range, updated):
-    """Monthly trend for a selected campaign, from the timeline."""
+    """Monthly or weekly trend for a selected campaign."""
     st.header("Trend")
     _context(caveat, date_range, updated)
     timeline = tables["timeline_by_campaign"]
     campaign = st.selectbox(
         "Campaign", sorted(timeline["campaign"].unique()))
-    table = dashboard_data.trend_for_campaign(timeline, campaign)
+    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True)
     import altair as alt
+    if view == "Weekly":
+        table = dashboard_data.weekly_for_campaign(
+            tables["weekly_by_campaign"], campaign)
+        chart = alt.Chart(table).mark_line(point=True).encode(
+            x=alt.X("week_start", title="Week starting"),
+            y=alt.Y("cost_per_tracked_action",
+                    title="Cost per tracked action (SEK)"),
+            tooltip=["week_start", "spend", "tracked_actions",
+                     "cost_per_tracked_action"],
+        )
+        st.altair_chart(chart, use_container_width=True)
+        st.write("Weeks start on Monday, from the daily data.")
+        st.dataframe(dashboard_data.display_table(table),
+                     use_container_width=True)
+        return
+    table = dashboard_data.trend_for_campaign(timeline, campaign)
     chart = alt.Chart(table).mark_line(point=True).encode(
         x=alt.X("month", title="Month"),
         y=alt.Y("cost_per_tracked_action",
@@ -179,16 +202,27 @@ def _page_trend(tables, caveat, date_range, updated):
         "Source marks where each month comes from: day is the "
         "daily export, month is the monthly-history export."
     )
-    st.dataframe(table, use_container_width=True)
+    st.dataframe(dashboard_data.display_table(table),
+                 use_container_width=True)
 
 
 def _page_recommendations(tables, caveat, date_range, updated):
-    """Recommendations: label, action, best run and reason."""
+    """Recommendations: label, status, recent trend, action, reason."""
     st.header("Recommendations")
     _context(caveat, date_range, updated)
-    table = dashboard_data.recommendations_view(
+    table = dashboard_data.recommendations_display(
         tables["recommendations_by_campaign"])
-    st.dataframe(table, use_container_width=True)
+    st.dataframe(
+        table, use_container_width=True,
+        column_config={
+            "label": st.column_config.TextColumn(
+                "Label", width="medium"),
+            "action_text": st.column_config.TextColumn(
+                "Action", width="large"),
+            "reason": st.column_config.TextColumn(
+                "Reason", width="large"),
+        },
+    )
 
 
 PAGES = {
