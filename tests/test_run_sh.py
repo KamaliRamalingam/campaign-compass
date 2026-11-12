@@ -23,6 +23,12 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
     shutil.copy(REPO / "src" / "validate_exports.py",
                 project / "src" / "validate_exports.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
+    # The copy must be executable: git stores run.sh as 100644 when
+    # pushed through the GitHub API (the API tools cannot set the
+    # executable bit), so a checked-out copy may not be executable.
+    # The test makes its copy executable, as the student does once
+    # on her Mac with `chmod +x run.sh`.
+    (project / "run.sh").chmod(0o755)
     (project / "requirements.txt").write_text("")
     # Tiny made-up raw file. Campaign name "Alpha" is made up.
     (project / "data" / "raw" / "day.csv").write_text(
