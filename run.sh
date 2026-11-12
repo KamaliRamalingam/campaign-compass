@@ -3,7 +3,7 @@
 #   bash run.sh [--config config/validation.yaml]
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, then load).
+# stages that exist so far (validation, load, then clean).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -67,7 +67,14 @@ if ! .venv/bin/python src/load.py --config "$LOAD_CONFIG"; then
     STATUS=1
 fi
 
-# Later stages (cleaning, metrics, etc.) run here, setting STATUS=1
+# Stage 3: clean the standardised tables (T2). Writes cleaned
+# tables under outputs/interim/ and a report under outputs/reports/.
+# Uses the same config as the load stage.
+if ! .venv/bin/python src/clean.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Later stages (metrics, etc.) run here, setting STATUS=1
 # on failure.
 
 if [ "$STATUS" -ne 0 ]; then
