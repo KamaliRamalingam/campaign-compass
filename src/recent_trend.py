@@ -11,12 +11,19 @@ come from the config) and writes, all git-ignored:
   ending at (last data date minus conversion_lag_days); prior
   window = the same number of days before that. Run average =
   cost per tracked action of the campaign's current run (its
-  latest run). recent_trend is worsening when the recent cost
-  per tracked action is at least worsening_ratio times the run
-  average, improving when it is at most improving_ratio times
-  it, stable otherwise, and insufficient_data when either
-  window has fewer tracked actions than
-  min_tracked_actions_in_window.
+  latest run). recent_vs_prior_ratio is the recent cost per
+  tracked action divided by the prior window's, empty when the
+  prior window is empty or below the minimum tracked actions.
+  recent_trend is worsening when the recent cost per tracked
+  action is at least worsening_vs_prior_ratio times the prior
+  window or at least worsening_ratio times the run average,
+  improving when it is at most improving_vs_prior_ratio times
+  the prior window or at most improving_ratio times the run
+  average (worsening wins when both would apply), stable
+  otherwise, and insufficient_data when either window has fewer
+  tracked actions than min_tracked_actions_in_window.
+  trend_reason explains the trend in plain language, with both
+  ratios.
 - outputs/results/weekly_by_campaign.csv: per campaign and week
   (week start Monday), from the daily data.
 - updates outputs/results/recommendations_by_campaign.csv in
@@ -107,17 +114,62 @@ def current_run_average(runs_df, campaign):
     return float(value)
 
 
-def label_trend(ratio, recent_actions, prior_actions, settings):
-    """recent_trend from the ratio and the window volumes."""
+def label_trend(prior_ratio, run_ratio, recent_actions,
+                prior_actions, settings):
+    """recent_trend from the two ratios and the window volumes.
+
+    insufficient_data when either window has fewer tracked
+    actions than the minimum. Worsening when the recent cost
+    per tracked action is at least worsening_vs_prior_ratio
+    times the prior window, or at least worsening_ratio times
+    the run average. Improving when it is at most
+    improving_vs_prior_ratio times the prior window, or at most
+    improving_ratio times the run average. Otherwise stable.
+    When worsening and improving would both apply, worsening
+    wins.
+    """
     minimum = settings["min_tracked_actions_in_window"]
-    if (recent_actions < minimum or prior_actions < minimum
-            or ratio is None or pd.isna(ratio)):
+    if recent_actions < minimum or prior_actions < minimum:
         return TREND_INSUFFICIENT
-    if ratio >= settings["worsening_ratio"]:
+    worsening = (
+        (prior_ratio is not None
+         and prior_ratio >= settings["worsening_vs_prior_ratio"])
+        or (run_ratio is not None
+            and run_ratio >= settings["worsening_ratio"])
+    )
+    if worsening:
         return TREND_WORSENING
-    if ratio <= settings["improving_ratio"]:
+    improving = (
+        (prior_ratio is not None
+         and prior_ratio <= settings["improving_vs_prior_ratio"])
+        or (run_ratio is not None
+            and run_ratio <= settings["improving_ratio"])
+    )
+    if improving:
         return TREND_IMPROVING
     return TREND_STABLE
+
+
+def trend_reason(trend, prior_ratio, run_ratio, recent_actions,
+                 prior_actions, settings):
+    """Plain-language reason for the trend, with both ratios."""
+    minimum = settings["min_tracked_actions_in_window"]
+    if trend == TREND_INSUFFICIENT:
+        return (
+            f"not enough data to judge: {recent_actions:.0f} "
+            f"tracked actions in the recent window and "
+            f"{prior_actions:.0f} in the prior window "
+            f"(minimum {minimum} per window)"
+        )
+    parts = []
+    if prior_ratio is not None:
+        parts.append(
+            f"{prior_ratio:.2f} times the prior 28 days")
+    if run_ratio is not None:
+        parts.append(f"{run_ratio:.2f} times the run average")
+    if not parts:
+        return "no prior window or run average to compare with"
+    return "cost per tracked action is " + " and ".join(parts)
 
 
 def compute_recent_trend(day_df, runs_df, recommendations,
@@ -142,14 +194,29 @@ def compute_recent_trend(day_df, runs_df, recommendations,
         recent_cost = _safe_divide(recent_spend, recent_actions)
         prior_cost = _safe_divide(prior_spend, prior_actions)
         run_average = current_run_average(runs_df, campaign)
-        ratio = (
+        run_ratio = (
             recent_cost / run_average
             if recent_cost is not None and run_average
             else None
         )
         # Round so a ratio that is exactly on a threshold in
         # the data is not pushed under it by float arithmetic.
-        ratio = round(ratio, 4) if ratio is not None else None
+        run_ratio = round(run_ratio, 4) \
+            if run_ratio is not None else None
+        # Empty when the prior window is empty or below the
+        # minimum tracked actions.
+        prior_ratio = (
+            recent_cost / prior_cost
+            if recent_cost is not None and prior_cost is not None
+            and prior_actions >= settings[
+                "min_tracked_actions_in_window"]
+            else None
+        )
+        prior_ratio = round(prior_ratio, 4) \
+            if prior_ratio is not None else None
+        trend = label_trend(
+            prior_ratio, run_ratio, recent_actions,
+            prior_actions, settings)
         rows.append({
             "campaign": campaign,
             "recent_window_start": recent_start,
@@ -163,9 +230,12 @@ def compute_recent_trend(day_df, runs_df, recommendations,
             "prior_tracked_actions": prior_actions,
             "prior_cost_per_tracked_action": prior_cost,
             "run_average_cost_per_tracked_action": run_average,
-            "ratio_vs_run_average": ratio,
-            "recent_trend": label_trend(
-                ratio, recent_actions, prior_actions, settings),
+            "ratio_vs_run_average": run_ratio,
+            "recent_vs_prior_ratio": prior_ratio,
+            "recent_trend": trend,
+            "trend_reason": trend_reason(
+                trend, prior_ratio, run_ratio, recent_actions,
+                prior_actions, settings),
         })
     table = pd.DataFrame(rows)
     if table.empty:
@@ -203,28 +273,36 @@ def weekly_table(day_df):
 
 
 def apply_to_recommendations(recommendations, trend_table):
-    """Add recent_trend and ratio, and the worsening suffix.
+    """Add recent trend, ratios and reason, and the suffix.
 
     Campaigns that are not active get recent_trend not_active
-    and no ratio. The suffix is appended to action_text only
-    when recent_trend is worsening.
+    and no ratio or reason. The suffix is appended to
+    action_text only when recent_trend is worsening.
     """
     recs = recommendations.copy()
     by_campaign = trend_table.set_index("campaign") \
         if not trend_table.empty else None
     trends = []
-    ratios = []
+    run_ratios = []
+    prior_ratios = []
+    reasons = []
     for _, row in recs.iterrows():
         campaign = row["campaign"]
         if by_campaign is not None and campaign in by_campaign.index:
             trend_row = by_campaign.loc[campaign]
             trends.append(trend_row["recent_trend"])
-            ratios.append(trend_row["ratio_vs_run_average"])
+            run_ratios.append(trend_row["ratio_vs_run_average"])
+            prior_ratios.append(trend_row["recent_vs_prior_ratio"])
+            reasons.append(trend_row["trend_reason"])
         else:
             trends.append(TREND_NOT_ACTIVE)
-            ratios.append(None)
+            run_ratios.append(None)
+            prior_ratios.append(None)
+            reasons.append("")
     recs["recent_trend"] = trends
-    recs["ratio_vs_run_average"] = ratios
+    recs["ratio_vs_run_average"] = run_ratios
+    recs["recent_vs_prior_ratio"] = prior_ratios
+    recs["trend_reason"] = reasons
     recs["action_text"] = [
         text + WORSENING_SUFFIX if trend == TREND_WORSENING
         else text

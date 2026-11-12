@@ -121,6 +121,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    conversion_lag_days: 3\n"
         "    worsening_ratio: 1.5\n"
         "    improving_ratio: 0.67\n"
+        "    worsening_vs_prior_ratio: 1.3\n"
+        "    improving_vs_prior_ratio: 0.77\n"
         "    min_tracked_actions_in_window: 30\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
@@ -227,6 +229,8 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     recs = (project / "outputs" / "results" / "recommendations_by_campaign.csv").read_text()
     assert "recent_trend" in recs.splitlines()[0]
     assert "ratio_vs_run_average" in recs.splitlines()[0]
+    assert "recent_vs_prior_ratio" in recs.splitlines()[0]
+    assert "trend_reason" in recs.splitlines()[0]
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout
