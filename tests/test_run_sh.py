@@ -36,6 +36,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "time_patterns.py")
     shutil.copy(REPO / "src" / "recommend.py",
                 project / "src" / "recommend.py")
+    shutil.copy(REPO / "src" / "conversion_mix.py",
+                project / "src" / "conversion_mix.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -59,6 +61,15 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "Made-up date range line\n"
         "Campaign,Month,Clicks,Cost,Conversions\n"
         "Alpha,December 2025,10,20.00,5.00\n"
+    )
+    # Tiny made-up conversion file, for the conversion stage.
+    (project / "data" / "raw" / "conv.csv").write_text(
+        "Made-up title\n"
+        "Made-up date range line\n"
+        "Campaign,Month,Conversion action,Conversions,All conv.\n"
+        "Alpha,January 2026,Store visits,2,20\n"
+        "Alpha,February 2026,Local actions - Menu views,2,20\n"
+        "Total,0,0,0,0\n"
     )
     (project / "config" / "restaurant.yaml").write_text(
         "input:\n"
@@ -121,6 +132,19 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv\n"
         "    recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv\n"
         "    recommend_report: outputs/reports/recommend-report.md\n"
+        "conversion_breakdown:\n"
+        "  file: {path: data/raw/conv.csv, title_lines: 2}\n"
+        "  columns: {campaign: Campaign, month: Month, action: Conversion action, conversions: Conversions, all_conversions: 'All conv.'}\n"
+        "  ui_expected: {conversions: 4.0, all_conversions: 40.0, tolerance: 0.05}\n"
+        "  action_groups:\n"
+        "    high_intent: [Store visits]\n"
+        "    engagement: [Local actions - Menu views]\n"
+        "  outputs:\n"
+        "    mix_by_campaign: outputs/results/conversion_mix_by_campaign.csv\n"
+        "    mix_by_campaign_month: outputs/results/conversion_mix_by_campaign_month.csv\n"
+        "    mix_by_run: outputs/results/conversion_mix_by_run.csv\n"
+        "    campaign_summary_intent: outputs/results/campaign_summary_intent.csv\n"
+        "    report: outputs/reports/conversion-breakdown-report.md\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -177,6 +201,12 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "results" / "recommendations_by_campaign.csv").is_file()
     assert (project / "outputs" / "results" / "recommendation_sensitivity.csv").is_file()
     assert (project / "outputs" / "reports" / "recommend-report.md").is_file()
+    # The conversion stage also ran: mix tables and a report.
+    assert (project / "outputs" / "results" / "conversion_mix_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "conversion_mix_by_campaign_month.csv").is_file()
+    assert (project / "outputs" / "results" / "conversion_mix_by_run.csv").is_file()
+    assert (project / "outputs" / "results" / "campaign_summary_intent.csv").is_file()
+    assert (project / "outputs" / "reports" / "conversion-breakdown-report.md").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout

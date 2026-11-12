@@ -9,3 +9,5 @@
 | 2026-11-12 | Are DrTiwari, Lorry booking and Yoga Mela unrelated to the restaurant? | They are in the exclude_pending_owner group in config/restaurant.yaml. | Waiting for owner. |
 | 2026-11-12 | Provisional campaign grouping and volume rule (min_conversions 10, min_days_active 14), to be confirmed by the student. | config/restaurant.yaml, analysis.campaign_groups and analysis.volume_rule. | Waiting for owner. |
 | 2026-11-12 | Recommendation rules, provisional, my decision: benchmark is the core group overall cost per conversion (calculated, not typed in); continue_max_ratio 1.0; test_max_ratio 2.0; pause_above_ratio 2.0; repeat_min_runs 2. | config/restaurant.yaml, analysis.recommendation_rules. | Provisional, my decision. |
+| 2026-11-12 | Conversion action groups are provisional, my decision. | config/restaurant.yaml, conversion_breakdown.action_groups (high_intent, engagement; anything else is unmapped). | Provisional, my decision. |
+| 2026-11-12 | Conversions in this account are Google local actions and calls, not bookings or orders. Wording: tracked actions. | src/conversion_mix.py and its outputs. | Recorded. |

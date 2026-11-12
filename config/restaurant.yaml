@@ -141,3 +141,55 @@ analysis:
     recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv
     recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv
     recommend_report: outputs/reports/recommend-report.md
+
+# Conversion breakdown (T10). The conversion-by-campaign-month
+# export has 2 title lines, then a header. Column names are the
+# actual headers in the exported file; the loader fails naming
+# any that are missing. Action groups are provisional, the
+# student's decision, 2026-11-12. Names are compared
+# case-insensitively, and hyphen, en dash and em dash count as
+# equal. Any other action goes to "unmapped" and is reported,
+# never dropped.
+conversion_breakdown:
+  file:
+    path: data/raw/conversion_by_campaign_month_2026-11-12.csv
+    title_lines: 2
+  columns:
+    campaign: Campaign
+    month: Month
+    action: Conversion action
+    conversions: Conversions
+    all_conversions: All conv.
+  ui_expected:
+    conversions: 39989.84
+    all_conversions: 234853.27
+    tolerance: 0.05
+  action_groups:
+    high_intent:
+      - Local actions - Directions
+      - Store visits
+      - Local actions - Orders
+      - Clicks to call
+      - Calls from ads
+      - Calls from Smart Campaign Ads
+      - Calls
+      - Business profile - Directions
+      - Business profile - Call
+      - Business profile - Tracked call
+      - Smart campaign map directions
+      - Smart campaign ad clicks to call
+      - Smart campaign map clicks to call
+      - Purchase
+      - Book appointment
+      - Submit lead forms
+    engagement:
+      - Local actions - Other engagements
+      - Local actions - Menu views
+      - Local actions - Website visits
+      - Business profile - Learn more
+  outputs:
+    mix_by_campaign: outputs/results/conversion_mix_by_campaign.csv
+    mix_by_campaign_month: outputs/results/conversion_mix_by_campaign_month.csv
+    mix_by_run: outputs/results/conversion_mix_by_run.csv
+    campaign_summary_intent: outputs/results/campaign_summary_intent.csv
+    report: outputs/reports/conversion-breakdown-report.md
