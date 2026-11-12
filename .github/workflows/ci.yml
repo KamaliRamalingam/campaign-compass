@@ -1,0 +1,27 @@
+# CI guard (T0c): every pull request and every push to main.
+# Made-up data only. No real data, no credentials, no outputs.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Python 3.12: the version the code was built and tested with
+      # locally (3.12.3). Library versions are not pinned here;
+      # requirements.txt is unpinned, as in the repo, so CI uses the
+      # same file the student installs locally.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      - name: Check no data in tracked files
+        run: git ls-files -z | xargs -0 python scripts/check_no_data.py
+      - name: Run tests
+        run: pytest -q

@@ -26,3 +26,10 @@ venv/
 
 # Review results/ before every commit: they must not contain account IDs,
 # client names or anything the owner has not approved.
+
+# Local outputs and working folders: never commit (T0c)
+outputs/
+config/local/
+data/interim/
+notebooks/
+evidence/

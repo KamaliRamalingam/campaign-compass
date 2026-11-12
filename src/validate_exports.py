@@ -6,7 +6,11 @@ title-line text, or any other cell value.
 
 Usage:
     python src/validate_exports.py --config config/validation.yaml \
-        --out docs/validation-report.md
+        --out outputs/reports/validation-report.md
+
+The default output is outputs/reports/validation-report.md (created
+if missing). Reports go under outputs/, which is git-ignored, so
+validation output never goes to GitHub.
 
 Config lists one entry per core file, with actual column names from
 that file's header, title lines to skip, and UI totals (ui_expected).
@@ -377,7 +381,9 @@ def main(argv=None):
     """Run the validation. Exit 1 if any check FAILs."""
     parser = argparse.ArgumentParser(description="Validate raw Ads exports.")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--out", default="outputs/reports/validation-report.md"
+    )
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
