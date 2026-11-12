@@ -126,12 +126,16 @@ def _page_weekday(tables, caveat, date_range, updated):
     """Pooled core weekday chart and a campaign selector."""
     st.header("Weekday")
     _context(caveat, date_range, updated)
-    pooled = dashboard_data.weekday_core_table(
-        tables["weekday_core"])
+    try:
+        pooled = dashboard_data.weekday_core_table(
+            tables["weekday_core"])
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
     import altair as alt
     st.subheader("Core group, pooled")
     chart = alt.Chart(pooled).mark_bar().encode(
-        x=alt.X("weekday", sort=dashboard_data.WEEKDAYS,
+        x=alt.X("weekday", sort=list(pooled["weekday"]),
                 title="Weekday"),
         y=alt.Y("cost_per_tracked_action",
                 title="Cost per tracked action (SEK)"),
@@ -143,8 +147,12 @@ def _page_weekday(tables, caveat, date_range, updated):
     by_campaign = tables["weekday_by_campaign"]
     campaign = st.selectbox(
         "Campaign", sorted(by_campaign["campaign"].unique()))
-    table = dashboard_data.weekday_campaign_table(
-        by_campaign, campaign)
+    try:
+        table = dashboard_data.weekday_campaign_table(
+            by_campaign, campaign)
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
     st.subheader(f"Weekday for {campaign}")
     st.dataframe(table, use_container_width=True)
 
