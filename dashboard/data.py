@@ -40,6 +40,8 @@ DEFAULT_PATHS = {
         "outputs/results/conversion_mix_by_campaign.csv",
     "conversion_mix_by_run":
         "outputs/results/conversion_mix_by_run.csv",
+    "recent_trend": "outputs/results/recent_trend.csv",
+    "weekly_by_campaign": "outputs/results/weekly_by_campaign.csv",
 }
 
 REQUIRED_TABLES = list(DEFAULT_PATHS)
@@ -170,7 +172,7 @@ def conversion_shares(mix_by_campaign):
     )
     total = float(grouped["tracked_actions"].sum())
     grouped["share"] = grouped["tracked_actions"] / total if total else 0.0
-    grouped["share_pct"] = grouped["share"] * 100.0
+    grouped["share_pct"] = (grouped["share"] * 100.0).round(2)
     return grouped.sort_values(
         "tracked_actions", ascending=False).reset_index(drop=True)
 
@@ -274,7 +276,9 @@ def weekday_core_table(weekday_core):
         columns=["weekday_no"])
     table["tracked_actions"] = table["conversions"]
     table["cost_per_tracked_action"] = table["cost_per_conversion"]
-    return table.reset_index(drop=True)
+    return table.drop(
+        columns=["conversions", "cost_per_conversion"]).reset_index(
+        drop=True)
 
 
 def weekday_campaign_table(weekday_by_campaign, campaign):
@@ -306,3 +310,56 @@ def recommendations_view(recommendations):
                "best_run_end", "reason"]
     return recommendations[columns].sort_values(
         "campaign").reset_index(drop=True)
+
+
+def recommendations_display(recommendations):
+    """Recommendations for the Recommendations page.
+
+    Only campaign, label, status_now, recent_trend, action_text
+    and reason. The group and run columns are hidden. Older
+    result files without recent_trend get an empty value.
+    """
+    table = recommendations.copy()
+    if "recent_trend" not in table.columns:
+        table["recent_trend"] = ""
+    columns = ["campaign", "label", "status_now", "recent_trend",
+               "action_text", "reason"]
+    return table[columns].sort_values(
+        "campaign").reset_index(drop=True)
+
+
+def weekly_for_campaign(weekly_df, campaign):
+    """One campaign's weekly table, earliest week first."""
+    part = weekly_df.loc[
+        weekly_df["campaign"] == campaign].copy()
+    table = pd.DataFrame({
+        "week_start": part["week_start"],
+        "active_days": part["active_days"],
+        "spend": part["spend"],
+        "tracked_actions": part["tracked_actions"],
+        "cost_per_tracked_action":
+            part["cost_per_tracked_action"],
+    })
+    return table.sort_values("week_start").reset_index(drop=True)
+
+
+def display_table(table):
+    """A copy of a table with display wording, for the dashboard.
+
+    "conversions" becomes "tracked actions" and
+    "cost_per_conversion" becomes "cost per tracked action"
+    (and conversion_rate becomes "tracked action rate"). This
+    renames at display time only: the returned copy is renamed,
+    the input table and the CSV files are unchanged.
+    """
+    renamed = {}
+    for column in table.columns:
+        name = column
+        name = name.replace("cost_per_conversion",
+                            "cost per tracked action")
+        name = name.replace("conversions", "tracked actions")
+        name = name.replace("conversion_rate",
+                            "tracked action rate")
+        name = name.replace("_", " ")
+        renamed[column] = name
+    return table.rename(columns=renamed)
