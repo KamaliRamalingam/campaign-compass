@@ -99,6 +99,9 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    test_max_ratio: 2.0\n"
         "    pause_above_ratio: 2.0\n"
         "    repeat_min_runs: 2\n"
+        "    active_window_days: 14\n"
+        "    sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]\n"
+        "    sensitivity_test_max_ratio: [1.5, 2.0, 3.0]\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
@@ -116,6 +119,7 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    time_report: outputs/reports/time-report.md\n"
         "    recommendations_by_run: outputs/results/recommendations_by_run.csv\n"
         "    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv\n"
+        "    recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv\n"
         "    recommend_report: outputs/reports/recommend-report.md\n"
     )
     (project / "config" / "validation.yaml").write_text(
@@ -171,6 +175,7 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     # The recommend stage also ran: recommendations and a report.
     assert (project / "outputs" / "results" / "recommendations_by_run.csv").is_file()
     assert (project / "outputs" / "results" / "recommendations_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "recommendation_sensitivity.csv").is_file()
     assert (project / "outputs" / "reports" / "recommend-report.md").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.

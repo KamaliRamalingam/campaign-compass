@@ -12,8 +12,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.recommend import (CAVEAT, compute_benchmark, label_run,
-                           main, recommend_campaigns, recommend_runs,
+from src.recommend import (CAVEAT, action_text, compute_benchmark,
+                           label_run, main, recommend_campaigns,
+                           recommend_runs, sensitivity_table,
                            write_recommend_report)
 
 RULES = {
@@ -21,6 +22,9 @@ RULES = {
     "test_max_ratio": 2.0,
     "pause_above_ratio": 2.0,
     "repeat_min_runs": 2,
+    "active_window_days": 14,
+    "sensitivity_continue_max_ratio": [0.75, 1.0, 1.25, 1.5],
+    "sensitivity_test_max_ratio": [1.5, 2.0, 3.0],
 }
 VOLUME = {"min_conversions": 10, "min_days_active": 14}
 
@@ -28,11 +32,14 @@ VOLUME = {"min_conversions": 10, "min_days_active": 14}
 def _day_summary():
     return pd.DataFrame([
         {"campaign": "Alpha", "group": "core", "spend": 100.0,
-         "clicks": 200, "conversions": 20.0},
+         "clicks": 200, "conversions": 20.0,
+         "last_active_date": "2024-02-14"},
         {"campaign": "Beta", "group": "core", "spend": 100.0,
-         "clicks": 200, "conversions": 20.0},
+         "clicks": 200, "conversions": 20.0,
+         "last_active_date": "2024-01-14"},
         {"campaign": "Gamma", "group": "monthly_history_only",
-         "spend": 50.0, "clicks": 100, "conversions": 5.0},
+         "spend": 50.0, "clicks": 100, "conversions": 5.0,
+         "last_active_date": "2023-12-01"},
     ])
 
 
@@ -143,13 +150,15 @@ def test_latest_run_with_volume_wins():
 def test_report_has_no_names(tmp_path):
     recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
     campaigns = recommend_campaigns(recs, _day_summary(), RULES)
+    sens = sensitivity_table(recs, _day_summary(), RULES)
     report = tmp_path / "recommend-report.md"
-    write_recommend_report(report, recs, campaigns, 5.0)
+    write_recommend_report(report, recs, campaigns, sens, 5.0)
     text = report.read_text()
     assert "Alpha" not in text
     assert "Beta" not in text
     assert "Gamma" not in text
     assert "continue: 1" in text
+    assert "unstable" in text
 
 
 def test_main_writes_recommendations(tmp_path, capsys):
@@ -167,6 +176,8 @@ def test_main_writes_recommendations(tmp_path, capsys):
                 "recommendations_by_run": str(tmp_path / "rec_run.csv"),
                 "recommendations_by_campaign": str(
                     tmp_path / "rec_campaign.csv"),
+                "recommendation_sensitivity": str(
+                    tmp_path / "rec_sensitivity.csv"),
                 "recommend_report": str(tmp_path / "recommend-report.md"),
             },
         },
@@ -177,7 +188,7 @@ def test_main_writes_recommendations(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Alpha" not in out
     for name in ("rec_run.csv", "rec_campaign.csv",
-                 "recommend-report.md"):
+                 "rec_sensitivity.csv", "recommend-report.md"):
         assert (tmp_path / name).is_file()
     run_recs = pd.read_csv(tmp_path / "rec_run.csv")
     assert len(run_recs) == 3

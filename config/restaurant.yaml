@@ -114,6 +114,14 @@ analysis:
     test_max_ratio: 2.0
     pause_above_ratio: 2.0
     repeat_min_runs: 2
+    # Recommendation improvements (T5b), provisional. A campaign
+    # is active if its last active date is within
+    # active_window_days of the latest date in the daily data.
+    # The sensitivity lists vary the two thresholds; only
+    # combinations where continue <= test are used.
+    active_window_days: 14
+    sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]
+    sensitivity_test_max_ratio: [1.5, 2.0, 3.0]
   outputs:
     day: outputs/interim/clean_day.csv
     month: outputs/interim/clean_month.csv
@@ -131,4 +139,5 @@ analysis:
     time_report: outputs/reports/time-report.md
     recommendations_by_run: outputs/results/recommendations_by_run.csv
     recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv
+    recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv
     recommend_report: outputs/reports/recommend-report.md
