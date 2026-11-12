@@ -3,7 +3,7 @@
 #   bash run.sh [--config config/validation.yaml]
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, then clean).
+# stages that exist so far (validation, load, clean, then overview).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -71,6 +71,13 @@ fi
 # tables under outputs/interim/ and a report under outputs/reports/.
 # Uses the same config as the load stage.
 if ! .venv/bin/python src/clean.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Stage 4: campaign overview (T3a). Writes one row per campaign
+# to outputs/reports/campaign-overview.csv. Prints only the
+# number of campaigns and where the file was written.
+if ! .venv/bin/python src/overview.py --config "$LOAD_CONFIG"; then
     STATUS=1
 fi
 
