@@ -3,7 +3,7 @@
 #   bash run.sh [--config config/validation.yaml]
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, clean, overview, metrics).
+# stages that exist so far (validation, load, clean, overview, metrics, time).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -85,6 +85,13 @@ fi
 # under outputs/results/ and a report under outputs/reports/.
 # Prints group counts only.
 if ! .venv/bin/python src/metrics.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Stage 6: time patterns, trends and runs (T4). Writes result
+# tables under outputs/results/ and a report under outputs/reports/.
+# Prints counts only.
+if ! .venv/bin/python src/time_patterns.py --config "$LOAD_CONFIG"; then
     STATUS=1
 fi
 

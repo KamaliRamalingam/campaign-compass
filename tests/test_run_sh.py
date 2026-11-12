@@ -32,6 +32,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "groups.py")
     shutil.copy(REPO / "src" / "metrics.py",
                 project / "src" / "metrics.py")
+    shutil.copy(REPO / "src" / "time_patterns.py",
+                project / "src" / "time_patterns.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
@@ -87,6 +89,9 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  campaign_groups:\n"
         "    core: [Alpha]\n"
         "  volume_rule: {min_conversions: 10, min_days_active: 14}\n"
+        "  time_groups: [core]\n"
+        "  weekday_min_conversions: 5\n"
+        "  run_gap_days: 14\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
@@ -96,6 +101,12 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    campaign_summary_month: outputs/results/campaign_summary_month.csv\n"
         "    group_summary: outputs/results/group_summary.csv\n"
         "    metrics_report: outputs/reports/metrics-report.md\n"
+        "    weekday_by_campaign: outputs/results/weekday_by_campaign.csv\n"
+        "    weekday_core: outputs/results/weekday_core.csv\n"
+        "    monthly_by_campaign: outputs/results/monthly_by_campaign.csv\n"
+        "    timeline_by_campaign: outputs/results/timeline_by_campaign.csv\n"
+        "    runs: outputs/results/runs.csv\n"
+        "    time_report: outputs/reports/time-report.md\n"
     )
     (project / "config" / "validation.yaml").write_text(
         "cross_file_tolerance: {clicks: 2, cost: 5.00, conversions: 0.05}\n"
@@ -140,6 +151,13 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert (project / "outputs" / "results" / "campaign_summary_month.csv").is_file()
     assert (project / "outputs" / "results" / "group_summary.csv").is_file()
     assert (project / "outputs" / "reports" / "metrics-report.md").is_file()
+    # The time stage also ran: time tables and a report.
+    assert (project / "outputs" / "results" / "weekday_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "weekday_core.csv").is_file()
+    assert (project / "outputs" / "results" / "monthly_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "timeline_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "runs.csv").is_file()
+    assert (project / "outputs" / "reports" / "time-report.md").is_file()
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout
