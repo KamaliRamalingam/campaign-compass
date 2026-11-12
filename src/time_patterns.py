@@ -39,11 +39,13 @@ import pandas as pd
 import yaml
 
 try:
+    from src.paths import apply_output_root
     from src.clean import load_config
     from src.groups import assign_group
     from src.metrics import _safe_divide
 except ImportError:  # running as `python src/time_patterns.py`
     from clean import load_config
+    from paths import apply_output_root
     from groups import assign_group
     from metrics import _safe_divide
 
@@ -275,6 +277,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        config = apply_output_root(config)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

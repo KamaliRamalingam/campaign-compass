@@ -1,0 +1,83 @@
+# Export validation config for the synthetic Company B reuse
+# test (T7). The files do not exist until
+# `bash run.sh --client synthetic_b` generates them.
+# ui_expected totals were computed once from the seeded
+# generator (seed 42); a test checks the generator still
+# reproduces them. Dates are left null on purpose, as in the
+# restaurant validation config.
+# Cross-file tolerances are the same as the restaurant config:
+# clicks 2, cost 5.00, conversions 0.05.
+cross_file_tolerance:
+  clicks: 2
+  cost: 5.00
+  conversions: 0.05
+files:
+  - path: outputs/synthetic_b/raw/synthetic_b_campaign_by_day.csv
+    kind: campaign_by_day
+    columns:
+      clicks: Clicks
+      cost: Cost (EUR)
+      conversions: Conversions
+      date: Date
+      campaign: Campaign name
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 618
+      clicks: 20799
+      cost: 105431.43
+      conversions: 3636
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01
+  - path: outputs/synthetic_b/raw/synthetic_b_campaign_by_month.csv
+    kind: campaign_by_month
+    columns:
+      clicks: Clicks
+      cost: Cost (EUR)
+      conversions: Conversions
+      date: Date
+      campaign: Campaign name
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 30
+      clicks: 17397
+      cost: 94988.46
+      conversions: 2762
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01
+  - path: outputs/synthetic_b/raw/synthetic_b_monthly_totals.csv
+    kind: monthly_totals
+    columns:
+      clicks: Clicks
+      cost: Cost (EUR)
+      conversions: Conversions
+      date: Date
+      campaign: null
+    title_lines: 2
+    delimiter: ","
+    encoding: utf-8-sig
+    decimal: "."
+    thousands: ","
+    ui_expected:
+      rows: 12
+      clicks: 38196
+      cost: 200419.89
+      conversions: 6398
+      date_start: null
+      date_end: null
+    tolerance:
+      cost: 0.05
+      conversions: 0.01

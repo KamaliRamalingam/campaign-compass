@@ -45,6 +45,10 @@ def parse_number(text, decimal=".", thousands=","):
     if not value:
         return 0.0
     value = value.replace("SEK", "").strip()
+    # Currency symbols are stripped, not assumed: the restaurant
+    # exports use SEK and the synthetic Company B export uses EUR.
+    for symbol in ("EUR", "€", "$", "£"):
+        value = value.replace(symbol, "").strip()
     if thousands:
         value = value.replace(thousands, "")
     if decimal and decimal != ".":

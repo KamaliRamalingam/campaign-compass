@@ -28,6 +28,36 @@ continue, test or pause.
 Reuse: change the data file and the config file. Tested on: (restaurant account;
 synthetic Company B dataset, clearly labelled synthetic).
 
+## Reuse test
+The pipeline reruns on a different Google Ads account by changing only the
+data files and one config file, proved on a synthetic Company B dataset
+(`bash run.sh --client synthetic_b`):
+- The data is generated at run time by `src/make_synthetic.py` (fixed seed 42)
+  into the ignored `outputs/synthetic_b/raw/` folder, and is never committed.
+  It uses different header names, different campaign and conversion action
+  names, EUR instead of SEK, a shorter date range, an ended campaign, a
+  low-volume campaign, missing days, duplicate rows and a gap of more than
+  14 days.
+- What changed to run it: `config/synthetic_b.yaml` (its own column mapping,
+  paths, groups, action groups, totals and `output_root: outputs/synthetic_b`)
+  and `config/validation_synthetic_b.yaml` (its own UI totals, computed once
+  from the seeded generator). No restaurant output is touched.
+- What did not change: the volume rule, the recommendation thresholds and
+  the recent-trend thresholds are identical to the restaurant config.
+- Code changes the reuse needed (see the reuse report and the T7 pull
+  request): a new `src/paths.py` so every stage writes under the config's
+  `output_root`; the currency stripping in the two number parsers now
+  handles EUR as well as SEK (it was hard-coded to SEK); the dashboard
+  takes its currency from the config instead of hard-coding SEK, and has
+  a sidebar client selector.
+- Location and hour analyses are skipped with a printed message, because
+  the synthetic export has no location column and no hour-of-day data.
+  They are never faked.
+- Known limitation: the dashboard conversion page still names the
+  restaurant's engagement actions in one sentence, even for Company B.
+  The reuse report (`outputs/synthetic_b/reports/reuse-report.md`) lists
+  the skipped analyses and every config key that had to differ.
+
 ## How to run the dashboard
 Run `bash run.sh` first, then `bash dashboard.sh` and open the address it prints.
 
