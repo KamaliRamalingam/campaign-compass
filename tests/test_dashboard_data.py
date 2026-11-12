@@ -316,10 +316,15 @@ def test_recommendations_display_hides_group_and_runs():
     recs = _recommendations()
     recs["recent_trend"] = ["worsening", "not_active"]
     recs["ratio_vs_run_average"] = [1.5, None]
+    recs["recent_vs_prior_ratio"] = [1.3, None]
+    recs["trend_reason"] = [
+        "cost per tracked action is 1.30 times the prior 28 days "
+        "and 1.50 times the run average", ""]
     table = dashboard_data.recommendations_display(recs)
     assert list(table.columns) == [
         "campaign", "label", "status_now", "recent_trend",
-        "ratio_vs_run_average", "action_text", "reason"]
+        "ratio_vs_run_average", "recent_vs_prior_ratio",
+        "trend_reason", "action_text", "reason"]
     assert list(table["recent_trend"]) == ["worsening", "not_active"]
     assert table.iloc[0]["ratio_vs_run_average"] == 1.5
     assert pd.isna(table.iloc[1]["ratio_vs_run_average"])

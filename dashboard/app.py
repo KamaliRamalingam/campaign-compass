@@ -257,6 +257,9 @@ def _page_recommendations(tables, caveat, date_range, updated):
             f"**Recent trend:** {row['recent_trend']}  \n"
             "**Ratio vs run average:** "
             f"{dashboard_data.format_ratio(row['ratio_vs_run_average'])}  \n"
+            "**Ratio vs prior 28 days:** "
+            f"{dashboard_data.format_ratio(row['recent_vs_prior_ratio'])}  \n"
+            f"**Trend reason:** {row['trend_reason']}  \n"
             f"**Action:** {row['action_text']}  \n"
             f"**Reason:** {row['reason']}"
         )

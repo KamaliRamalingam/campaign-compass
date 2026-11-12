@@ -135,6 +135,8 @@ analysis:
     conversion_lag_days: 3
     worsening_ratio: 1.5
     improving_ratio: 0.67
+    worsening_vs_prior_ratio: 1.3
+    improving_vs_prior_ratio: 0.77
     min_tracked_actions_in_window: 30
   outputs:
     day: outputs/interim/clean_day.csv

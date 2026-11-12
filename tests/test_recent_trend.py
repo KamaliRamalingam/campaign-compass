@@ -28,6 +28,8 @@ SETTINGS = {
     "conversion_lag_days": 3,
     "worsening_ratio": 1.5,
     "improving_ratio": 0.67,
+    "worsening_vs_prior_ratio": 1.3,
+    "improving_vs_prior_ratio": 0.77,
     "min_tracked_actions_in_window": 30,
 }
 
@@ -133,12 +135,129 @@ def test_recent_trend_insufficient_when_a_window_is_small():
     assert table.iloc[0]["recent_trend"] == TREND_INSUFFICIENT
 
 
-def test_recent_trend_insufficient_without_a_current_run():
+def test_recent_trend_worsening_by_prior_only():
+    # Recent cost 6.50 is 1.30 times the prior window but only
+    # 1.30 times the run average, so the prior rule fires.
+    day_df, runs_df, recs = _setup(recent_spend=260.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "worsening"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.3)
+    assert row["ratio_vs_run_average"] == pytest.approx(1.3)
+    assert row["trend_reason"] == (
+        "cost per tracked action is 1.30 times the prior 28 days "
+        "and 1.30 times the run average")
+
+
+def test_recent_trend_worsening_by_run_average_only():
+    # Recent cost 7.50 is 1.50 times the run average but only
+    # 1.25 times the prior window, so the run rule fires.
+    day_df, runs_df, recs = _setup(
+        recent_spend=300.0, prior_spend=240.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "worsening"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.25)
+    assert row["ratio_vs_run_average"] == pytest.approx(1.5)
+
+
+def test_recent_trend_worsening_by_both():
+    day_df, runs_df, recs = _setup(recent_spend=300.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "worsening"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.5)
+    assert row["ratio_vs_run_average"] == pytest.approx(1.5)
+
+
+def test_recent_trend_worsening_wins_over_improving():
+    # Prior ratio 1.30 is worsening, run ratio 0.65 is
+    # improving; worsening wins.
+    day_df, runs_df, recs = _setup(
+        recent_spend=260.0, run_average=10.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "worsening"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.3)
+    assert row["ratio_vs_run_average"] == pytest.approx(0.65)
+
+
+def test_recent_trend_improving_by_prior_only():
+    # Recent cost 3.85 is 0.77 times the prior window but 0.77
+    # times the run average, so the prior rule fires.
+    day_df, runs_df, recs = _setup(recent_spend=154.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "improving"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(0.77)
+    assert row["ratio_vs_run_average"] == pytest.approx(0.77)
+
+
+def test_recent_trend_improving_by_run_average_only():
+    # Recent cost 3.35 is 0.67 times the run average but 0.84
+    # times the prior window, so the run rule fires.
+    day_df, runs_df, recs = _setup(
+        recent_spend=134.0, prior_spend=160.0)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "improving"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(0.84, abs=0.01)
+    assert row["ratio_vs_run_average"] == pytest.approx(0.67)
+
+
+def test_recent_trend_example_from_the_task():
+    # 1.52 times the prior 28 days and 1.34 times the run
+    # average gives worsening, with that exact reason.
+    day_df, runs_df, recs = _setup(
+        recent_spend=268.0, prior_spend=176.4)
+    table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
+    row = table.iloc[0]
+    assert row["recent_trend"] == "worsening"
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.52, abs=0.01)
+    assert row["ratio_vs_run_average"] == pytest.approx(1.34)
+    assert row["trend_reason"] == (
+        "cost per tracked action is 1.52 times the prior 28 days "
+        "and 1.34 times the run average")
+
+
+def test_recent_trend_prior_window_empty():
+    # No rows in the prior window: the prior ratio is empty
+    # and the trend is insufficient_data.
+    rows = _day_rows("Alpha", date(2026, 1, 15), 28,
+                     200.0 / 28, 40.0 / 28)
+    rows += _day_rows("Alpha", date(2026, 2, 12), 3,
+                      200.0 / 28, 40.0 / 28)
+    day_df = pd.DataFrame(rows)
+    runs_df = pd.DataFrame([
+        {"campaign": "Alpha", "run_number": 1,
+         "start": "2026-01-15", "end": "2026-02-14",
+         "cost_per_conversion": 5.0},
+    ])
+    recommendations = pd.DataFrame([
+        {"campaign": "Alpha", "group": "core",
+         "status_now": "active", "action_text": "keep running"},
+    ])
+    table = compute_recent_trend(
+        day_df, runs_df, recommendations, SETTINGS)
+    row = table.iloc[0]
+    assert row["prior_tracked_actions"] == 0.0
+    assert pd.isna(row["recent_vs_prior_ratio"])
+    assert row["recent_trend"] == TREND_INSUFFICIENT
+    assert "not enough data" in row["trend_reason"]
+
+
+def test_recent_trend_without_a_current_run_uses_prior_only():
+    # No run average: the prior window alone decides. Here the
+    # prior ratio is 1.00, so the trend is stable.
     day_df, runs_df, recs = _setup()
     runs_df = runs_df.loc[runs_df["campaign"] == "Beta"]
     table = compute_recent_trend(day_df, runs_df, recs, SETTINGS)
-    assert table.iloc[0]["recent_trend"] == TREND_INSUFFICIENT
-    assert pd.isna(table.iloc[0]["ratio_vs_run_average"])
+    row = table.iloc[0]
+    assert row["recent_trend"] == TREND_STABLE
+    assert pd.isna(row["ratio_vs_run_average"])
+    assert row["recent_vs_prior_ratio"] == pytest.approx(1.0)
+    assert row["trend_reason"] == (
+        "cost per tracked action is 1.00 times the prior 28 days")
 
 
 def test_current_run_average_uses_the_latest_run():

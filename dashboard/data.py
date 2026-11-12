@@ -322,17 +322,23 @@ def recommendations_display(recommendations):
     """Recommendations for the Recommendations page.
 
     Campaign, label, status_now, recent_trend, ratio against
-    the run average, action_text and reason. The group and run
-    columns are hidden. Older result files without recent_trend
-    or the ratio get an empty value.
+    the run average, ratio against the prior window, trend
+    reason, action_text and reason. The group and run columns
+    are hidden. Older result files without recent_trend or the
+    ratios get an empty value.
     """
     table = recommendations.copy()
     if "recent_trend" not in table.columns:
         table["recent_trend"] = ""
     if "ratio_vs_run_average" not in table.columns:
         table["ratio_vs_run_average"] = None
+    if "recent_vs_prior_ratio" not in table.columns:
+        table["recent_vs_prior_ratio"] = None
+    if "trend_reason" not in table.columns:
+        table["trend_reason"] = ""
     columns = ["campaign", "label", "status_now", "recent_trend",
-               "ratio_vs_run_average", "action_text", "reason"]
+               "ratio_vs_run_average", "recent_vs_prior_ratio",
+               "trend_reason", "action_text", "reason"]
     return table[columns].sort_values(
         "campaign").reset_index(drop=True)
 
