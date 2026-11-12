@@ -33,19 +33,31 @@ def _context(caveat, date_range, updated):
 
 def _page_conversion(tables, caveat, date_range, updated):
     """What counts as a conversion."""
-    st.header("What counts as a conversion")
+    st.header("What counts as a tracked action")
     _context(caveat, date_range, updated)
     shares = dashboard_data.conversion_shares(
         tables["conversion_mix_by_campaign"])
-    st.bar_chart(shares.set_index("action")["share"])
-    st.dataframe(shares, use_container_width=True)
-    engagement = dashboard_data.engagement_share(
+    import altair as alt
+    chart = alt.Chart(shares).mark_bar().encode(
+        x=alt.X("share", axis=alt.Axis(format="%"),
+                title="Share of tracked actions"),
+        y=alt.Y("action", sort="-x", title="Action"),
+        tooltip=["action", "action_group", "tracked_actions",
+                 alt.Tooltip("share", format=".1%")],
+    )
+    st.altair_chart(chart, use_container_width=True)
+    display = shares[["action", "action_group", "tracked_actions",
+                      "share_pct"]].copy()
+    display.columns = ["Action", "Action group", "Tracked actions",
+                       "Share of tracked actions (%)"]
+    st.dataframe(display, use_container_width=True)
+    engagement_all = dashboard_data.engagement_share_all(
         tables["conversion_mix_by_campaign"])
     st.write(
-        "The tracked actions are directions requests, phone calls "
-        "and store visits. Engagement actions (menu views, website "
-        "visits and similar) are not counted as tracked actions; "
-        f"they are {engagement:.0%} of Conversions in this export."
+        "Engagement actions (menu views, website visits, other "
+        "engagements) are "
+        f"{engagement_all:.1%} of All conv. but are not counted "
+        "as tracked actions."
     )
 
 
@@ -172,7 +184,7 @@ def _page_recommendations(tables, caveat, date_range, updated):
 
 
 PAGES = {
-    "What counts as a conversion": _page_conversion,
+    "What counts as a tracked action": _page_conversion,
     "Overview": _page_overview,
     "Campaign comparison": _page_comparison,
     "Runs": _page_runs,
