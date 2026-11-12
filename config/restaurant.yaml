@@ -109,6 +109,10 @@ analysis:
   # decision, 2026-11-12. The benchmark is calculated, not
   # typed in: core group overall cost per conversion = sum of
   # core spend / sum of core conversions.
+  # The caveat text (T8) is written here once and used
+  # everywhere: recommend.py, the reports and the dashboard read
+  # it from the config instead of their own text.
+  caveat_text: "Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers."
   recommendation_rules:
     continue_max_ratio: 1.0
     test_max_ratio: 2.0

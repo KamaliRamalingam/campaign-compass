@@ -94,6 +94,7 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  impressions: null\n"
         "required_columns: [date, campaign, cost, clicks, conversions]\n"
         "analysis:\n"
+        "  caveat_text: 'Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers.'\n"
         "  daily_start: '2023-10-13'\n"
         "  daily_end: '2026-11-12'\n"
         "  monthly_end: '2023-09-30'\n"

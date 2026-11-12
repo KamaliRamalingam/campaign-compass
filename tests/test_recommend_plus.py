@@ -11,9 +11,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.recommend import (CAVEAT, action_text, recommend_campaigns,
+from src.recommend import (action_text, recommend_campaigns,
                            recommend_runs, sensitivity_table,
                            write_recommend_report)
+
+CAVEAT = "Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers."
 
 RULES = {
     "continue_max_ratio": 1.0,
@@ -77,7 +79,7 @@ def test_status_now_at_the_window_boundary():
                                   "ratio_to_benchmark",
                                   "cost_per_conversion",
                                   "start", "end"])
-    campaigns = recommend_campaigns(empty, summary, RULES)
+    campaigns = recommend_campaigns(empty, summary, RULES, CAVEAT)
     by_name = campaigns.set_index("campaign")
     assert by_name.loc["Edge", "status_now"] == "active"
     assert by_name.loc["Old", "status_now"] == "ended"
@@ -85,8 +87,8 @@ def test_status_now_at_the_window_boundary():
 
 
 def test_best_run_is_the_earlier_run():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
-    campaigns = recommend_campaigns(recs, _day_summary(), RULES)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     alpha = campaigns[campaigns["campaign"] == "Alpha"].iloc[0]
     # Latest run with volume is run 2 (test, ratio 2.0); the best
     # run is run 1 (cost per conversion 5.0, not 10.0).
@@ -118,7 +120,7 @@ def test_best_run_empty_when_no_volume():
                                   "ratio_to_benchmark",
                                   "cost_per_conversion",
                                   "start", "end"])
-    campaigns = recommend_campaigns(empty, summary, RULES)
+    campaigns = recommend_campaigns(empty, summary, RULES, CAVEAT)
     gamma = campaigns.iloc[0]
     assert gamma["label"] == "insufficient_data"
     assert pd.isna(gamma["best_run_number"])
@@ -166,7 +168,7 @@ def _sensitivity_for_ratio(ratio):
          "clicks": 10, "conversions": 10.0,
          "last_active_date": "2024-01-14"},
     ])
-    recs = recommend_runs(runs, 5.0, RULES, VOLUME)
+    recs = recommend_runs(runs, 5.0, RULES, VOLUME, CAVEAT)
     return sensitivity_table(recs, summary, RULES)
 
 
@@ -208,8 +210,8 @@ def test_sensitivity_insufficient_is_stable():
 
 
 def test_report_has_no_names(tmp_path):
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME)
-    campaigns = recommend_campaigns(recs, _day_summary(), RULES)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     sens = sensitivity_table(recs, _day_summary(), RULES)
     report = tmp_path / "recommend-report.md"
     write_recommend_report(report, recs, campaigns, sens, 5.0)
