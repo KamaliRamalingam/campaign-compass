@@ -48,9 +48,11 @@ import pandas as pd
 import yaml
 
 try:
+    from src.paths import apply_output_root
     from src.clean import load_config
 except ImportError:  # running as `python src/recommend.py`
     from clean import load_config
+    from paths import apply_output_root
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 LABEL_INSUFFICIENT = "insufficient_data"
@@ -360,6 +362,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        config = apply_output_root(config)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

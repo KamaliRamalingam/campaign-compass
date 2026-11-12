@@ -31,7 +31,8 @@ def _context(caveat, date_range, updated):
     )
 
 
-def _page_conversion(tables, caveat, date_range, updated):
+def _page_conversion(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """What counts as a conversion."""
     st.header("What counts as a tracked action")
     _context(caveat, date_range, updated)
@@ -61,7 +62,8 @@ def _page_conversion(tables, caveat, date_range, updated):
     )
 
 
-def _page_overview(tables, caveat, date_range, updated):
+def _page_overview(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """Spend and conversions by group; core campaigns table."""
     st.header("Overview")
     _context(caveat, date_range, updated)
@@ -93,7 +95,8 @@ def _page_overview(tables, caveat, date_range, updated):
     )
 
 
-def _page_comparison(tables, caveat, date_range, updated):
+def _page_comparison(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """Cost per tracked action for core campaigns."""
     st.header("Campaign comparison")
     _context(caveat, date_range, updated)
@@ -108,7 +111,7 @@ def _page_comparison(tables, caveat, date_range, updated):
         x=alt.X("cost_per_tracked_action",
                 scale=alt.Scale(type="log") if log_scale else
                 alt.Scale(type="linear"),
-                title="Cost per tracked action (SEK)"),
+                title=f"Cost per tracked action ({currency})"),
         y=alt.Y("campaign", sort="-x", title="Campaign"),
         tooltip=["campaign", "cost_per_tracked_action", "rank"],
     )
@@ -131,7 +134,8 @@ def _page_comparison(tables, caveat, date_range, updated):
     )
 
 
-def _page_runs(tables, caveat, date_range, updated):
+def _page_runs(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """One campaign's runs as a chart and a table."""
     st.header("Runs")
     _context(caveat, date_range, updated)
@@ -144,7 +148,7 @@ def _page_runs(tables, caveat, date_range, updated):
         x=alt.X("run_number", axis=alt.Axis(format="d"),
                 title="Run"),
         y=alt.Y("cost_per_tracked_action",
-                title="Cost per tracked action (SEK)"),
+                title=f"Cost per tracked action ({currency})"),
         tooltip=["run_number", "start", "end", "spend",
                  "cost_per_tracked_action", "volume_flag"],
     )
@@ -153,7 +157,8 @@ def _page_runs(tables, caveat, date_range, updated):
                  use_container_width=True)
 
 
-def _page_weekday(tables, caveat, date_range, updated):
+def _page_weekday(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """Pooled core weekday chart and a campaign selector."""
     st.header("Weekday")
     _context(caveat, date_range, updated)
@@ -169,7 +174,7 @@ def _page_weekday(tables, caveat, date_range, updated):
         x=alt.X("weekday", sort=list(pooled["weekday"]),
                 title="Weekday"),
         y=alt.Y("cost_per_tracked_action",
-                title="Cost per tracked action (SEK)"),
+                title=f"Cost per tracked action ({currency})"),
         tooltip=["weekday", "tracked_actions",
                  "cost_per_tracked_action"],
     )
@@ -190,7 +195,8 @@ def _page_weekday(tables, caveat, date_range, updated):
                  use_container_width=True)
 
 
-def _page_trend(tables, caveat, date_range, updated):
+def _page_trend(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """Monthly or weekly trend for a selected campaign."""
     st.header("Trend")
     _context(caveat, date_range, updated)
@@ -205,7 +211,7 @@ def _page_trend(tables, caveat, date_range, updated):
         chart = alt.Chart(table).mark_line(point=True).encode(
             x=alt.X("week_start", title="Week starting"),
             y=alt.Y("cost_per_tracked_action",
-                    title="Cost per tracked action (SEK)"),
+                    title=f"Cost per tracked action ({currency})"),
             tooltip=["week_start", "spend", "tracked_actions",
                      "cost_per_tracked_action"],
         )
@@ -218,7 +224,7 @@ def _page_trend(tables, caveat, date_range, updated):
     chart = alt.Chart(table).mark_line(point=True).encode(
         x=alt.X("month", title="Month"),
         y=alt.Y("cost_per_tracked_action",
-                title="Cost per tracked action (SEK)"),
+                title=f"Cost per tracked action ({currency})"),
         color=alt.Color("source", title="Source"),
         tooltip=["month", "source", "spend", "tracked_actions",
                  "cost_per_tracked_action"],
@@ -232,7 +238,8 @@ def _page_trend(tables, caveat, date_range, updated):
                  use_container_width=True)
 
 
-def _page_recommendations(tables, caveat, date_range, updated):
+def _page_recommendations(tables, caveat, date_range, updated,
+                     currency="SEK"):
     """Recommendations: small table, then one block per campaign."""
     st.header("Recommendations")
     _context(caveat, date_range, updated)
@@ -280,19 +287,33 @@ def main():
     """Load the result tables and show the selected page."""
     st.set_page_config(layout="wide")
     st.title("CampaignCompass")
-    config = dashboard_data.load_config()
+    clients = dashboard_data.list_clients()
+    client = st.sidebar.selectbox("Client", clients, index=0)
+    repo_root = Path(__file__).resolve().parents[1]
+    if client == "restaurant":
+        config = dashboard_data.load_config()
+        output_root = None
+    else:
+        client_config = repo_root / "config" / f"{client}.yaml"
+        config = (dashboard_data.load_config(client_config)
+                  if client_config.is_file()
+                  else dashboard_data.load_config())
+        output_root = repo_root / "outputs" / client
     caveat = dashboard_data.caveat_text(config)
+    currency = config.get("currency", "SEK")
     try:
-        tables = dashboard_data.load_tables(config)
+        tables = dashboard_data.load_tables(
+            config, output_root=output_root)
     except FileNotFoundError:
         st.error("Run bash run.sh first")
         st.stop()
-    paths = dashboard_data.table_paths(config)
+    paths = dashboard_data.table_paths(
+        config, output_root=output_root)
     date_range = dashboard_data.data_date_range(
         tables["campaign_summary_day"])
     updated = dashboard_data.last_updated(paths.values())
     page = st.sidebar.radio("Page", list(PAGES))
-    PAGES[page](tables, caveat, date_range, updated)
+    PAGES[page](tables, caveat, date_range, updated, currency)
 
 
 if __name__ == "__main__":

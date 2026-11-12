@@ -116,24 +116,56 @@ def caveat_text(config):
     return config["analysis"]["caveat_text"]
 
 
-def table_paths(config, root=None):
-    """Resolve every required table path, from config or default."""
-    base = Path(root) if root else REPO_ROOT
+def list_clients(outputs_dir=None):
+    """Client names with result tables to show in the dashboard.
+
+    "restaurant" first (the default, from outputs/ itself), then
+    any folder directly under outputs/ that has a results table
+    (for example synthetic_b, from outputs/synthetic_b/results/).
+    """
+    base = Path(outputs_dir) if outputs_dir else REPO_ROOT / "outputs"
+    clients = ["restaurant"]
+    if base.is_dir():
+        for folder in sorted(base.iterdir()):
+            if folder.is_dir() and (
+                folder / "results"
+                / "recommendations_by_campaign.csv"
+            ).is_file():
+                clients.append(folder.name)
+    return clients
+
+
+def table_paths(config, root=None, output_root=None):
+    """Resolve every required table path, from config or default.
+
+    root is the project root (as in the tests). output_root is
+    a client output folder such as outputs/synthetic_b: each
+    configured path has its leading "outputs/" part replaced
+    by it, so the same config paths work for every client.
+    """
     outputs = (config.get("analysis") or {}).get("outputs") or {}
-    return {
-        key: base / outputs.get(key, DEFAULT_PATHS[key])
-        for key in REQUIRED_TABLES
-    }
+    paths = {}
+    for key in REQUIRED_TABLES:
+        configured = outputs.get(key, DEFAULT_PATHS[key])
+        if output_root is not None:
+            relative = Path(configured)
+            if relative.parts and relative.parts[0] == "outputs":
+                relative = Path(*relative.parts[1:])
+            paths[key] = Path(output_root) / relative
+        else:
+            base = Path(root) if root else REPO_ROOT
+            paths[key] = base / configured
+    return paths
 
 
-def load_tables(config=None, root=None):
+def load_tables(config=None, root=None, output_root=None):
     """Read all required result tables. Returns name -> DataFrame.
 
     Raises FileNotFoundError naming the missing file and telling
     the user to run bash run.sh first.
     """
     config = config if config is not None else load_config()
-    paths = table_paths(config, root=root)
+    paths = table_paths(config, root=root, output_root=output_root)
     tables = {}
     for key, path in paths.items():
         if not path.is_file():

@@ -1,0 +1,159 @@
+# Client-specific settings for the synthetic Company B reuse
+# test (T7). This is NOT a real account: the data is generated
+# at run time by src/make_synthetic.py with a fixed seed, into
+# the ignored outputs/synthetic_b/raw/ folder. Do not put
+# account IDs or credentials in this file.
+client: synthetic_b
+currency: EUR
+primary_conversions: []
+min_conversions: 10
+min_days_active: 14
+
+# Input exports (T7). The files do not exist until
+# `bash run.sh --client synthetic_b` generates them. Paths are
+# relative to the repo root. Column names are the headers the
+# generator writes, which deliberately differ from the
+# restaurant export, so the column mapping is really tested.
+input:
+  title_lines: 2
+  encoding: utf-8-sig
+  delimiter: ","
+  decimal: "."
+  thousands: ","
+  files:
+    day:
+      path: outputs/synthetic_b/raw/synthetic_b_campaign_by_day.csv
+      output: outputs/interim/campaign_by_day.csv
+    month:
+      path: outputs/synthetic_b/raw/synthetic_b_campaign_by_month.csv
+      output: outputs/interim/campaign_by_month.csv
+    totals:
+      path: outputs/synthetic_b/raw/synthetic_b_monthly_totals.csv
+
+# Columns: logical name -> header in the generated file.
+columns:
+  date:
+    day: Date
+    month: Date
+  campaign: Campaign name
+  cost: Cost (EUR)
+  clicks: Clicks
+  conversions: Conversions
+  impressions: Impressions
+
+required_columns: [date, campaign, cost, clicks, conversions]
+
+# Analysis ranges (T7). The generated daily data runs
+# 2026-01-05 to 2026-06-30; monthly data runs 2025-07 to
+# 2025-12. Missing days are NOT filled: a missing day means no
+# activity.
+analysis:
+  # Output root (T7): every stage writes under this folder
+  # instead of outputs/, so the restaurant outputs are untouched.
+  output_root: outputs/synthetic_b
+  daily_start: "2026-01-05"
+  daily_end: "2026-06-30"
+  monthly_end: "2025-12-31"
+  # Campaign selection: both empty means use all campaigns.
+  include_campaigns: []
+  exclude_campaigns: []
+  # Campaign groups (T7): all five generated campaigns in one
+  # core group. There is no location in the names, so no other
+  # group exists.
+  campaign_groups:
+    core:
+      - Blue Spoon
+      - Green Fork
+      - Red Kettle
+      - Golden Ladle
+      - Silver Plate
+  # Volume rule: unchanged from the restaurant config, so reuse
+  # did not need a threshold change.
+  volume_rule:
+    min_conversions: 10
+    min_days_active: 14
+  # Time patterns: same values as the restaurant config.
+  time_groups: [core]
+  weekday_min_conversions: 5
+  run_gap_days: 14
+  # Recommendation rules: same values as the restaurant config.
+  # The caveat text is written here once and used everywhere.
+  caveat_text: "Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers."
+  recommendation_rules:
+    continue_max_ratio: 1.0
+    test_max_ratio: 2.0
+    pause_above_ratio: 2.0
+    repeat_min_runs: 2
+    active_window_days: 14
+    sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]
+    sensitivity_test_max_ratio: [1.5, 2.0, 3.0]
+  # Recent trend: same values as the restaurant config.
+  recent_trend:
+    recent_window_days: 28
+    conversion_lag_days: 3
+    worsening_ratio: 1.5
+    improving_ratio: 0.67
+    worsening_vs_prior_ratio: 1.3
+    improving_vs_prior_ratio: 0.77
+    min_tracked_actions_in_window: 30
+  # Output paths: written exactly as in the restaurant config.
+  # analysis.output_root rewrites them under outputs/synthetic_b.
+  outputs:
+    day: outputs/interim/clean_day.csv
+    month: outputs/interim/clean_month.csv
+    report: outputs/reports/cleaning-report.md
+    overview: outputs/reports/campaign-overview.csv
+    campaign_summary_day: outputs/results/campaign_summary_day.csv
+    campaign_summary_month: outputs/results/campaign_summary_month.csv
+    group_summary: outputs/results/group_summary.csv
+    metrics_report: outputs/reports/metrics-report.md
+    weekday_by_campaign: outputs/results/weekday_by_campaign.csv
+    weekday_core: outputs/results/weekday_core.csv
+    monthly_by_campaign: outputs/results/monthly_by_campaign.csv
+    timeline_by_campaign: outputs/results/timeline_by_campaign.csv
+    runs: outputs/results/runs.csv
+    time_report: outputs/reports/time-report.md
+    recommendations_by_run: outputs/results/recommendations_by_run.csv
+    recommendations_by_campaign: outputs/results/recommendations_by_campaign.csv
+    recommendation_sensitivity: outputs/results/recommendation_sensitivity.csv
+    recommend_report: outputs/reports/recommend-report.md
+    recent_trend: outputs/results/recent_trend.csv
+    weekly_by_campaign: outputs/results/weekly_by_campaign.csv
+    recent_trend_report: outputs/reports/recent-trend-report.md
+
+# Conversion breakdown (T7). The generated conversion export has
+# 2 title lines, then a header. Action groups use the generated
+# action names; "Newsletter signup" and "App download" are in
+# no group, so they are unmapped and reported, never dropped.
+# ui_expected totals were computed once from the seeded
+# generator (seed 42); a test checks the generator still
+# reproduces them.
+conversion_breakdown:
+  file:
+    path: outputs/synthetic_b/raw/synthetic_b_conversion_by_campaign_month.csv
+    title_lines: 2
+  columns:
+    campaign: Campaign name
+    month: Month
+    action: Conversion action
+    conversions: Conversions
+    all_conversions: All conv.
+  ui_expected:
+    conversions: 5310
+    all_conversions: 21601.99
+    tolerance: 0.05
+  action_groups:
+    high_intent:
+      - Get directions
+      - Phone call
+      - Table booking
+      - Order online
+    engagement:
+      - Menu view
+      - Website visit
+  outputs:
+    mix_by_campaign: outputs/results/conversion_mix_by_campaign.csv
+    mix_by_campaign_month: outputs/results/conversion_mix_by_campaign_month.csv
+    mix_by_run: outputs/results/conversion_mix_by_run.csv
+    campaign_summary_intent: outputs/results/campaign_summary_intent.csv
+    report: outputs/reports/conversion-breakdown-report.md

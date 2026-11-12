@@ -35,6 +35,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+try:
+    from src.paths import apply_output_root
+except ImportError:  # running as `python src/<stage>.py`
+    from paths import apply_output_root
+
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 # A gap is a stretch with no activity this long or longer, in days.
 GAP_DAYS = 30
@@ -228,6 +233,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        config = apply_output_root(config)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

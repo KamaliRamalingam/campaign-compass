@@ -29,6 +29,11 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+try:
+    from src.paths import apply_output_root
+except ImportError:  # running as `python src/<stage>.py`
+    from paths import apply_output_root
+
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 # Logical columns, in the order they appear in the output tables.
 # Impressions is last because it is optional and may be absent.
@@ -65,7 +70,10 @@ def _parse_number(series, decimal=".", thousands=","):
     converts to numbers. An empty cell counts as 0.
     """
     text = series.astype(str).str.strip()
-    text = text.str.replace("SEK", "", regex=False).str.strip()
+    # Currency symbols are stripped, not assumed: the restaurant
+    # exports use SEK and the synthetic Company B export uses EUR.
+    for symbol in ("SEK", "EUR", "€", "$", "£"):
+        text = text.str.replace(symbol, "", regex=False).str.strip()
     if thousands:
         text = text.str.replace(thousands, "", regex=False)
     if decimal and decimal != ".":
@@ -213,6 +221,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        config = apply_output_root(config)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

@@ -40,6 +40,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "conversion_mix.py")
     shutil.copy(REPO / "src" / "recent_trend.py",
                 project / "src" / "recent_trend.py")
+    shutil.copy(REPO / "src" / "paths.py",
+                project / "src" / "paths.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
     # The copy must be executable: git stores run.sh as 100644 when
     # pushed through the GitHub API (the API tools cannot set the
