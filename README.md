@@ -28,6 +28,14 @@ continue, test or pause.
 Reuse: change the data file and the config file. Tested on: (restaurant account;
 synthetic Company B dataset, clearly labelled synthetic).
 
+## Workflow
+- Muse builds on branches, and CI checks every pull request.
+- I merge in the GitHub web UI.
+- I run `./run.sh` locally. It creates `.venv` if needed, installs
+  `requirements.txt`, and runs the stages that exist so far
+  (validation now; the pipeline later).
+- Outputs stay in the ignored `outputs/` folder and never go to GitHub.
+
 ## Data
 Client data is not included in this repository. See `docs/data-dictionary.md`.
 

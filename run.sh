@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Local runner (T0c). One command for the student:
+#   ./run.sh [--config config/validation.yaml]
+#
+# Creates .venv if missing, installs requirements.txt, then runs the
+# stages that exist so far (validation now; the pipeline later).
+# Outputs go under outputs/ (git-ignored) and never go to GitHub.
+#
+# Config: --config defaults to config/validation.yaml. If a file with
+# the same name exists under config/local/ (for example
+# config/local/validation.yaml), that local file is used instead.
+# config/local/ is git-ignored and optional; nothing requires it.
+#
+# Prints only PASS/FAIL/INFO lines, counts, sums and dates. Never
+# rows, title lines or file contents. Exit 1 if any stage fails.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+CONFIG="config/validation.yaml"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --config)
+            CONFIG="$2"
+            shift 2
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            echo "Usage: ./run.sh [--config config/validation.yaml]" >&2
+            exit 1
+            ;;
+    esac
+done
+
+LOCAL_CONFIG="config/local/$(basename "$CONFIG")"
+if [ -f "$LOCAL_CONFIG" ]; then
+    CONFIG="$LOCAL_CONFIG"
+fi
+echo "Config: $CONFIG"
+
+if [ ! -x .venv/bin/python ]; then
+    echo "Creating .venv..."
+    python3 -m venv .venv
+fi
+.venv/bin/pip install -q -r requirements.txt
+
+STATUS=0
+
+# Stage 1: export validation (T0b). Report under outputs/reports/.
+REPORT="outputs/reports/validation-report.md"
+mkdir -p "$(dirname "$REPORT")"
+if ! .venv/bin/python src/validate_exports.py --config "$CONFIG" --out "$REPORT"; then
+    STATUS=1
+fi
+echo "Report: $REPORT"
+
+# Later stages (pipeline, etc.) run here, setting STATUS=1 on failure.
+
+if [ "$STATUS" -ne 0 ]; then
+    echo "FAIL: one or more stages failed (see above)"
+    exit 1
+fi
+echo "PASS: all stages passed"
