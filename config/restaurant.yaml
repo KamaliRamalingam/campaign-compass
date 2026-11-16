@@ -2,9 +2,6 @@
 # go/no-go checks. Do not put account IDs or credentials in this file.
 client: restaurant_chain
 currency: SEK
-primary_conversions: []      # names of the conversion actions that count
-min_conversions: 10          # volume threshold (decide and justify)
-min_days_active: 14
 # Optional: remove these if campaign names do not show location/offer
 # location_rule:
 #   source: campaign_name
@@ -52,7 +49,7 @@ required_columns: [date, campaign, cost, clicks, conversions]
 # no monthly start limit. Missing days are NOT filled: a missing
 # day means no activity.
 analysis:
-  daily_start: "2023-10-13"
+  daily_start: "2024-07-01"
   daily_end: "2026-11-12"
   monthly_end: "2023-09-30"
   # Campaign selection (T3a). Both empty means use all campaigns.
@@ -116,7 +113,6 @@ analysis:
   recommendation_rules:
     continue_max_ratio: 1.0
     test_max_ratio: 2.0
-    pause_above_ratio: 2.0
     repeat_min_runs: 2
     # Recommendation improvements (T5b), provisional. A campaign
     # is active if its last active date is within

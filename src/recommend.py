@@ -27,7 +27,11 @@ Labels, from analysis.recommendation_rules:
   insufficient_data (this always wins);
 - continue if ratio <= continue_max_ratio;
 - test if ratio <= test_max_ratio;
-- pause_or_review otherwise (ratio > pause_above_ratio).
+- pause_or_review otherwise (ratio > test_max_ratio).
+
+test_max_ratio is the only pause boundary. A config that
+still sets pause_above_ratio gets a warning that it is not
+used.
 
 repeat_eligible is true only when the campaign has at least
 repeat_min_runs runs with enough volume.
@@ -84,8 +88,7 @@ def label_run(ratio, volume_flag, rules):
     return LABEL_PAUSE
 
 
-def recommend_runs(runs_df, benchmark, rules, volume_rule,
-                    caveat):
+def recommend_runs(runs_df, benchmark, rules, caveat):
     """Recommend per run, with ratio, label, reason and caveat."""
     runs = runs_df.copy()
     rows = []
@@ -266,8 +269,7 @@ def sensitivity_table(run_recs, day_summary, rules):
     continue_list = rules.get("sensitivity_continue_max_ratio") or []
     test_list = rules.get("sensitivity_test_max_ratio") or []
     base = {key: rules[key] for key in
-            ("continue_max_ratio", "test_max_ratio",
-             "pause_above_ratio")
+            ("continue_max_ratio", "test_max_ratio")
             if key in rules}
     rows = []
     for _, campaign_row in day_summary.iterrows():
@@ -369,7 +371,10 @@ def main(argv=None):
     analysis = config["analysis"]
     outputs = analysis.get("outputs") or {}
     rules = analysis.get("recommendation_rules") or {}
-    volume_rule = analysis.get("volume_rule") or {}
+    if "pause_above_ratio" in rules:
+        print("WARNING: recommendation_rules.pause_above_ratio is "
+              "not used (test_max_ratio is the pause boundary); "
+              "remove it from the config")
     try:
         runs_df = pd.read_csv(outputs["runs"])
         day_summary = pd.read_csv(outputs["campaign_summary_day"])
@@ -380,8 +385,7 @@ def main(argv=None):
     try:
         benchmark = compute_benchmark(day_summary)
         caveat = analysis["caveat_text"]
-        run_recs = recommend_runs(runs_df, benchmark, rules,
-                                  volume_rule, caveat)
+        run_recs = recommend_runs(runs_df, benchmark, rules, caveat)
         campaign_recs = recommend_campaigns(
             run_recs, day_summary, rules, caveat)
         sensitivity = sensitivity_table(run_recs, day_summary, rules)
