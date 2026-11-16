@@ -9,9 +9,10 @@ conversion mix by campaign and month
 the conversion export itself (for the action-level intent
 split, through the shared loader in src/conversion_mix.py),
 and writes, all git-ignored:
-- outputs/results/journey_by_campaign.csv: one row per core
-  campaign plus one row for the core group (campaign
-  "core group"): spend, clicks, cost_per_click,
+- outputs/results/journey_by_campaign.csv: one row per
+  campaign in analysis.time_groups (default core, assigned
+  through the config groups) plus one row for those groups
+  together (campaign "core group"): spend, clicks, cost_per_click,
   tracked_actions (Conversions), engagement_actions
   (All conv. of the engagement action group),
   directions_share, calls_share, store_visits_share (shares
@@ -60,11 +61,13 @@ try:
         load_breakdown,
     )
     from src.metrics import _safe_divide
+    from src.groups import assign_group
 except ImportError:  # running as `python src/journey.py`
     from clean import load_config
     from paths import apply_output_root
     from conversion_mix import _normalise_action, load_breakdown
     from metrics import _safe_divide
+    from groups import assign_group
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 CORE_GROUP_LABEL = "core group"
@@ -216,11 +219,8 @@ def main(argv=None):
     analysis = config["analysis"]
     outputs = analysis.get("outputs") or {}
     section = config.get("conversion_breakdown") or {}
-    core_campaigns = (analysis.get("campaign_groups") or {}).get("core")
-    if not core_campaigns:
-        print("ERROR: analysis.campaign_groups.core is not set "
-              "in the config", file=sys.stderr)
-        return 1
+    groups = analysis.get("campaign_groups") or {}
+    time_groups = analysis.get("time_groups") or ["core"]
     intent_categories = section.get("intent_categories")
     if intent_categories is None:
         print("ERROR: conversion_breakdown.intent_categories "
@@ -232,6 +232,20 @@ def main(argv=None):
             section["outputs"]["mix_by_campaign_month"])
     except (KeyError, FileNotFoundError) as exc:
         print(f"ERROR: {exc} (run the earlier stages first)",
+              file=sys.stderr)
+        return 1
+    # The journey covers the campaigns in analysis.time_groups,
+    # assigned through the config groups (default: core).
+    try:
+        core_campaigns = sorted(
+            name for name in clean_day["campaign"].unique()
+            if assign_group(name, groups) in time_groups)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not core_campaigns:
+        print("ERROR: no campaigns in the daily data belong to "
+              f"analysis.time_groups ({', '.join(time_groups)})",
               file=sys.stderr)
         return 1
     try:

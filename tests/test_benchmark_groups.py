@@ -351,3 +351,72 @@ def test_not_judged_gets_no_recent_trend_row():
     assert updated.loc["Gamma", "action_text"] == (
         "not evaluated: group not judged")
     assert updated.loc["Alpha", "recent_trend"] == "stable"
+
+
+# --- M1: journey resolves campaigns through assign_group --------
+
+def _journey_config(tmp_path, analysis_extra):
+    conv = tmp_path / "conv.csv"
+    conv.write_text(
+        "Made-up title\n"
+        "Made-up range\n"
+        "Campaign,Month,Conversion action,Conversions,All conv.\n"
+        "Alpha,January 2026,Local actions - Directions,4,4\n"
+        "Pmax,January 2026,Local actions - Directions,6,6\n"
+        "Gamma,January 2026,Local actions - Directions,9,9\n",
+        encoding="utf-8-sig",
+    )
+    clean_day = tmp_path / "clean_day.csv"
+    pd.DataFrame([
+        {"date": "2026-01-05", "campaign": name, "clicks": 10,
+         "cost": 20.0, "conversions": conversions}
+        for name, conversions in (("Alpha", 4.0), ("Pmax", 6.0),
+                                  ("Gamma", 9.0))
+    ]).to_csv(clean_day, index=False)
+    mix_month = tmp_path / "mix_month.csv"
+    pd.DataFrame(columns=["campaign", "month", "action_group",
+                          "all_conversions"]).to_csv(
+        mix_month, index=False)
+    analysis = {
+        "campaign_groups": {"core": ["Alpha"],
+                            "core_pmax": ["Pmax"],
+                            "other": ["Gamma"]},
+        "outputs": {"day": str(clean_day),
+                    "journey_by_campaign": str(
+                        tmp_path / "journey.csv")},
+    }
+    analysis.update(analysis_extra)
+    config = {
+        "analysis": analysis,
+        "conversion_breakdown": {
+            "file": {"path": str(conv), "title_lines": 2},
+            "columns": {"campaign": "Campaign", "month": "Month",
+                        "action": "Conversion action",
+                        "conversions": "Conversions",
+                        "all_conversions": "All conv."},
+            "intent_categories": {
+                "directions": ["Local actions - Directions"],
+                "calls": [], "store_visits": []},
+            "outputs": {"mix_by_campaign_month": str(mix_month)},
+        },
+    }
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(config))
+    return path
+
+
+def test_journey_uses_time_groups(tmp_path):
+    from src.journey import main as journey_main
+    path = _journey_config(
+        tmp_path, {"time_groups": ["core", "core_pmax"]})
+    assert journey_main(["--config", str(path)]) == 0
+    table = pd.read_csv(tmp_path / "journey.csv")
+    assert list(table["campaign"]) == ["Alpha", "Pmax", "core group"]
+
+
+def test_journey_default_is_core_only(tmp_path):
+    from src.journey import main as journey_main
+    path = _journey_config(tmp_path, {})
+    assert journey_main(["--config", str(path)]) == 0
+    table = pd.read_csv(tmp_path / "journey.csv")
+    assert list(table["campaign"]) == ["Alpha", "core group"]
