@@ -192,7 +192,7 @@ def compute_recent_trend(day_df, runs_df, recommendations,
     for _, rec in recommendations.iterrows():
         if rec["status_now"] != "active":
             continue
-        if rec.get("label") == LABEL_NOT_JUDGED:
+        if rec.get("base_label", rec.get("label")) == LABEL_NOT_JUDGED:
             continue
         campaign = rec["campaign"]
         recent_spend, recent_actions = _window_totals(
@@ -280,6 +280,34 @@ def weekly_table(day_df):
         drop=True)
 
 
+def _strip_suffix(text):
+    """action_text without any trailing worsening suffix."""
+    text = "" if pd.isna(text) else str(text)
+    while text.endswith(WORSENING_SUFFIX):
+        text = text[:-len(WORSENING_SUFFIX)]
+    return text
+
+
+def _base_columns(recs):
+    """base_label / base_action_text / base_reason, filled in.
+
+    Written by src/recommend.py. For an older file without them
+    they are taken from the current columns, with any worsening
+    suffix removed from action_text.
+    """
+    recs = recs.copy()
+    if "base_label" not in recs.columns:
+        recs["base_label"] = recs["label"] \
+            if "label" in recs.columns else None
+    if "base_action_text" not in recs.columns:
+        recs["base_action_text"] = recs["action_text"].map(
+            _strip_suffix)
+    if "base_reason" not in recs.columns:
+        recs["base_reason"] = recs["reason"] \
+            if "reason" in recs.columns else ""
+    return recs
+
+
 def apply_to_recommendations(recommendations, trend_table):
     """Add recent trend, ratios and reason, and the suffix.
 
@@ -287,8 +315,12 @@ def apply_to_recommendations(recommendations, trend_table):
     and no ratio or reason; campaigns labelled not_judged get
     recent_trend not_judged. The suffix is appended to
     action_text only when recent_trend is worsening.
+
+    Idempotent: label, action_text and reason are always rebuilt
+    from the base_ columns, so running the stage twice gives the
+    same file.
     """
-    recs = recommendations.copy()
+    recs = _base_columns(recommendations)
     by_campaign = trend_table.set_index("campaign") \
         if not trend_table.empty else None
     trends = []
@@ -303,7 +335,7 @@ def apply_to_recommendations(recommendations, trend_table):
             run_ratios.append(trend_row["ratio_vs_run_average"])
             prior_ratios.append(trend_row["recent_vs_prior_ratio"])
             reasons.append(trend_row["trend_reason"])
-        elif row.get("label") == LABEL_NOT_JUDGED:
+        elif row.get("base_label") == LABEL_NOT_JUDGED:
             trends.append(TREND_NOT_JUDGED)
             run_ratios.append(None)
             prior_ratios.append(None)
@@ -317,10 +349,14 @@ def apply_to_recommendations(recommendations, trend_table):
     recs["ratio_vs_run_average"] = run_ratios
     recs["recent_vs_prior_ratio"] = prior_ratios
     recs["trend_reason"] = reasons
+    if "label" in recs.columns:
+        recs["label"] = recs["base_label"]
+    if "reason" in recs.columns:
+        recs["reason"] = recs["base_reason"]
     recs["action_text"] = [
         text + WORSENING_SUFFIX if trend == TREND_WORSENING
         else text
-        for text, trend in zip(recs["action_text"], trends)
+        for text, trend in zip(recs["base_action_text"], trends)
     ]
     return recs
 

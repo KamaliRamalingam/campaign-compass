@@ -11,7 +11,9 @@ the config) and writes, all git-ignored:
 - outputs/results/recommendations_by_campaign.csv: per campaign,
   the label of its latest run with enough volume, number of runs
   with enough volume, repeat_eligible, last active date and
-  status (active or ended), best run, action_text, reason, caveat.
+  status (active or ended), best run, action_text, reason, caveat,
+  and base_label / base_action_text / base_reason (copies that
+  src/recent_trend.py rebuilds from, so it is idempotent).
 - outputs/results/recommendation_sensitivity.csv: one row per
   campaign and per combination of the sensitivity threshold
   lists, with the resulting label and label_stable.
@@ -80,6 +82,7 @@ LABEL_PAUSE = "pause_or_review"
 LABEL_NOT_COMPARABLE = "not_comparable"
 LABEL_NOT_JUDGED = "not_judged"
 DEFAULT_BENCHMARK_GROUPS = ("core",)
+BASE_COLUMNS = ("label", "action_text", "reason")
 BASIS_POOLED = "pooled"
 BASIS_LOO = "leave_one_out"
 BASIS_LOO_FALLBACK = "pooled (leave-one-out not possible)"
@@ -408,6 +411,11 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
     table = pd.DataFrame(rows)
     if table.empty:
         return table
+    # Base copies: later stages (recent_trend) rebuild label,
+    # action_text and reason from these, so rerunning them never
+    # stacks changes on top of earlier ones.
+    for column in BASE_COLUMNS:
+        table[f"base_{column}"] = table[column]
     return table.sort_values("campaign").reset_index(drop=True)
 
 
