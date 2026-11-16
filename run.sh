@@ -4,7 +4,7 @@
 #   bash run.sh --client synthetic_b
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, clean, overview, metrics, time, recommend, conversion, recent trend).
+# stages that exist so far (validation, load, clean, overview, metrics, time, recommend, conversion, recent trend, journey).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -158,7 +158,24 @@ if ! .venv/bin/python src/recent_trend.py --config "$LOAD_CONFIG"; then
     STATUS=1
 fi
 
-# Stage 10 (synthetic client only): analyses this export cannot
+# Stage 10: acquisition journey, what-if and break-even
+# (T12). Writes the journey table, the what-if table and the
+# journey report under outputs/results/ and outputs/reports/.
+# The break-even table is written only when
+# analysis.break_even.avg_revenue_per_visit is set; while it
+# is null the output is skipped with a message. Prints counts
+# only.
+if ! .venv/bin/python src/journey.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+if ! .venv/bin/python src/what_if.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+if ! .venv/bin/python src/break_even.py --config "$LOAD_CONFIG"; then
+    STATUS=1
+fi
+
+# Stage 11 (synthetic client only): analyses this export cannot
 # support are skipped with a message, never failed, and the
 # reuse report is written. The restaurant run does not change.
 if [ "$CLIENT" = "synthetic_b" ]; then

@@ -272,6 +272,64 @@ def _page_recommendations(tables, caveat, date_range, updated,
         )
 
 
+def _page_journey(tables, caveat, date_range, updated,
+                  currency="SEK"):
+    """Acquisition journey, what-if and break-even."""
+    st.header("Acquisition journey")
+    _context(caveat, date_range, updated)
+    st.subheader("Journey by campaign")
+    st.dataframe(
+        dashboard_data.display_table(
+            dashboard_data.journey_display(
+                tables["journey_by_campaign"])).rename(columns={
+            "directions share": "directions share (%)",
+            "calls share": "calls share (%)",
+            "store visits share": "store visits share (%)",
+        }),
+        use_container_width=True,
+        column_config={
+            "campaign": st.column_config.TextColumn(
+                "Campaign", width="large"),
+        },
+    )
+    st.write(
+        "Intent shares are shares of tracked actions. "
+        "Engagement actions are All conv. of the engagement "
+        "action group."
+    )
+    campaigns = dashboard_data.journey_campaigns(
+        tables["journey_by_campaign"])
+    import altair as alt
+    chart = alt.Chart(campaigns).mark_bar().encode(
+        x=alt.X("tracked_actions_per_click",
+                title="Tracked actions per click"),
+        y=alt.Y("campaign", sort="-x", title="Campaign"),
+        tooltip=["campaign", "tracked_actions_per_click",
+                 "cost_per_tracked_action"],
+    )
+    st.altair_chart(chart, use_container_width=True)
+    st.subheader("What-if: weekday spend to the weekend")
+    st.dataframe(
+        dashboard_data.display_table(
+            tables["what_if_weekday_shift"]),
+        use_container_width=True,
+    )
+    break_even = tables.get("break_even")
+    if break_even is not None:
+        st.subheader("Break-even")
+        st.dataframe(
+            dashboard_data.display_table(break_even),
+            use_container_width=True,
+            column_config={
+                "campaign": st.column_config.TextColumn(
+                    "Campaign", width="large"),
+            },
+        )
+        st.write(
+            "Illustration: tracked actions are not visits."
+        )
+
+
 PAGES = {
     "What counts as a tracked action": _page_conversion,
     "Overview": _page_overview,
@@ -280,6 +338,7 @@ PAGES = {
     "Weekday": _page_weekday,
     "Trend": _page_trend,
     "Recommendations": _page_recommendations,
+    "Acquisition journey": _page_journey,
 }
 
 
@@ -307,6 +366,10 @@ def main():
     except FileNotFoundError:
         st.error("Run bash run.sh first")
         st.stop()
+    # The break-even table exists only when the config sets a
+    # revenue value; the journey page shows it only then.
+    tables["break_even"] = dashboard_data.load_break_even(
+        config, output_root=output_root)
     paths = dashboard_data.table_paths(
         config, output_root=output_root)
     date_range = dashboard_data.data_date_range(

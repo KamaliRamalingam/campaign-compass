@@ -11,10 +11,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
-def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
+def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
     """Copy the minimal files run.sh needs into tmp_path."""
     project = tmp_path / "project"
     (project / "src").mkdir(parents=True)
@@ -40,6 +42,12 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
                 project / "src" / "conversion_mix.py")
     shutil.copy(REPO / "src" / "recent_trend.py",
                 project / "src" / "recent_trend.py")
+    shutil.copy(REPO / "src" / "journey.py",
+                project / "src" / "journey.py")
+    shutil.copy(REPO / "src" / "what_if.py",
+                project / "src" / "what_if.py")
+    shutil.copy(REPO / "src" / "break_even.py",
+                project / "src" / "break_even.py")
     shutil.copy(REPO / "src" / "paths.py",
                 project / "src" / "paths.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
@@ -51,12 +59,18 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
     (project / "run.sh").chmod(0o755)
     (project / "requirements.txt").write_text("")
     # Tiny made-up raw file. Campaign name "Alpha" is made up.
+    # Seven days, one full week, so the what-if has weekend data.
     (project / "data" / "raw" / "day.csv").write_text(
         "Made-up title\n"
-        "1 Jan 2026 - 2 Jan 2026\n"
+        "1 Jan 2026 - 7 Jan 2026\n"
         "Campaign,Day,Clicks,Impr.,Cost,Conversions\n"
         "Alpha,2026-01-01,6,100,12.00,2.00\n"
         "Alpha,2026-01-02,4,80,8.00,2.00\n"
+        "Alpha,2026-01-03,5,90,10.00,3.00\n"
+        "Alpha,2026-01-04,5,90,10.00,3.00\n"
+        "Alpha,2026-01-05,6,100,12.00,2.00\n"
+        "Alpha,2026-01-06,4,80,8.00,2.00\n"
+        "Alpha,2026-01-07,4,80,8.00,2.00\n"
         "Total,0,0,0,0\n"
     )
     # Tiny made-up month file, for the load stage in run.sh.
@@ -126,6 +140,8 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    worsening_vs_prior_ratio: 1.3\n"
         "    improving_vs_prior_ratio: 0.77\n"
         "    min_tracked_actions_in_window: 30\n"
+        "  what_if: {shift_share: 0.10}\n"
+        "  break_even: {avg_revenue_per_visit: null}\n"
         "  outputs:\n"
         "    day: outputs/interim/clean_day.csv\n"
         "    month: outputs/interim/clean_month.csv\n"
@@ -148,6 +164,10 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    recent_trend: outputs/results/recent_trend.csv\n"
         "    weekly_by_campaign: outputs/results/weekly_by_campaign.csv\n"
         "    recent_trend_report: outputs/reports/recent-trend-report.md\n"
+        "    journey_by_campaign: outputs/results/journey_by_campaign.csv\n"
+        "    what_if_weekday_shift: outputs/results/what_if_weekday_shift.csv\n"
+        "    break_even: outputs/results/break_even.csv\n"
+        "    journey_report: outputs/reports/journey-report.md\n"
         "conversion_breakdown:\n"
         "  file: {path: data/raw/conv.csv, title_lines: 2}\n"
         "  columns: {campaign: Campaign, month: Month, action: Conversion action, conversions: Conversions, all_conversions: 'All conv.'}\n"
@@ -155,6 +175,10 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "  action_groups:\n"
         "    high_intent: [Store visits]\n"
         "    engagement: [Local actions - Menu views]\n"
+        "  intent_categories:\n"
+        "    directions: []\n"
+        "    calls: []\n"
+        "    store_visits: [Store visits]\n"
         "  outputs:\n"
         "    mix_by_campaign: outputs/results/conversion_mix_by_campaign.csv\n"
         "    mix_by_campaign_month: outputs/results/conversion_mix_by_campaign_month.csv\n"
@@ -169,7 +193,7 @@ def _make_project(tmp_path, clicks=10, cost=20.0, conversions=4.0):
         "    kind: campaign_by_day\n"
         "    columns: {clicks: Clicks, cost: Cost, conversions: Conversions, date: Day, campaign: Campaign}\n"
         "    title_lines: 2\n"
-        f"    ui_expected: {{rows: 2, clicks: {clicks}, cost: {cost}, conversions: {conversions}, date_start: '2026-01-01', date_end: '2026-01-02'}}\n"
+        f"    ui_expected: {{rows: 7, clicks: {clicks}, cost: {cost}, conversions: {conversions}, date_start: '2026-01-01', date_end: '2026-01-07'}}\n"
         "    tolerance: {cost: 0.05, conversions: 0.01}\n"
     )
     # Fake .venv: python is the current interpreter, pip does nothing.
@@ -233,6 +257,32 @@ def test_run_sh_exits_0_and_writes_report(tmp_path):
     assert "ratio_vs_run_average" in recs.splitlines()[0]
     assert "recent_vs_prior_ratio" in recs.splitlines()[0]
     assert "trend_reason" in recs.splitlines()[0]
+    # The journey stage also ran: journey and what-if tables
+    # and a report. Break-even is skipped: the config has no
+    # revenue value, so no break_even.csv exists.
+    assert (project / "outputs" / "results" / "journey_by_campaign.csv").is_file()
+    assert (project / "outputs" / "results" / "what_if_weekday_shift.csv").is_file()
+    assert (project / "outputs" / "reports" / "journey-report.md").is_file()
+    assert not (project / "outputs" / "results" / "break_even.csv").exists()
+    assert "Break-even skipped" in result.stdout
+    journey_report = (project / "outputs" / "reports" / "journey-report.md").read_text()
+    assert "Alpha" not in journey_report
+    # The February conversion row is outside the daily range
+    # (January): the journey must not count its engagement.
+    # January has only a Store visits row (high intent), so
+    # Alpha's engagement is 0 and its store-visits share is
+    # the 2 January Store visits conversions of 16 tracked.
+    import csv as _csv
+    with (project / "outputs" / "results"
+          / "journey_by_campaign.csv").open(
+              newline="", encoding="utf-8") as handle:
+        journey_rows = list(_csv.DictReader(handle))
+    by_campaign = {row["campaign"]: row for row in journey_rows}
+    assert float(by_campaign["Alpha"]["engagement_actions"]) == 0.0
+    assert float(by_campaign["Alpha"]["store_visits_share"]) == \
+        pytest.approx(2.0 / 16.0)
+    assert float(by_campaign["core group"]["tracked_actions"]) == \
+        pytest.approx(16.0)
     # No row values in the printed output: the made-up campaign
     # name must not appear, only counts/sums/dates.
     assert "Alpha" not in result.stdout

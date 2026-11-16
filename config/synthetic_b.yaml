@@ -96,6 +96,14 @@ analysis:
     worsening_vs_prior_ratio: 1.3
     improving_vs_prior_ratio: 0.77
     min_tracked_actions_in_window: 30
+  # What-if weekday shift (T12): same values as the
+  # restaurant config.
+  what_if:
+    shift_share: 0.10
+  # Break-even (T12): same as the restaurant config — no
+  # revenue value yet, so the output is skipped.
+  break_even:
+    avg_revenue_per_visit: null
   # Output paths: written exactly as in the restaurant config.
   # analysis.output_root rewrites them under outputs/synthetic_b.
   outputs:
@@ -120,6 +128,10 @@ analysis:
     recent_trend: outputs/results/recent_trend.csv
     weekly_by_campaign: outputs/results/weekly_by_campaign.csv
     recent_trend_report: outputs/reports/recent-trend-report.md
+    journey_by_campaign: outputs/results/journey_by_campaign.csv
+    what_if_weekday_shift: outputs/results/what_if_weekday_shift.csv
+    break_even: outputs/results/break_even.csv
+    journey_report: outputs/reports/journey-report.md
 
 # Conversion breakdown (T7). The generated conversion export has
 # 2 title lines, then a header. Action groups use the generated
@@ -151,6 +163,15 @@ conversion_breakdown:
     engagement:
       - Menu view
       - Website visit
+  # Intent categories (T12): subsets of the generated
+  # high-intent actions. Company B has no store-visit action,
+  # so that category is empty (share 0.0).
+  intent_categories:
+    directions:
+      - Get directions
+    calls:
+      - Phone call
+    store_visits: []
   outputs:
     mix_by_campaign: outputs/results/conversion_mix_by_campaign.csv
     mix_by_campaign_month: outputs/results/conversion_mix_by_campaign_month.csv

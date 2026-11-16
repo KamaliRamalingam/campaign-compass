@@ -42,6 +42,9 @@ DEFAULT_PATHS = {
         "outputs/results/conversion_mix_by_run.csv",
     "recent_trend": "outputs/results/recent_trend.csv",
     "weekly_by_campaign": "outputs/results/weekly_by_campaign.csv",
+    "journey_by_campaign": "outputs/results/journey_by_campaign.csv",
+    "what_if_weekday_shift":
+        "outputs/results/what_if_weekday_shift.csv",
 }
 
 REQUIRED_TABLES = list(DEFAULT_PATHS)
@@ -173,6 +176,55 @@ def load_tables(config=None, root=None, output_root=None):
                 f"Run bash run.sh first: {path} is missing")
         tables[key] = pd.read_csv(path)
     return tables
+
+
+def break_even_path(config, root=None, output_root=None):
+    """Path of the optional break-even table.
+
+    The break-even table exists only when the config sets
+    avg_revenue_per_visit, so it is not a required table.
+    """
+    outputs = (config.get("analysis") or {}).get("outputs") or {}
+    configured = outputs.get(
+        "break_even", "outputs/results/break_even.csv")
+    if output_root is not None:
+        relative = Path(configured)
+        if relative.parts and relative.parts[0] == "outputs":
+            relative = Path(*relative.parts[1:])
+        return Path(output_root) / relative
+    base = Path(root) if root else REPO_ROOT
+    return base / configured
+
+
+def load_break_even(config=None, root=None, output_root=None):
+    """Read the break-even table, or None when it does not exist."""
+    config = config if config is not None else load_config()
+    path = break_even_path(
+        config, root=root, output_root=output_root)
+    if not path.is_file():
+        return None
+    return pd.read_csv(path)
+
+
+def journey_display(journey):
+    """Journey table for display: intent shares as percentages.
+
+    The CSV stores the shares as fractions; the dashboard
+    shows them as percentages with two decimals. The input
+    table is unchanged.
+    """
+    table = journey.copy()
+    for column in ("directions_share", "calls_share",
+                   "store_visits_share"):
+        if column in table.columns:
+            table[column] = (table[column] * 100.0).round(2)
+    return table
+
+
+def journey_campaigns(journey):
+    """Journey rows for campaigns only, without the core group row."""
+    return journey.loc[
+        journey["campaign"] != "core group"].copy()
 
 
 def data_date_range(summary_day):
