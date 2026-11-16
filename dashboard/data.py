@@ -351,72 +351,6 @@ def engagement_share_all(mix_by_campaign):
     return engagement / total
 
 
-def overview_groups(group_summary):
-    """Spend and conversions by group, biggest spend first."""
-    return group_summary.sort_values(
-        "spend", ascending=False).reset_index(drop=True)
-
-
-def core_campaigns(summary_day, recommendations):
-    """Core campaigns: spend, tracked actions, cost, label, action.
-
-    Tracked actions are the conversions column, renamed so the
-    dashboard says "tracked actions" everywhere.
-    """
-    merged = summary_day.loc[summary_day["group"] == "core"].merge(
-        recommendations[["campaign", "label", "status_now",
-                         "action_text"]],
-        on="campaign", how="left")
-    table = pd.DataFrame({
-        "campaign": merged["campaign"],
-        "spend": merged["spend"],
-        "tracked_actions": merged["conversions"],
-        "cost_per_tracked_action": merged["cost_per_conversion"],
-        "label": merged["label"],
-        "status_now": merged["status_now"],
-        "action_text": merged["action_text"],
-    })
-    return table.sort_values(
-        "spend", ascending=False).reset_index(drop=True)
-
-
-def comparison_data(summary_day, recommendations):
-    """Core campaigns for the cost-per-tracked-action chart.
-
-    Sorted cheapest first. Campaigns with insufficient_data are
-    marked and not ranked (rank is empty for them).
-    """
-    core = core_campaigns(summary_day, recommendations)
-    volume = summary_day.set_index("campaign")["volume_flag"]
-    core["volume_flag"] = core["campaign"].map(volume)
-    ranked = core.loc[
-        core["volume_flag"] != "insufficient_data"].copy()
-    ranked = ranked.sort_values("cost_per_tracked_action")
-    ranked["rank"] = range(1, len(ranked) + 1)
-    unranked = core.loc[
-        core["volume_flag"] == "insufficient_data"].copy()
-    unranked["rank"] = None
-    table = pd.concat([ranked, unranked], ignore_index=True)
-    return table.sort_values(
-        "cost_per_tracked_action").reset_index(drop=True)
-
-
-def runs_for_campaign(runs_df, campaign):
-    """One campaign's runs, in run order."""
-    part = runs_df.loc[runs_df["campaign"] == campaign].copy()
-    table = pd.DataFrame({
-        "run_number": part["run_number"],
-        "start": part["start"],
-        "end": part["end"],
-        "active_days": part["active_days"],
-        "spend": part["spend"],
-        "tracked_actions": part["conversions"],
-        "cost_per_tracked_action": part["cost_per_conversion"],
-        "volume_flag": part["volume_flag"],
-    })
-    return table.sort_values("run_number").reset_index(drop=True)
-
-
 def weekday_core_table(weekday_core):
     """Pooled core weekday table, Monday to Sunday."""
     table = weekday_core.copy()
@@ -456,47 +390,6 @@ def trend_for_campaign(timeline_df, campaign):
         "cost_per_tracked_action": part["cost_per_conversion"],
     })
     return table.sort_values("month").reset_index(drop=True)
-
-
-def recommendations_view(recommendations):
-    """Recommendations table for display, one row per campaign."""
-    columns = ["campaign", "group", "label", "status_now",
-               "action_text", "best_run_number", "best_run_start",
-               "best_run_end", "reason"]
-    return recommendations[columns].sort_values(
-        "campaign").reset_index(drop=True)
-
-
-def recommendations_display(recommendations):
-    """Recommendations for the Recommendations page.
-
-    Campaign, label, status_now, recent_trend, ratio against
-    the run average, ratio against the prior window, trend
-    reason, action_text and reason. The group and run columns
-    are hidden. Older result files without recent_trend or the
-    ratios get an empty value.
-    """
-    table = recommendations.copy()
-    if "recent_trend" not in table.columns:
-        table["recent_trend"] = ""
-    if "ratio_vs_run_average" not in table.columns:
-        table["ratio_vs_run_average"] = None
-    if "recent_vs_prior_ratio" not in table.columns:
-        table["recent_vs_prior_ratio"] = None
-    if "trend_reason" not in table.columns:
-        table["trend_reason"] = ""
-    columns = ["campaign", "label", "status_now", "recent_trend",
-               "ratio_vs_run_average", "recent_vs_prior_ratio",
-               "trend_reason", "action_text", "reason"]
-    return table[columns].sort_values(
-        "campaign").reset_index(drop=True)
-
-
-def format_ratio(ratio):
-    """Ratio vs run average with two decimals, or a dash."""
-    if ratio is None or pd.isna(ratio):
-        return "—"
-    return f"{float(ratio):.2f}"
 
 
 def weekly_for_campaign(weekly_df, campaign):

@@ -96,45 +96,6 @@ def test_conversion_shares_and_engagement():
         pytest.approx(300.0 / 450.0)
 
 
-def test_core_campaigns_table():
-    core = dashboard_data.core_campaigns(
-        _summary_day(), _recommendations())
-    assert list(core["campaign"]) == ["Beta", "Alpha"]
-    alpha = core[core["campaign"] == "Alpha"].iloc[0]
-    assert alpha["tracked_actions"] == 20.0
-    assert alpha["cost_per_tracked_action"] == 5.0
-    assert alpha["label"] == "continue"
-    assert alpha["action_text"] == "keep running"
-
-
-def test_comparison_marks_insufficient_and_does_not_rank():
-    table = dashboard_data.comparison_data(
-        _summary_day(), _recommendations())
-    alpha = table[table["campaign"] == "Alpha"].iloc[0]
-    beta = table[table["campaign"] == "Beta"].iloc[0]
-    assert alpha["rank"] == 1
-    assert beta["volume_flag"] == "insufficient_data"
-    assert pd.isna(beta["rank"])
-
-
-def test_runs_for_campaign():
-    runs = pd.DataFrame([
-        {"campaign": "Alpha", "group": "core", "run_number": 2,
-         "start": "2026-02-01", "end": "2026-02-14",
-         "active_days": 14, "spend": 100.0, "clicks": 100,
-         "conversions": 10.0, "cost_per_conversion": 10.0,
-         "volume_flag": "ok"},
-        {"campaign": "Alpha", "group": "core", "run_number": 1,
-         "start": "2026-01-01", "end": "2026-01-14",
-         "active_days": 14, "spend": 50.0, "clicks": 100,
-         "conversions": 10.0, "cost_per_conversion": 5.0,
-         "volume_flag": "ok"},
-    ])
-    table = dashboard_data.runs_for_campaign(runs, "Alpha")
-    assert list(table["run_number"]) == [1, 2]
-    assert table.iloc[0]["cost_per_tracked_action"] == 5.0
-
-
 def test_weekday_tables_ordered_monday_to_sunday():
     weekday = pd.DataFrame([
         {"weekday": "Friday", "active_days": 1, "spend": 10.0,
@@ -246,12 +207,6 @@ def test_trend_for_campaign_keeps_source():
     assert table.iloc[1]["cost_per_tracked_action"] == 6.0
 
 
-def test_recommendations_view():
-    table = dashboard_data.recommendations_view(_recommendations())
-    assert list(table["campaign"]) == ["Alpha", "Beta"]
-    assert table.iloc[0]["action_text"] == "keep running"
-
-
 def test_data_date_range_and_last_updated(tmp_path):
     first, last = dashboard_data.data_date_range(_summary_day())
     assert first == date(2026, 1, 1)
@@ -310,30 +265,6 @@ def test_weekly_for_campaign_returns_one_campaign():
     table = dashboard_data.weekly_for_campaign(weekly, "Alpha")
     assert list(table["week_start"]) == ["2026-01-05", "2026-01-12"]
     assert list(table["tracked_actions"]) == [4.0, 6.0]
-
-
-def test_recommendations_display_hides_group_and_runs():
-    recs = _recommendations()
-    recs["recent_trend"] = ["worsening", "not_active"]
-    recs["ratio_vs_run_average"] = [1.5, None]
-    recs["recent_vs_prior_ratio"] = [1.3, None]
-    recs["trend_reason"] = [
-        "cost per tracked action is 1.30 times the prior 28 days "
-        "and 1.50 times the run average", ""]
-    table = dashboard_data.recommendations_display(recs)
-    assert list(table.columns) == [
-        "campaign", "label", "status_now", "recent_trend",
-        "ratio_vs_run_average", "recent_vs_prior_ratio",
-        "trend_reason", "action_text", "reason"]
-    assert list(table["recent_trend"]) == ["worsening", "not_active"]
-    assert table.iloc[0]["ratio_vs_run_average"] == 1.5
-    assert pd.isna(table.iloc[1]["ratio_vs_run_average"])
-
-
-def test_recommendations_display_without_recent_trend():
-    table = dashboard_data.recommendations_display(
-        _recommendations())
-    assert list(table["recent_trend"]) == ["", ""]
 
 
 def test_display_table_renames_only_the_copy(tmp_path):
@@ -412,14 +343,6 @@ def test_display_table_never_makes_duplicate_names():
     assert list(original.columns) == [
         "campaign", "conversions", "tracked_actions",
         "cost_per_conversion"]
-
-
-def test_format_ratio():
-    assert dashboard_data.format_ratio(1.5) == "1.50"
-    assert dashboard_data.format_ratio(1.0) == "1.00"
-    assert dashboard_data.format_ratio(None) == "—"
-    import math
-    assert dashboard_data.format_ratio(math.nan) == "—"
 
 
 def test_share_pct_has_two_decimals():

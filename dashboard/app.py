@@ -157,6 +157,64 @@ def _period_slider(values, label, key):
                             value=(options[0], options[-1]), key=key)
 
 
+def _trend_section(ctx, campaign, prefix):
+    """Monthly or weekly chart and table for one campaign.
+
+    A period slider limits the rows shown (a filter, not a
+    recalculation); tooltips include the partial/lagged
+    flags for months.
+    """
+    tables = ctx["tables"]
+    currency = ctx["currency"]
+    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True,
+                    key=f"{prefix}_view")
+    if view == "Monthly":
+        table = dashboard_data.trend_for_campaign(
+            tables["timeline_by_campaign"], campaign)
+        timeline = tables["timeline_by_campaign"]
+        flag_columns = [column for column in ("is_partial", "is_lagged")
+                        if column in timeline.columns]
+        if flag_columns:
+            flags = timeline.loc[timeline["campaign"] == campaign,
+                                 ["month", "source"] + flag_columns]
+            table = table.merge(flags, on=["month", "source"],
+                                how="left")
+            table[flag_columns] = table[flag_columns].astype(
+                "object").fillna("").astype(str)
+        x_field, x_title, key = "month", "Month", "month"
+    else:
+        table = dashboard_data.weekly_for_campaign(
+            tables["weekly_by_campaign"], campaign)
+        x_field, x_title, key = "week_start", "Week starting", "week"
+    if table.empty:
+        st.caption("No monthly or weekly rows: the trend tables "
+                   "cover the time groups in the config.")
+    else:
+        start, end = _period_slider(table[x_field], "Period",
+                                    f"{prefix}_period_{key}")
+        table = dashboard_data.filter_period(table, x_field, start, end)
+        tooltip = [x_field, "spend", "tracked_actions",
+                   alt.Tooltip("cost_per_tracked_action", format=".2f")]
+        tooltip += [column for column in ("source", "is_partial",
+                                          "is_lagged")
+                    if column in table.columns]
+        chart = alt.Chart(table).mark_line(point=True).encode(
+            x=alt.X(f"{x_field}:O", title=x_title,
+                    axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y("cost_per_tracked_action:Q",
+                    title=f"Cost per tracked action ({currency})"),
+            tooltip=tooltip,
+        )
+        st.altair_chart(chart, width="stretch")
+        if "is_partial" in table.columns:
+            st.caption("Hover a point: is_partial marks a month the "
+                       "campaign ran only part of; is_lagged marks "
+                       "a month with days still being reported.")
+        _table(dashboard_data.display_table(table),
+               f"{key}ly_{campaign}.csv", key=f"{prefix}_trend")
+
+
+
 def _page_campaign(ctx):
     """One campaign: label and reasons, runs, trend, weekday, journey."""
     st.header("Campaign")
@@ -201,52 +259,7 @@ def _page_campaign(ctx):
                f"runs_{campaign}.csv", key="campaign_runs")
 
     st.subheader("Trend")
-    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True,
-                    key="campaign_view")
-    if view == "Monthly":
-        table = dashboard_data.trend_for_campaign(
-            tables["timeline_by_campaign"], campaign)
-        timeline = tables["timeline_by_campaign"]
-        flag_columns = [column for column in ("is_partial", "is_lagged")
-                        if column in timeline.columns]
-        if flag_columns:
-            flags = timeline.loc[timeline["campaign"] == campaign,
-                                 ["month", "source"] + flag_columns]
-            table = table.merge(flags, on=["month", "source"],
-                                how="left")
-            table[flag_columns] = table[flag_columns].astype(
-                "object").fillna("").astype(str)
-        x_field, x_title, key = "month", "Month", "month"
-    else:
-        table = dashboard_data.weekly_for_campaign(
-            tables["weekly_by_campaign"], campaign)
-        x_field, x_title, key = "week_start", "Week starting", "week"
-    if table.empty:
-        st.caption("No monthly or weekly rows: the trend tables "
-                   "cover the time groups in the config.")
-    else:
-        start, end = _period_slider(table[x_field], "Period",
-                                    f"period_{key}")
-        table = dashboard_data.filter_period(table, x_field, start, end)
-        tooltip = [x_field, "spend", "tracked_actions",
-                   alt.Tooltip("cost_per_tracked_action", format=".2f")]
-        tooltip += [column for column in ("source", "is_partial",
-                                          "is_lagged")
-                    if column in table.columns]
-        chart = alt.Chart(table).mark_line(point=True).encode(
-            x=alt.X(f"{x_field}:O", title=x_title,
-                    axis=alt.Axis(labelAngle=-45)),
-            y=alt.Y("cost_per_tracked_action:Q",
-                    title=f"Cost per tracked action ({currency})"),
-            tooltip=tooltip,
-        )
-        st.altair_chart(chart, width="stretch")
-        if "is_partial" in table.columns:
-            st.caption("Hover a point: is_partial marks a month the "
-                       "campaign ran only part of; is_lagged marks "
-                       "a month with days still being reported.")
-        _table(dashboard_data.display_table(table),
-               f"{key}ly_{campaign}.csv", key="campaign_trend")
+    _trend_section(ctx, campaign, "campaign")
 
     st.subheader("Weekday pattern")
     by_campaign = tables["weekday_by_campaign"]
@@ -454,7 +467,7 @@ def _page_method(ctx):
                "value": WIDE("Value", width="medium")})
 
 
-# --- Pages kept from T8 (fixed in a later commit) ----------------
+# --- Pages kept from T8 -------------------------------------------
 
 def _page_conversion(ctx):
     """What counts as a tracked action."""
@@ -464,9 +477,9 @@ def _page_conversion(ctx):
     shares = dashboard_data.conversion_shares(
         tables["conversion_mix_by_campaign"])
     chart = alt.Chart(shares).mark_bar().encode(
-        x=alt.X("share", axis=alt.Axis(format=".2%"),
+        x=alt.X("share:Q", axis=alt.Axis(format=".0%"),
                 title="Share of tracked actions"),
-        y=alt.Y("action", sort="-x", title="Action"),
+        y=alt.Y("action:N", sort="-x", axis=_campaign_axis("Action")),
         tooltip=["action", "action_group", "tracked_actions",
                  alt.Tooltip("share", format=".2%")],
     )
@@ -475,7 +488,8 @@ def _page_conversion(ctx):
                       "share_pct"]].copy()
     display.columns = ["Action", "Action group", "Tracked actions",
                        "Share of tracked actions (%)"]
-    st.dataframe(display, width="stretch")
+    _table(display, "tracked_actions_by_action.csv", key="conversion",
+           column_config={"Action": WIDE("Action", width="large")})
     engagement_all = dashboard_data.engagement_share_all(
         tables["conversion_mix_by_campaign"])
     st.write(
@@ -487,87 +501,70 @@ def _page_conversion(ctx):
 
 
 def _page_runs(ctx):
-    """One campaign's runs as a chart and a table."""
+    """One campaign's runs, with run labels, as a chart and a table."""
     st.header("Runs")
     _context(ctx)
     currency = ctx["currency"]
-    runs = ctx["tables"]["runs"]
-    campaign = st.selectbox(
-        "Campaign", sorted(runs["campaign"].unique()))
-    table = dashboard_data.runs_for_campaign(runs, campaign)
+    run_recs = ctx["tables"]["recommendations_by_run"]
+    campaigns = [name for name in ctx["campaigns"]
+                 if name in set(run_recs["campaign"])]
+    if not campaigns:
+        st.info("No runs for the campaigns in this group: runs are "
+                "built only for the run groups in the config.")
+        return
+    campaign = st.selectbox("Campaign", campaigns)
+    table = dashboard_data.run_recommendations_for_campaign(
+        run_recs, campaign)
     chart = alt.Chart(table).mark_bar().encode(
-        x=alt.X("run_number", axis=alt.Axis(format="d"),
-                title="Run"),
-        y=alt.Y("cost_per_tracked_action",
+        x=alt.X("run_number:O", title="Run"),
+        y=alt.Y("cost_per_conversion:Q",
                 title=f"Cost per tracked action ({currency})"),
+        color=alt.Color("run_label:N", title="Run label"),
         tooltip=["run_number", "start", "end", "spend",
-                 "cost_per_tracked_action", "volume_flag"],
+                 alt.Tooltip("cost_per_conversion", format=".2f",
+                             title="cost per tracked action"),
+                 alt.Tooltip("ratio_to_benchmark", format=".2f"),
+                 "run_label"],
     )
     st.altair_chart(chart, width="stretch")
-    st.dataframe(dashboard_data.display_table(table), width="stretch")
+    st.caption("Run labels judge each run on its own; the campaign's "
+               "final label is on the Summary and Campaign pages.")
+    _table(dashboard_data.display_table(table), f"runs_{campaign}.csv",
+           key="runs")
 
 
 def _page_trend(ctx):
     """Monthly or weekly trend for a selected campaign."""
     st.header("Trend")
     _context(ctx)
-    currency = ctx["currency"]
-    tables = ctx["tables"]
-    timeline = tables["timeline_by_campaign"]
-    campaign = st.selectbox(
-        "Campaign", sorted(timeline["campaign"].unique()))
-    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True)
-    if view == "Weekly":
-        table = dashboard_data.weekly_for_campaign(
-            tables["weekly_by_campaign"], campaign)
-        chart = alt.Chart(table).mark_line(point=True).encode(
-            x=alt.X("week_start", title="Week starting"),
-            y=alt.Y("cost_per_tracked_action",
-                    title=f"Cost per tracked action ({currency})"),
-            tooltip=["week_start", "spend", "tracked_actions",
-                     "cost_per_tracked_action"],
-        )
-        st.altair_chart(chart, width="stretch")
-        st.write("Weeks start on Monday, from the daily data.")
-        st.dataframe(dashboard_data.display_table(table),
-                     width="stretch")
+    timeline = ctx["tables"]["timeline_by_campaign"]
+    campaigns = [name for name in ctx["campaigns"]
+                 if name in set(timeline["campaign"])]
+    if not campaigns:
+        st.info("No trend rows for the campaigns in this group: the "
+                "trend tables cover the time groups in the config.")
         return
-    table = dashboard_data.trend_for_campaign(timeline, campaign)
-    chart = alt.Chart(table).mark_line(point=True).encode(
-        x=alt.X("month", title="Month"),
-        y=alt.Y("cost_per_tracked_action",
-                title=f"Cost per tracked action ({currency})"),
-        color=alt.Color("source", title="Source"),
-        tooltip=["month", "source", "spend", "tracked_actions",
-                 "cost_per_tracked_action"],
-    )
-    st.altair_chart(chart, width="stretch")
-    st.write(
-        "Source marks where each month comes from: day is the "
-        "daily export, month is the monthly-history export."
-    )
-    st.dataframe(dashboard_data.display_table(table), width="stretch")
+    campaign = st.selectbox("Campaign", campaigns)
+    _trend_section(ctx, campaign, "trend")
+    st.caption("Monthly source: day is the daily export, month is "
+               "the monthly-history export. Weeks start on Monday.")
 
 
 def _page_journey(ctx):
-    """Acquisition journey, what-if and break-even."""
+    """Acquisition journey and break-even."""
     st.header("Acquisition journey")
     _context(ctx)
     tables = ctx["tables"]
     st.subheader("Journey by campaign")
-    st.dataframe(
-        dashboard_data.display_table(
-            dashboard_data.journey_display(
-                tables["journey_by_campaign"])).rename(columns={
-            "directions share": "directions share (%)",
-            "calls share": "calls share (%)",
-            "store visits share": "store visits share (%)",
-        }),
-        width="stretch",
-        column_config={
-            "campaign": WIDE("Campaign", width="large"),
-        },
-    )
+    journey = dashboard_data.display_table(
+        dashboard_data.journey_display(
+            tables["journey_by_campaign"])).rename(columns={
+        "directions share": "directions share (%)",
+        "calls share": "calls share (%)",
+        "store visits share": "store visits share (%)",
+    })
+    _table(journey, "journey.csv", key="journey", column_config={
+        "campaign": WIDE("Campaign", width="medium", pinned=True)})
     st.write(
         "Intent shares are shares of tracked actions. "
         "Engagement actions are All conv. of the engagement "
@@ -576,26 +573,24 @@ def _page_journey(ctx):
     campaigns = dashboard_data.journey_campaigns(
         tables["journey_by_campaign"])
     chart = alt.Chart(campaigns).mark_bar().encode(
-        x=alt.X("tracked_actions_per_click",
+        x=alt.X("tracked_actions_per_click:Q",
                 title="Tracked actions per click"),
-        y=alt.Y("campaign", sort="-x", title="Campaign"),
-        tooltip=["campaign", "tracked_actions_per_click",
-                 "cost_per_tracked_action"],
+        y=alt.Y("campaign:N", sort="-x", axis=_campaign_axis()),
+        tooltip=["campaign",
+                 alt.Tooltip("tracked_actions_per_click", format=".3f"),
+                 alt.Tooltip("cost_per_tracked_action", format=".2f")],
     )
     st.altair_chart(chart, width="stretch")
+    st.caption("The what-if is on the Weekday page.")
     break_even = ctx["break_even"]
     if break_even is not None:
         st.subheader("Break-even")
-        st.dataframe(
-            dashboard_data.display_table(break_even),
-            width="stretch",
-            column_config={
-                "campaign": WIDE("Campaign", width="large"),
-            },
-        )
-        st.write(
-            "Illustration: tracked actions are not visits."
-        )
+        _table(dashboard_data.display_table(break_even),
+               "break_even.csv", key="break_even", column_config={
+                   "campaign": WIDE("Campaign", width="medium",
+                                    pinned=True),
+                   "note": WIDE("Note", width="large")})
+        st.write("Illustration: tracked actions are not visits.")
 
 
 PAGES = {
