@@ -427,3 +427,59 @@ def test_share_pct_has_two_decimals():
     assert shares.iloc[0]["share_pct"] == pytest.approx(66.67, abs=0.01)
     assert shares.iloc[0]["share_pct"] == round(
         shares.iloc[0]["share_pct"], 2)
+
+
+def _journey():
+    return pd.DataFrame([
+        {"campaign": "Alpha", "spend": 100.0, "clicks": 50,
+         "cost_per_click": 2.0, "tracked_actions": 10.0,
+         "engagement_actions": 40.0, "directions_share": 0.4,
+         "calls_share": 0.1, "store_visits_share": 0.0,
+         "tracked_actions_per_click": 0.2,
+         "engagement_per_tracked_action": 4.0,
+         "cost_per_tracked_action": 10.0},
+        {"campaign": "core group", "spend": 100.0, "clicks": 50,
+         "cost_per_click": 2.0, "tracked_actions": 10.0,
+         "engagement_actions": 40.0, "directions_share": 0.4,
+         "calls_share": 0.1, "store_visits_share": 0.0,
+         "tracked_actions_per_click": 0.2,
+         "engagement_per_tracked_action": 4.0,
+         "cost_per_tracked_action": 10.0},
+    ])
+
+
+def test_journey_display_shows_shares_as_percentages():
+    display = dashboard_data.journey_display(_journey())
+    assert display.iloc[0]["directions_share"] == pytest.approx(
+        40.0)
+    assert display.iloc[0]["calls_share"] == pytest.approx(10.0)
+    assert display.iloc[0]["store_visits_share"] == pytest.approx(
+        0.0)
+    # The input table is unchanged (shares stay fractions).
+    assert _journey().iloc[0]["directions_share"] == pytest.approx(
+        0.4)
+
+
+def test_journey_campaigns_excludes_core_group():
+    campaigns = dashboard_data.journey_campaigns(_journey())
+    assert list(campaigns["campaign"]) == ["Alpha"]
+
+
+def test_load_break_even_none_when_missing(tmp_path):
+    root = tmp_path / "project"
+    (root / "outputs" / "results").mkdir(parents=True)
+    config = {"analysis": {"caveat_text": CAVEAT, "outputs": {}}}
+    assert dashboard_data.load_break_even(
+        config, root=root) is None
+
+
+def test_load_break_even_reads_when_present(tmp_path):
+    root = tmp_path / "project"
+    results = root / "outputs" / "results"
+    results.mkdir(parents=True)
+    (results / "break_even.csv").write_text(
+        "campaign,break_even_visit_rate\nAlpha,0.5\n")
+    config = {"analysis": {"caveat_text": CAVEAT, "outputs": {}}}
+    table = dashboard_data.load_break_even(config, root=root)
+    assert list(table["campaign"]) == ["Alpha"]
+    assert table.iloc[0]["break_even_visit_rate"] == 0.5
