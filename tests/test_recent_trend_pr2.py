@@ -132,3 +132,32 @@ def test_recommend_writes_base_columns():
     recs = recommend_campaigns(run_recs, summary, rules, "caveat")
     for column in ("label", "action_text", "reason"):
         assert (recs[f"base_{column}"] == recs[column]).all()
+
+
+# --- M2: every reason states its period ------------------------
+
+def test_trend_reason_states_both_windows_and_run_period():
+    trend = recent_trend.compute_recent_trend(
+        _day_df(), _runs_df(), _recs(), SETTINGS)
+    reason = trend["trend_reason"].iloc[0]
+    assert "recent window (2026-01-15 to 2026-02-11)" in reason
+    assert "prior window (2025-12-18 to 2026-01-14)" in reason
+    assert "run 1 average (2025-12-18 to 2026-02-14)" in reason
+    assert "28 days" not in reason
+
+
+def test_recommendation_reasons_state_the_run_period():
+    from src.recommend import recommend_campaigns, recommend_runs
+    rules = {"continue_max_ratio": 1.0, "test_max_ratio": 2.0,
+             "repeat_min_runs": 2, "active_window_days": 14}
+    runs = _runs_df().assign(active_days=59, spend=413.0, clicks=590,
+                             conversions=118.0)
+    summary = pd.DataFrame([{
+        "campaign": "Alpha", "group": "core", "spend": 413.0,
+        "clicks": 590, "conversions": 118.0,
+        "last_active_date": LAST.isoformat()}])
+    run_recs = recommend_runs(runs, 5.0, rules, "caveat")
+    assert "(2025-12-18 to 2026-02-14)" in run_recs["reason"].iloc[0]
+    recs = recommend_campaigns(run_recs, summary, rules, "caveat")
+    assert ("latest run with enough volume (run 1, 2025-12-18 to "
+            "2026-02-14)") in recs["reason"].iloc[0]

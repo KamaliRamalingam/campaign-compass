@@ -120,6 +120,22 @@ def current_run_average(runs_df, campaign):
     return float(value)
 
 
+def current_run_period(runs_df, campaign):
+    """(run_number, start, end) of the run used for the run
+    average (the one with the latest end date), or None."""
+    part = runs_df.loc[runs_df["campaign"] == campaign]
+    if part.empty:
+        return None
+    latest = part.sort_values("end").iloc[-1]
+    number = latest.get("run_number")
+    return (None if number is None or pd.isna(number) else int(number),
+            str(latest["start"]), str(latest["end"]))
+
+
+def _period(start, end):
+    return f"{start} to {end}"
+
+
 def label_trend(prior_ratio, run_ratio, recent_actions,
                 prior_actions, settings):
     """recent_trend from the two ratios and the window volumes.
@@ -157,25 +173,41 @@ def label_trend(prior_ratio, run_ratio, recent_actions,
 
 
 def trend_reason(trend, prior_ratio, run_ratio, recent_actions,
-                 prior_actions, settings):
-    """Plain-language reason for the trend, with both ratios."""
+                 prior_actions, settings, bounds, run_period=None):
+    """Plain-language reason for the trend, with both ratios and
+    the period each one covers.
+
+    bounds is (recent_start, recent_end, prior_start, prior_end);
+    run_period is (run_number, start, end) of the days the run
+    average was taken from, or None.
+    """
+    recent_start, recent_end, prior_start, prior_end = bounds
+    recent = f"the recent window ({_period(recent_start, recent_end)})"
+    prior = f"the prior window ({_period(prior_start, prior_end)})"
     minimum = settings["min_tracked_actions_in_window"]
     if trend == TREND_INSUFFICIENT:
         return (
             f"not enough data to judge: {recent_actions:.0f} "
-            f"tracked actions in the recent window and "
-            f"{prior_actions:.0f} in the prior window "
+            f"tracked actions in {recent} and "
+            f"{prior_actions:.0f} in {prior} "
             f"(minimum {minimum} per window)"
         )
     parts = []
     if prior_ratio is not None:
-        parts.append(
-            f"{prior_ratio:.2f} times the prior 28 days")
+        parts.append(f"{prior_ratio:.2f} times {prior}")
     if run_ratio is not None:
-        parts.append(f"{run_ratio:.2f} times the run average")
+        if run_period is not None:
+            number, start, end = run_period
+            run = (f"the run {number} average "
+                   f"({_period(start, end)})")
+        else:
+            run = "the run average"
+        parts.append(f"{run_ratio:.2f} times {run}")
     if not parts:
-        return "no prior window or run average to compare with"
-    return "cost per tracked action is " + " and ".join(parts)
+        return (f"no prior window or run average to compare "
+                f"{recent} with")
+    return (f"cost per tracked action in {recent} is "
+            + " and ".join(parts))
 
 
 def compute_recent_trend(day_df, runs_df, recommendations,
@@ -202,6 +234,7 @@ def compute_recent_trend(day_df, runs_df, recommendations,
         recent_cost = _safe_divide(recent_spend, recent_actions)
         prior_cost = _safe_divide(prior_spend, prior_actions)
         run_average = current_run_average(runs_df, campaign)
+        run_period = current_run_period(runs_df, campaign)
         run_ratio = (
             recent_cost / run_average
             if recent_cost is not None and run_average
@@ -243,7 +276,7 @@ def compute_recent_trend(day_df, runs_df, recommendations,
             "recent_trend": trend,
             "trend_reason": trend_reason(
                 trend, prior_ratio, run_ratio, recent_actions,
-                prior_actions, settings),
+                prior_actions, settings, bounds, run_period),
         })
     table = pd.DataFrame(rows)
     if table.empty:

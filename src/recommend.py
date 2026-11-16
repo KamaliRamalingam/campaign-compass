@@ -217,6 +217,11 @@ def recommend_runs(runs_df, benchmark, rules, caveat,
         for _, run in part.iterrows():
             cost_per_conversion = run.get("cost_per_conversion")
             fixed = fixed_label(run["group"], rules)
+            # Every reason states the period its signal covers.
+            run_text = (
+                f"run {int(run['run_number'])} of {total_runs} "
+                f"for this campaign ({run['start']} to {run['end']})"
+            )
             ratio = (
                 cost_per_conversion / run_benchmark
                 if fixed is None
@@ -228,23 +233,18 @@ def recommend_runs(runs_df, benchmark, rules, caveat,
             if fixed is not None:
                 fixed_text = _fixed_reason(
                     fixed, run["group"], cost_per_conversion, name)
-                reason = (
-                    f"{fixed_text}; run {int(run['run_number'])} "
-                    f"of {total_runs} for this campaign"
-                )
+                reason = f"{fixed_text}; {run_text}"
             elif label == LABEL_INSUFFICIENT:
                 reason = (
                     f"not enough volume to judge: "
                     f"{run['conversions']:.0f} tracked conversions "
                     f"over {int(run['active_days'])} active days; "
-                    f"run {int(run['run_number'])} of {total_runs} "
-                    f"for this campaign"
+                    f"{run_text}"
                 )
             else:
                 reason = (
                     f"cost per conversion is {ratio:.2f} times the "
-                    f"{name}; run {int(run['run_number'])} "
-                    f"of {total_runs} for this campaign"
+                    f"{name}; {run_text}"
                 )
             rows.append({
                 "campaign": campaign,
@@ -381,7 +381,9 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
             }
             ratio = latest["ratio_to_benchmark"]
             reason = (
-                f"latest run with enough volume is labelled "
+                f"latest run with enough volume (run "
+                f"{latest_run_number}, {latest['start']} to "
+                f"{latest['end']}) is labelled "
                 f"{label}; cost per conversion is {ratio:.2f} "
                 f"times the core benchmark; {runs_with_volume} "
                 f"of {total_runs} runs had enough volume"
