@@ -94,6 +94,9 @@ def test_synthetic_pipeline_exits_0(tmp_path):
     assert "location: skipped" in reuse_text
     assert "hour: skipped" in reuse_text
     assert "Config keys that had to differ" in reuse_text
+    assert "### Keys synthetic_b had to set" in reuse_text
+    assert ("### Restaurant-only optional keys not set by "
+            "synthetic_b") in reuse_text
     # The low-volume campaign is insufficient_data.
     recs = _read_csv(project / "outputs" / "synthetic_b" / "results"
                      / "recommendations_by_campaign.csv")
@@ -175,3 +178,29 @@ def test_dashboard_lists_synthetic_client(tmp_path):
     assert paths["recommendations_by_campaign"] == (
         outputs / "synthetic_b" / "results"
         / "recommendations_by_campaign.csv")
+
+
+def test_split_differing_separates_base_only_keys(tmp_path):
+    import reuse_report
+    base = {"a": {"x": 1, "only_base": True, "items": ["p", "q"]},
+            "same": 5}
+    other = {"a": {"x": 2, "items": ["p"]}, "same": 5,
+             "only_other": "z"}
+    differing, identical = reuse_report.config_diff(base, other)
+    had_to_set, base_only = reuse_report.split_differing(
+        base, other, differing)
+    # A different value, or a key only the other config has.
+    assert had_to_set == ["a.x", "only_other"]
+    # Keys only the base has: optional, the other leaves unset.
+    assert base_only == ["a.items[1]", "a.only_base"]
+    assert identical == ["a.items[0]", "same"]
+    report = tmp_path / "reuse-report.md"
+    reuse_report.write_report(report, [], had_to_set, base_only,
+                              identical)
+    text = report.read_text()
+    assert ("- 4 leaf keys differ from config/restaurant.yaml: 2 "
+            "that synthetic_b had to set, and 2 restaurant-only "
+            "optional keys") in text
+    assert "### Keys synthetic_b had to set (2)" in text
+    assert ("### Restaurant-only optional keys not set by "
+            "synthetic_b (2)") in text
