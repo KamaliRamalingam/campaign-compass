@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -420,3 +421,45 @@ def test_journey_default_is_core_only(tmp_path):
     assert journey_main(["--config", str(path)]) == 0
     table = pd.read_csv(tmp_path / "journey.csv")
     assert list(table["campaign"]) == ["Alpha", "core group"]
+
+
+# --- PR 4: benchmarks.csv for the dashboard --------------------
+
+def test_benchmark_table_rows():
+    table = recommend.benchmark_table(
+        _day_summary(), PR1_RULES).set_index("variant")
+    core = table.loc["benchmark"]
+    assert core["groups"] == "core" and core["leave_one_out"]
+    assert core["cost_per_tracked_action"] == 10.0
+    assert (core["loo_min"], core["loo_max"]) == (5.0, 15.0)
+    both = table.loc["with_not_comparable"]
+    assert both["groups"] == "core+core_pmax"
+    # (100 + 300 + 400) / 80 = 10.00; LOO: without Beta 500 / 60,
+    # without Alpha 700 / 60.
+    assert both["cost_per_tracked_action"] == 10.0
+    assert both["loo_min"] == pytest.approx(500 / 60)
+    assert both["loo_max"] == pytest.approx(700 / 60)
+    judged = table.loc["judged_campaigns"]
+    # Only core is judged (Pmax not_comparable, Gamma not_judged).
+    assert (judged["campaigns"], judged["spend"],
+            judged["tracked_actions"]) == (2, 400.0, 40.0)
+    assert judged["cost_per_tracked_action"] == 10.0
+
+
+def test_benchmark_table_default_rules():
+    table = recommend.benchmark_table(_day_summary(), RULES)
+    assert list(table["variant"]) == ["benchmark", "judged_campaigns"]
+    # Without fixed labels every campaign is judged.
+    assert table.set_index("variant").loc[
+        "judged_campaigns", "campaigns"] == 4
+
+
+def test_main_writes_benchmarks_next_to_recommendations(tmp_path):
+    path = _write_main_config(tmp_path, PR1_RULES)
+    assert recommend.main(["--config", str(path)]) == 0
+    table = pd.read_csv(tmp_path / "benchmarks.csv")
+    assert "judged_campaigns" in set(table["variant"])
+    recs = pd.read_csv(tmp_path / "rec_campaign.csv").set_index(
+        "campaign")
+    assert recs.loc["Alpha", "label_period_start"] == "2024-01-01"
+    assert recs.loc["Alpha", "label_period_end"] == "2024-02-14"
