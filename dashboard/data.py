@@ -10,7 +10,15 @@ below is used. No campaign names, thresholds or other values
 are hard-coded here.
 
 If a result table is missing, load_tables raises
-FileNotFoundError with "Run bash run.sh first".
+FileNotFoundError with "Run bash run.sh first". Optional tables
+(written only when the client's config turns a stage on) load
+as None and the page says so.
+
+The dashboard only reads: labels are the FINAL labels in
+recommendations_by_campaign.csv (after the trend override), and
+no metric, ratio or label is recomputed here. Functions only
+filter, sort, join on campaign or run number, and rename for
+display.
 """
 
 from datetime import datetime
@@ -45,9 +53,30 @@ DEFAULT_PATHS = {
     "journey_by_campaign": "outputs/results/journey_by_campaign.csv",
     "what_if_weekday_shift":
         "outputs/results/what_if_weekday_shift.csv",
+    "recommendations_by_run":
+        "outputs/results/recommendations_by_run.csv",
+    "recommendation_sensitivity":
+        "outputs/results/recommendation_sensitivity.csv",
+    "benchmarks": "outputs/results/benchmarks.csv",
 }
 
 REQUIRED_TABLES = list(DEFAULT_PATHS)
+
+# Written only when a stage is turned on in the client's config;
+# None when missing.
+OPTIONAL_PATHS = {
+    "lag_check": "outputs/results/lag_check.csv",
+    "weekday_mix_by_campaign":
+        "outputs/results/weekday_mix_by_campaign.csv",
+    "weekday_leave_one_out":
+        "outputs/results/weekday_leave_one_out.csv",
+    "weekday_top_days": "outputs/results/weekday_top_days.csv",
+}
+
+# Labels hidden on the Summary page unless asked for.
+HIDDEN_LABELS = ("not_judged", "insufficient_data")
+NOT_COMPARABLE = "not_comparable"
+ALL_GROUPS = "All groups"
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
             "Saturday", "Sunday"]
 # Short names map to the same weekday numbers (Monday = 0).
@@ -119,6 +148,37 @@ def caveat_text(config):
     return config["analysis"]["caveat_text"]
 
 
+def client_config_path(client, config_dir=None):
+    """Config file of a client: config/<client>.yaml.
+
+    "restaurant" is config/restaurant.yaml. A client without its
+    own config is an error: falling back to another client's
+    config would show the wrong caveat and groups.
+    """
+    base = Path(config_dir) if config_dir else REPO_ROOT / "config"
+    path = base / f"{client}.yaml"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"No config for client {client!r}: {path} is missing")
+    return path
+
+
+def client_output_root(client, config, repo_root=None):
+    """Output folder of a client, or None for outputs/ itself.
+
+    analysis.output_root from the client's config when set (for
+    example outputs/synthetic_b), otherwise outputs/<client> for
+    any client other than "restaurant".
+    """
+    root = Path(repo_root) if repo_root else REPO_ROOT
+    configured = (config.get("analysis") or {}).get("output_root")
+    if configured and configured != "outputs":
+        return root / configured
+    if client == "restaurant":
+        return None
+    return root / "outputs" / client
+
+
 def list_clients(outputs_dir=None):
     """Client names with result tables to show in the dashboard.
 
@@ -138,27 +198,30 @@ def list_clients(outputs_dir=None):
     return clients
 
 
-def table_paths(config, root=None, output_root=None):
-    """Resolve every required table path, from config or default.
+def _resolve(configured, root=None, output_root=None):
+    """A configured output path under root or a client folder."""
+    if output_root is not None:
+        relative = Path(configured)
+        if relative.parts and relative.parts[0] == "outputs":
+            relative = Path(*relative.parts[1:])
+        return Path(output_root) / relative
+    base = Path(root) if root else REPO_ROOT
+    return base / configured
+
+
+def table_paths(config, root=None, output_root=None, defaults=None):
+    """Resolve every table path, from config or default.
 
     root is the project root (as in the tests). output_root is
     a client output folder such as outputs/synthetic_b: each
     configured path has its leading "outputs/" part replaced
     by it, so the same config paths work for every client.
+    defaults is DEFAULT_PATHS (required tables) unless given.
     """
     outputs = (config.get("analysis") or {}).get("outputs") or {}
-    paths = {}
-    for key in REQUIRED_TABLES:
-        configured = outputs.get(key, DEFAULT_PATHS[key])
-        if output_root is not None:
-            relative = Path(configured)
-            if relative.parts and relative.parts[0] == "outputs":
-                relative = Path(*relative.parts[1:])
-            paths[key] = Path(output_root) / relative
-        else:
-            base = Path(root) if root else REPO_ROOT
-            paths[key] = base / configured
-    return paths
+    defaults = DEFAULT_PATHS if defaults is None else defaults
+    return {key: _resolve(outputs.get(key, default), root, output_root)
+            for key, default in defaults.items()}
 
 
 def load_tables(config=None, root=None, output_root=None):
@@ -178,6 +241,14 @@ def load_tables(config=None, root=None, output_root=None):
     return tables
 
 
+def load_optional_tables(config, root=None, output_root=None):
+    """Read the optional tables; a missing one is None."""
+    paths = table_paths(config, root=root, output_root=output_root,
+                        defaults=OPTIONAL_PATHS)
+    return {key: (pd.read_csv(path) if path.is_file() else None)
+            for key, path in paths.items()}
+
+
 def break_even_path(config, root=None, output_root=None):
     """Path of the optional break-even table.
 
@@ -187,13 +258,7 @@ def break_even_path(config, root=None, output_root=None):
     outputs = (config.get("analysis") or {}).get("outputs") or {}
     configured = outputs.get(
         "break_even", "outputs/results/break_even.csv")
-    if output_root is not None:
-        relative = Path(configured)
-        if relative.parts and relative.parts[0] == "outputs":
-            relative = Path(*relative.parts[1:])
-        return Path(output_root) / relative
-    base = Path(root) if root else REPO_ROOT
-    return base / configured
+    return _resolve(configured, root, output_root)
 
 
 def load_break_even(config=None, root=None, output_root=None):
@@ -496,3 +561,258 @@ def display_table(table):
         name = name.replace("_", " ")
         renamed[column] = name
     return result.rename(columns=renamed)
+
+
+# --- PR 4: pages built on final labels ---------------------------
+
+def campaigns_in_group(recommendations, group):
+    """Campaign names in a group, or all for ALL_GROUPS / None."""
+    if group in (None, ALL_GROUPS):
+        return sorted(recommendations["campaign"])
+    return sorted(recommendations.loc[
+        recommendations["group"] == group, "campaign"])
+
+
+def group_options(recommendations):
+    """Sidebar choices: ALL_GROUPS, then each group."""
+    return [ALL_GROUPS] + sorted(recommendations["group"].unique())
+
+
+def final_label_counts(recommendations):
+    """Count of campaigns per FINAL label, largest first."""
+    counts = recommendations["label"].value_counts()
+    return pd.DataFrame({"label": counts.index,
+                         "campaigns": counts.values})
+
+
+def _period(start, end):
+    """"start to end", or "" when either is missing."""
+    if start is None or end is None or pd.isna(start) or pd.isna(end):
+        return ""
+    return f"{start} to {end}"
+
+
+def summary_rows(recommendations, recent_trend, show_hidden=False,
+                 group=None):
+    """One row per judged campaign for the Summary page.
+
+    Final label, status now, recent trend, action text, and the
+    period each signal covers: the label's (recent window or
+    run, from label_period_start/end) and the trend's recent
+    window (from recent_trend.csv). not_comparable campaigns are
+    left out (they get their own box); not_judged and
+    insufficient_data only when show_hidden is true.
+    """
+    recs = recommendations.copy()
+    if group not in (None, ALL_GROUPS):
+        recs = recs.loc[recs["group"] == group]
+    recs = recs.loc[recs["label"] != NOT_COMPARABLE]
+    if not show_hidden:
+        recs = recs.loc[~recs["label"].isin(HIDDEN_LABELS)]
+    windows = {}
+    if recent_trend is not None and not recent_trend.empty:
+        for _, row in recent_trend.iterrows():
+            windows[row["campaign"]] = _period(
+                row["recent_window_start"], row["recent_window_end"])
+    rows = []
+    for _, row in recs.iterrows():
+        rows.append({
+            "campaign": row["campaign"],
+            "group": row["group"],
+            "label": row["label"],
+            "status_now": row["status_now"],
+            "recent_trend": row.get("recent_trend", ""),
+            "action": row["action_text"],
+            "label_from": row.get("label_basis", ""),
+            "label_period": _period(row.get("label_period_start"),
+                                    row.get("label_period_end")),
+            "trend_period": windows.get(row["campaign"], ""),
+        })
+    columns = ["campaign", "group", "label", "status_now",
+               "recent_trend", "action", "label_from",
+               "label_period", "trend_period"]
+    return pd.DataFrame(rows, columns=columns).sort_values(
+        ["status_now", "campaign"]).reset_index(drop=True)
+
+
+def not_comparable_rows(recommendations):
+    """Campaigns labelled not_comparable, with reason and action."""
+    part = recommendations.loc[
+        recommendations["label"] == NOT_COMPARABLE]
+    return part[["campaign", "group", "status_now", "reason",
+                 "action_text"]].sort_values(
+        "campaign").reset_index(drop=True)
+
+
+def kpi_values(benchmarks):
+    """KPI tile values, read from benchmarks.csv.
+
+    spend, tracked actions and cost per tracked action of the
+    judged campaigns, and the benchmark (pooled, its groups, and
+    the leave-one-out range when it is used).
+    """
+    table = benchmarks.set_index("variant")
+    judged = table.loc["judged_campaigns"]
+    bench = table.loc["benchmark"]
+    loo = bench.get("leave_one_out")
+    loo = bool(loo) if loo is not None and not pd.isna(loo) else False
+    return {
+        "judged_campaigns": int(judged["campaigns"]),
+        "spend": float(judged["spend"]),
+        "tracked_actions": float(judged["tracked_actions"]),
+        "cost_per_tracked_action": float(
+            judged["cost_per_tracked_action"]),
+        "benchmark": float(bench["cost_per_tracked_action"]),
+        "benchmark_groups": bench["groups"],
+        "leave_one_out": loo,
+        "loo_min": (float(bench["loo_min"]) if loo else None),
+        "loo_max": (float(bench["loo_max"]) if loo else None),
+    }
+
+
+def campaign_detail(recommendations, recent_trend, campaign):
+    """One campaign's final label, reasons and periods (a dict)."""
+    row = recommendations.set_index("campaign").loc[campaign]
+    trend_window = prior_window = ""
+    if recent_trend is not None and not recent_trend.empty and \
+            campaign in set(recent_trend["campaign"]):
+        trend = recent_trend.set_index("campaign").loc[campaign]
+        trend_window = _period(trend["recent_window_start"],
+                               trend["recent_window_end"])
+        prior_window = _period(trend["prior_window_start"],
+                               trend["prior_window_end"])
+    def text(key):
+        value = row.get(key, "")
+        return "" if value is None or pd.isna(value) else str(value)
+    return {
+        "campaign": campaign,
+        "group": text("group"),
+        "label": text("label"),
+        "status_now": text("status_now"),
+        "label_from": text("label_basis"),
+        "label_period": _period(row.get("label_period_start"),
+                                row.get("label_period_end")),
+        "reason": text("reason"),
+        "action": text("action_text"),
+        "recent_trend": text("recent_trend"),
+        "trend_window": trend_window,
+        "prior_window": prior_window,
+        "trend_reason": text("trend_reason"),
+    }
+
+
+def run_recommendations_for_campaign(run_recs, campaign):
+    """One campaign's runs with their run labels, in run order."""
+    part = run_recs.loc[run_recs["campaign"] == campaign]
+    columns = [column for column in (
+        "run_number", "start", "end", "active_days", "spend",
+        "conversions", "cost_per_conversion", "ratio_to_benchmark",
+        "benchmark_basis", "label") if column in part.columns]
+    return part[columns].sort_values("run_number").reset_index(
+        drop=True).rename(columns={"label": "run_label"})
+
+
+def filter_period(table, column, start=None, end=None):
+    """Rows whose period column is within start..end (inclusive).
+
+    Works for months ("2026-01") and dates ("2026-01-12"):
+    values are compared as text, which orders ISO dates
+    correctly. start or end None means no limit.
+    """
+    values = table[column].astype(str)
+    keep = pd.Series(True, index=table.index)
+    if start is not None:
+        keep &= values >= str(start)
+    if end is not None:
+        keep &= values <= str(end)
+    return table.loc[keep].reset_index(drop=True)
+
+
+def journey_row(journey, campaign):
+    """One campaign's journey row (empty table if it has none)."""
+    return journey.loc[journey["campaign"] == campaign].reset_index(
+        drop=True)
+
+
+def weekday_focus_table(mix, weekday):
+    """Per campaign on one weekday: click shares, actions per click.
+
+    From weekday_mix_by_campaign.csv; sorted by the campaign's
+    share of that weekday's pooled clicks, largest first.
+    """
+    part = mix.loc[mix["weekday"] == weekday]
+    columns = ["campaign", "clicks", "share_of_weekday_clicks",
+               "share_of_campaign_clicks", "share_vs_even",
+               "actions_per_click", "baseline_actions_per_click",
+               "actions_per_click_vs_baseline"]
+    return part[columns].sort_values(
+        "share_of_weekday_clicks", ascending=False).reset_index(
+        drop=True)
+
+
+def leave_one_out_for_weekday(loo, weekday):
+    """The pooled weekday with each campaign left out, one weekday.
+
+    The full pool ("(none)") first, then the left-out campaigns,
+    closest to the baseline weekdays first, so the campaign that
+    explains the weekday is on top.
+    """
+    part = loo.loc[loo["weekday"] == weekday].copy()
+    part["distance_from_baseline"] = (
+        part["actions_per_click_vs_baseline"] - 1).abs()
+    part["_full"] = part["left_out"] != "(none)"
+    part = part.sort_values(["_full", "distance_from_baseline"])
+    return part.drop(columns=["_full"]).reset_index(drop=True)
+
+
+def what_if_parts(what_if):
+    """(variant rows, range row or None) of the what-if table."""
+    if "variant" not in what_if.columns:
+        return what_if.reset_index(drop=True), None
+    variants = what_if.loc[what_if["variant"] != "range"]
+    span = what_if.loc[what_if["variant"] == "range"]
+    return (variants.reset_index(drop=True),
+            span.iloc[0].to_dict() if not span.empty else None)
+
+
+def lag_check_summary(lag_check):
+    """Per lag: trend and label changes against the configured lag."""
+    totals = lag_check.loc[lag_check["measure"].isin(
+        ["recent_trend_changes_total", "label_changes_total"])]
+    table = totals.pivot_table(index="lag", columns="measure",
+                               values="campaigns", aggfunc="sum")
+    table = table.rename(columns={
+        "recent_trend_changes_total": "trend_changes",
+        "label_changes_total": "label_changes"}).reset_index()
+    table.columns.name = None
+    return table
+
+
+def rules_table(config):
+    """Volume rule and thresholds as read from the config."""
+    analysis = config.get("analysis") or {}
+    rows = []
+    sections = (
+        ("volume_rule", analysis.get("volume_rule") or {}),
+        ("recommendation_rules",
+         analysis.get("recommendation_rules") or {}),
+        ("recent_trend", analysis.get("recent_trend") or {}),
+    )
+    for section, values in sections:
+        for key, value in values.items():
+            if isinstance(value, dict):
+                for inner, inner_value in value.items():
+                    rows.append({"setting": f"{section}.{key}.{inner}",
+                                 "value": str(inner_value)})
+            else:
+                rows.append({"setting": f"{section}.{key}",
+                             "value": str(value)})
+    for key in ("weekday_min_conversions", "run_gap_days"):
+        if key in analysis:
+            rows.append({"setting": key, "value": str(analysis[key])})
+    return pd.DataFrame(rows, columns=["setting", "value"])
+
+
+def csv_bytes(table):
+    """A table as CSV bytes, for a download button."""
+    return table.to_csv(index=False).encode("utf-8")
