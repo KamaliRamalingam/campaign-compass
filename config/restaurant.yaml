@@ -131,6 +131,13 @@ analysis:
     # Only these groups (plus not_comparable_groups) are judged;
     # any other campaign is labelled not_judged.
     judged_groups: [core, sep_2026_group]
+    # Recent-window label (PR 2, 2026-11-16): an active campaign
+    # is labelled from its last window_days of daily data (ending
+    # at the last date minus recent_trend.conversion_lag_days),
+    # not from its whole run. Too little recent volume gives
+    # insufficient_data. Thresholds and volume rule unchanged.
+    recent_label:
+      window_days: 90
     # Recommendation improvements (T5b), provisional. A campaign
     # is active if its last active date is within
     # active_window_days of the latest date in the daily data.
@@ -151,6 +158,18 @@ analysis:
     worsening_vs_prior_ratio: 1.3
     improving_vs_prior_ratio: 0.77
     min_tracked_actions_in_window: 30
+    # PR 2, 2026-11-16. An active campaign whose trend is
+    # worsening never shows continue: it shows test.
+    trend_overrides:
+      worsening:
+        continue: test
+    # Run average: the label's run, only its days before the
+    # prior window (the windows are not compared with themselves).
+    run_average: label_run_excluding_windows
+    # Lag check: rerun the recent signals with these lags and
+    # report how many change. conversion_lag_days stays 3 until
+    # the student decides from the report.
+    lag_check_days: [3, 7, 14]
   # What-if weekday shift (T12). Provisional, the student's
   # decision, 2026-11-16. Share of Mon-Fri spend moved to
   # Sat-Sun in the what-if.
@@ -188,6 +207,8 @@ analysis:
     what_if_weekday_shift: outputs/results/what_if_weekday_shift.csv
     break_even: outputs/results/break_even.csv
     journey_report: outputs/reports/journey-report.md
+    lag_check: outputs/results/lag_check.csv
+    lag_check_report: outputs/reports/lag-check-report.md
 
 # Conversion breakdown (T10). The conversion-by-campaign-month
 # export has 2 title lines, then a header. Column names are the
