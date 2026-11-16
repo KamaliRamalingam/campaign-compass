@@ -109,6 +109,11 @@ analysis:
   run_groups: [core, core_pmax, sep_2026_group]
   weekday_min_conversions: 5
   run_gap_days: 14
+  # Weekday decomposition (PR 3, 2026-11-16): splits the pooled
+  # weekday cells of time_groups by campaign; aggregates only.
+  weekday_decomposition:
+    baseline_weekdays: [Mon, Tue, Wed, Thu]
+    top_days: 5
   # Recommendation rules (T5). Provisional, the student's
   # decision, 2026-11-12. The benchmark is calculated, not
   # typed in: sum of spend / sum of conversions over the groups
@@ -175,6 +180,11 @@ analysis:
   # Sat-Sun in the what-if.
   what_if:
     shift_share: 0.10
+    # Variants (PR 3, 2026-11-16): one row per variant plus the
+    # range between them. Groups must be in time_groups.
+    variants:
+      core_only: [core]
+      core_and_pmax: [core, core_pmax]
   # Break-even (T12). Provisional, the student's decision,
   # 2026-11-16. Average revenue per visit: null because the
   # owner has not given a revenue value yet; while it is null
@@ -209,6 +219,10 @@ analysis:
     journey_report: outputs/reports/journey-report.md
     lag_check: outputs/results/lag_check.csv
     lag_check_report: outputs/reports/lag-check-report.md
+    weekday_mix_by_campaign: outputs/results/weekday_mix_by_campaign.csv
+    weekday_leave_one_out: outputs/results/weekday_leave_one_out.csv
+    weekday_top_days: outputs/results/weekday_top_days.csv
+    weekday_decomposition_report: outputs/reports/weekday-decomposition-report.md
 
 # Conversion breakdown (T10). The conversion-by-campaign-month
 # export has 2 title lines, then a header. Column names are the
