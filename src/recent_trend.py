@@ -250,7 +250,7 @@ def weekly_table(day_df):
     day = day_df.copy()
     day["date"] = pd.to_datetime(day["date"])
     day["week_start"] = (
-        day["date"] - pd.to_timedelta(day["date"].dt.weekday,
+        day["date"] - pd.to_timedelta(day["date"].dt.day_of_week,
                                       unit="D")
     ).dt.date
     rows = []
