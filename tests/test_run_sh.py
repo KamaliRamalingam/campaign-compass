@@ -309,3 +309,23 @@ def test_validate_default_output_path(tmp_path):
     report = project / "outputs" / "reports" / "validation-report.md"
     assert report.is_file()
     assert "Overall: **PASS**" in report.read_text()
+
+
+def test_validate_missing_input_is_fail_not_pass(tmp_path):
+    # M7: a missing input file must make the overall result FAIL,
+    # in the report and on stdout, never "Overall: PASS".
+    project = _make_project(tmp_path)
+    (project / "data" / "raw" / "day.csv").unlink()
+    result = subprocess.run(
+        [sys.executable, "src/validate_exports.py",
+         "--config", "config/validation.yaml"],
+        cwd=project, capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "Overall: FAIL" in result.stdout
+    assert "Overall: PASS" not in result.stdout
+    text = (project / "outputs" / "reports"
+            / "validation-report.md").read_text()
+    assert "Overall: **FAIL**" in text
+    assert "## Files that could not be read" in text
+    assert "campaign_by_day: FAIL" in text
