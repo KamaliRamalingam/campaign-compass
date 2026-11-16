@@ -44,6 +44,8 @@ def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
                 project / "src" / "recent_trend.py")
     shutil.copy(REPO / "src" / "lag_check.py",
                 project / "src" / "lag_check.py")
+    shutil.copy(REPO / "src" / "weekday_decomposition.py",
+                project / "src" / "weekday_decomposition.py")
     shutil.copy(REPO / "src" / "journey.py",
                 project / "src" / "journey.py")
     shutil.copy(REPO / "src" / "what_if.py",
