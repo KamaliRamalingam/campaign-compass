@@ -13,7 +13,10 @@ come from the config) and writes, all git-ignored:
   ending at (last data date minus conversion_lag_days); prior
   window = the same number of days before that. Run average =
   cost per tracked action of the campaign's current run (its
-  latest run). recent_vs_prior_ratio is the recent cost per
+  latest run), or, with recent_trend.run_average set to
+  label_run_excluding_windows, of the run the label uses
+  (latest_run_number), counting only its days before the prior
+  window. recent_vs_prior_ratio is the recent cost per
   tracked action divided by the prior window's, empty when the
   prior window is empty or below the minimum tracked actions.
   recent_trend is worsening when the recent cost per tracked
@@ -134,6 +137,51 @@ def current_run_period(runs_df, campaign):
             str(latest["start"]), str(latest["end"]))
 
 
+RUN_AVERAGE_LEGACY = "legacy"
+RUN_AVERAGE_LABEL_RUN = "label_run_excluding_windows"
+
+
+def run_average_for(day, runs_df, rec, bounds, mode):
+    """(run average, run_period) for one campaign.
+
+    legacy (default): the whole run with the latest end date,
+    including the recent and prior windows, as before.
+    label_run_excluding_windows: the run the label uses
+    (latest_run_number in the recommendations), only its days
+    before the prior window starts, so the windows are not
+    compared with themselves. run_period is (run_number, first
+    day, last day) of the days used; (None, None) when there is
+    no such run or no conversions in those days.
+    """
+    campaign = rec["campaign"]
+    if mode == RUN_AVERAGE_LEGACY:
+        return (current_run_average(runs_df, campaign),
+                current_run_period(runs_df, campaign))
+    if mode != RUN_AVERAGE_LABEL_RUN:
+        raise ValueError(
+            f"recent_trend.run_average: unknown value {mode!r} "
+            f"(use {RUN_AVERAGE_LEGACY} or {RUN_AVERAGE_LABEL_RUN})")
+    number = rec.get("latest_run_number")
+    if number is None or pd.isna(number):
+        return None, None
+    run = runs_df.loc[(runs_df["campaign"] == campaign)
+                      & (runs_df["run_number"] == int(number))]
+    if run.empty:
+        return None, None
+    run = run.iloc[0]
+    start = pd.to_datetime(run["start"]).date()
+    end = pd.to_datetime(run["end"]).date()
+    prior_start = bounds[2]
+    part = day.loc[(day["campaign"] == campaign)
+                   & (day["date"] >= start) & (day["date"] <= end)
+                   & (day["date"] < prior_start)]
+    conversions = float(part["conversions"].sum())
+    if part.empty or conversions == 0:
+        return None, None
+    return (float(part["cost"].sum()) / conversions,
+            (int(number), part["date"].min(), part["date"].max()))
+
+
 def _period(start, end):
     return f"{start} to {end}"
 
@@ -235,8 +283,9 @@ def compute_recent_trend(day_df, runs_df, recommendations,
             day, campaign, prior_start, prior_end)
         recent_cost = _safe_divide(recent_spend, recent_actions)
         prior_cost = _safe_divide(prior_spend, prior_actions)
-        run_average = current_run_average(runs_df, campaign)
-        run_period = current_run_period(runs_df, campaign)
+        run_average, run_period = run_average_for(
+            day, runs_df, rec, bounds,
+            settings.get("run_average", RUN_AVERAGE_LEGACY))
         run_ratio = (
             recent_cost / run_average
             if recent_cost is not None and run_average

@@ -226,3 +226,65 @@ def test_override_rerun_is_idempotent_and_reported(tmp_path):
     assert "## Labels changed by trend_overrides" in report
     assert "  - continue -> test: 1" in report
     assert "Alpha" not in report
+
+
+# --- S2: run average excludes the windows, uses the label's run --
+
+S2 = dict(SETTINGS, run_average="label_run_excluding_windows")
+
+
+def test_run_average_excludes_both_windows():
+    # 20 early days at 1.00 per action before the prior window;
+    # prior at 5.00, recent at 10.00. Legacy averages the whole
+    # run; S2 uses only the 20 early days.
+    day = _day_df(early_days=20)
+    runs = _runs_df(start="2025-11-28")
+    legacy = recent_trend.compute_recent_trend(
+        day, runs, _recs(), SETTINGS).iloc[0]
+    assert legacy["run_average_cost_per_tracked_action"] == 7.0
+    new = recent_trend.compute_recent_trend(
+        day, runs, _recs(), S2).iloc[0]
+    assert new["run_average_cost_per_tracked_action"] == 1.0
+    assert new["ratio_vs_run_average"] == 10.0
+    assert "run 1 average (2025-11-28 to 2025-12-17)" in \
+        new["trend_reason"]
+
+
+def test_run_average_uses_the_label_run():
+    # Two runs: run 1 (the label's run, cheap early days) and a
+    # later run 2 that only covers the windows. Legacy takes run 2
+    # (latest end); S2 takes run 1 from latest_run_number.
+    day = _day_df(early_days=20)
+    runs = pd.DataFrame([
+        {"campaign": "Alpha", "group": "core", "run_number": 1,
+         "start": "2025-11-28", "end": "2025-12-17",
+         "cost_per_conversion": 1.0, "volume_flag": "ok"},
+        {"campaign": "Alpha", "group": "core", "run_number": 2,
+         "start": "2025-12-18", "end": LAST.isoformat(),
+         "cost_per_conversion": 8.0, "volume_flag": "ok"},
+    ])
+    legacy = recent_trend.compute_recent_trend(
+        day, runs, _recs(), SETTINGS).iloc[0]
+    assert legacy["run_average_cost_per_tracked_action"] == 8.0
+    new = recent_trend.compute_recent_trend(
+        day, runs, _recs(), S2).iloc[0]
+    assert new["run_average_cost_per_tracked_action"] == 1.0
+
+
+def test_run_average_empty_when_no_days_before_windows():
+    # The run starts with the prior window: nothing is left, so
+    # only the prior-window comparison counts.
+    new = recent_trend.compute_recent_trend(
+        _day_df(), _runs_df(), _recs(), S2).iloc[0]
+    assert pd.isna(new["run_average_cost_per_tracked_action"])
+    assert pd.isna(new["ratio_vs_run_average"])
+    assert new["recent_vs_prior_ratio"] == 2.0
+    assert new["recent_trend"] == "worsening"
+
+
+def test_unknown_run_average_mode_is_an_error():
+    import pytest
+    with pytest.raises(ValueError, match="run_average"):
+        recent_trend.compute_recent_trend(
+            _day_df(), _runs_df(), _recs(),
+            dict(SETTINGS, run_average="other"))
