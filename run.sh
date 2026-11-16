@@ -23,7 +23,9 @@
 # Without the flag, the runner behaves exactly as before.
 #
 # Prints only PASS/FAIL/INFO lines, counts, sums and dates. Never
-# rows, title lines or file contents. Exit 1 if any stage fails.
+# rows, title lines or file contents. Stops at the first failed
+# stage: prints "FAIL: stage '<name>' failed; later stages were
+# not run" and exits 1, so no later stage reads stale outputs.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -80,20 +82,30 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/pip install -q -r requirements.txt
 
-STATUS=0
+# Run one stage; on failure stop the whole run (no later stage
+# runs on stale or missing outputs).
+#   run_stage <name> <command...>
+run_stage() {
+    local name="$1"
+    shift
+    if ! "$@"; then
+        echo "FAIL: stage '$name' failed; later stages were not run"
+        exit 1
+    fi
+}
 
 # Stage 0 (synthetic client only): generate the synthetic data.
 if [ "$CLIENT" = "synthetic_b" ]; then
-    if ! .venv/bin/python src/make_synthetic.py --config "$LOAD_CONFIG"; then
-        STATUS=1
-    fi
+    run_stage generate .venv/bin/python src/make_synthetic.py --config "$LOAD_CONFIG"
 fi
 
 # Stage 1: export validation (T0b). Report under outputs/reports/
 # (or outputs/synthetic_b/reports/ for the synthetic client).
 mkdir -p "$(dirname "$REPORT")"
 if ! .venv/bin/python src/validate_exports.py --config "$VALIDATION_CONFIG" --out "$REPORT"; then
-    STATUS=1
+    echo "Report: $REPORT"
+    echo "FAIL: stage 'validation' failed; later stages were not run"
+    exit 1
 fi
 echo "Report: $REPORT"
 
@@ -105,58 +117,42 @@ if [ -f "config/local/$(basename "$LOAD_CONFIG")" ]; then
     LOAD_CONFIG="config/local/$(basename "$LOAD_CONFIG")"
 fi
 echo "Load config: $LOAD_CONFIG"
-if ! .venv/bin/python src/load.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage load .venv/bin/python src/load.py --config "$LOAD_CONFIG"
 
 # Stage 3: clean the standardised tables (T2). Writes cleaned
 # tables under outputs/interim/ and a report under outputs/reports/.
 # Uses the same config as the load stage.
-if ! .venv/bin/python src/clean.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage clean .venv/bin/python src/clean.py --config "$LOAD_CONFIG"
 
 # Stage 4: campaign overview (T3a). Writes one row per campaign
 # to outputs/reports/campaign-overview.csv. Prints only the
 # number of campaigns and where the file was written.
-if ! .venv/bin/python src/overview.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage overview .venv/bin/python src/overview.py --config "$LOAD_CONFIG"
 
 # Stage 5: campaign groups and metrics (T3). Writes result tables
 # under outputs/results/ and a report under outputs/reports/.
 # Prints group counts only.
-if ! .venv/bin/python src/metrics.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage metrics .venv/bin/python src/metrics.py --config "$LOAD_CONFIG"
 
 # Stage 6: time patterns, trends and runs (T4). Writes result
 # tables under outputs/results/ and a report under outputs/reports/.
 # Prints counts only.
-if ! .venv/bin/python src/time_patterns.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage time_patterns .venv/bin/python src/time_patterns.py --config "$LOAD_CONFIG"
 
 # Stage 7: recommendations (T5). Writes result tables under
 # outputs/results/ and a report under outputs/reports/.
 # Prints counts per label only.
-if ! .venv/bin/python src/recommend.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage recommend .venv/bin/python src/recommend.py --config "$LOAD_CONFIG"
 
 # Stage 8: conversion breakdown by action (T10). Writes result
 # tables under outputs/results/ and a report under
 # outputs/reports/. Prints PASS or FAIL and the group totals only.
-if ! .venv/bin/python src/conversion_mix.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage conversion_mix .venv/bin/python src/conversion_mix.py --config "$LOAD_CONFIG"
 
 # Stage 9: recent trend and weekly tables (T11). Writes
 # result tables under outputs/results/ and a report under
 # outputs/reports/. Prints counts only.
-if ! .venv/bin/python src/recent_trend.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage recent_trend .venv/bin/python src/recent_trend.py --config "$LOAD_CONFIG"
 
 # Stage 10: acquisition journey, what-if and break-even
 # (T12). Writes the journey table, the what-if table and the
@@ -165,33 +161,19 @@ fi
 # analysis.break_even.avg_revenue_per_visit is set; while it
 # is null the output is skipped with a message. Prints counts
 # only.
-if ! .venv/bin/python src/journey.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
-if ! .venv/bin/python src/what_if.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
-if ! .venv/bin/python src/break_even.py --config "$LOAD_CONFIG"; then
-    STATUS=1
-fi
+run_stage journey .venv/bin/python src/journey.py --config "$LOAD_CONFIG"
+run_stage what_if .venv/bin/python src/what_if.py --config "$LOAD_CONFIG"
+run_stage break_even .venv/bin/python src/break_even.py --config "$LOAD_CONFIG"
 
 # Stage 11 (synthetic client only): analyses this export cannot
 # support are skipped with a message, never failed, and the
 # reuse report is written. The restaurant run does not change.
 if [ "$CLIENT" = "synthetic_b" ]; then
-    if ! .venv/bin/python src/optional_analyses.py --config "$LOAD_CONFIG"; then
-        STATUS=1
-    fi
-    if ! .venv/bin/python src/reuse_report.py --config "$LOAD_CONFIG" --base config/restaurant.yaml; then
-        STATUS=1
-    fi
+    run_stage optional_analyses .venv/bin/python src/optional_analyses.py --config "$LOAD_CONFIG"
+    run_stage reuse_report .venv/bin/python src/reuse_report.py --config "$LOAD_CONFIG" --base config/restaurant.yaml
 fi
 
-# Later stages (charts, dashboard, etc.) run here, setting
-# STATUS=1 on failure.
+# Later stages (charts, dashboard, etc.) run here, through
+# run_stage.
 
-if [ "$STATUS" -ne 0 ]; then
-    echo "FAIL: one or more stages failed (see above)"
-    exit 1
-fi
 echo "PASS: all stages passed"
