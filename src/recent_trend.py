@@ -525,6 +525,36 @@ def apply_to_recommendations(recommendations, trend_table,
     return recs
 
 
+FINAL_LABELS_HEADING = (
+    "## Campaigns per label (final, after trend override)")
+
+
+def update_recommend_report(report_path, updated):
+    """Add the final label counts to recommend-report.md.
+
+    The section FINAL_LABELS_HEADING is replaced if it is already
+    there (so reruns stay idempotent) or appended. Counts only.
+    Returns False when the report does not exist.
+    """
+    path = Path(report_path)
+    if not path.is_file():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if FINAL_LABELS_HEADING in lines:
+        start = lines.index(FINAL_LABELS_HEADING)
+        end = next((i for i in range(start + 1, len(lines))
+                    if lines[i].startswith("## ")), len(lines))
+        lines = lines[:start] + lines[end:]
+    while lines and lines[-1] == "":
+        lines.pop()
+    lines += ["", FINAL_LABELS_HEADING, ""]
+    for label, count in updated["label"].value_counts().items():
+        lines.append(f"- {label}: {int(count)}")
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return True
+
+
 def write_recent_trend_report(report_path, trend_table, bounds,
                               last_date, updated=None):
     """Write the recent-trend report: counts only, no names.
@@ -627,6 +657,17 @@ def main(argv=None):
     for trend, count in trend_table["recent_trend"] \
             .value_counts().items():
         print(f"  {trend}: {int(count)}")
+    if "label" in updated.columns:
+        print("Campaigns per final label (after trend override):")
+        for label, count in updated["label"].value_counts().items():
+            print(f"  {label}: {int(count)}")
+        recommend_report = outputs.get("recommend_report")
+        if recommend_report and update_recommend_report(
+                recommend_report, updated):
+            print(f"updated: {recommend_report} (final label counts)")
+        else:
+            print("Final label counts not added: recommend report "
+                  "not found")
     print(f"Weekly rows: {len(weekly)}")
     print(f"wrote: {trend_out}")
     print(f"wrote: {weekly_out}")
