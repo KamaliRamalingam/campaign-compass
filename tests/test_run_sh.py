@@ -42,6 +42,8 @@ def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
                 project / "src" / "conversion_mix.py")
     shutil.copy(REPO / "src" / "recent_trend.py",
                 project / "src" / "recent_trend.py")
+    shutil.copy(REPO / "src" / "lag_check.py",
+                project / "src" / "lag_check.py")
     shutil.copy(REPO / "src" / "journey.py",
                 project / "src" / "journey.py")
     shutil.copy(REPO / "src" / "what_if.py",
@@ -309,3 +311,60 @@ def test_validate_default_output_path(tmp_path):
     report = project / "outputs" / "reports" / "validation-report.md"
     assert report.is_file()
     assert "Overall: **PASS**" in report.read_text()
+
+
+def test_validate_missing_input_is_fail_not_pass(tmp_path):
+    # M7: a missing input file must make the overall result FAIL,
+    # in the report and on stdout, never "Overall: PASS".
+    project = _make_project(tmp_path)
+    (project / "data" / "raw" / "day.csv").unlink()
+    result = subprocess.run(
+        [sys.executable, "src/validate_exports.py",
+         "--config", "config/validation.yaml"],
+        cwd=project, capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "Overall: FAIL" in result.stdout
+    assert "Overall: PASS" not in result.stdout
+    text = (project / "outputs" / "reports"
+            / "validation-report.md").read_text()
+    assert "Overall: **FAIL**" in text
+    assert "## Files that could not be read" in text
+    assert "campaign_by_day: FAIL" in text
+
+
+def test_run_sh_stops_at_validation_when_input_missing(tmp_path):
+    # M7: the first failed stage stops the run; no later stage
+    # runs and the output never says PASS.
+    project = _make_project(tmp_path)
+    (project / "data" / "raw" / "day.csv").unlink()
+    result = subprocess.run(
+        ["./run.sh"], cwd=project, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert ("FAIL: stage 'validation' failed; later stages were "
+            "not run") in result.stdout
+    assert "PASS: all stages passed" not in result.stdout
+    assert "Overall: PASS" not in result.stdout
+    assert not (project / "outputs" / "interim"
+                / "campaign_by_month.csv").exists()
+
+
+def test_run_sh_stops_at_first_failed_later_stage(tmp_path):
+    # recommend fails (no caveat_text); recent_trend must not run
+    # on stale or missing recommendations.
+    project = _make_project(tmp_path)
+    config = project / "config" / "restaurant.yaml"
+    lines = [line for line in config.read_text().splitlines(True)
+             if not line.startswith("  caveat_text:")]
+    config.write_text("".join(lines))
+    result = subprocess.run(
+        ["./run.sh"], cwd=project, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert ("FAIL: stage 'recommend' failed; later stages were "
+            "not run") in result.stdout
+    assert (project / "outputs" / "results" / "runs.csv").is_file()
+    assert not (project / "outputs" / "results"
+                / "recent_trend.csv").exists()
+    assert "PASS: all stages passed" not in result.stdout

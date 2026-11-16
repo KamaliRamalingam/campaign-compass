@@ -11,7 +11,9 @@ the config) and writes, all git-ignored:
 - outputs/results/recommendations_by_campaign.csv: per campaign,
   the label of its latest run with enough volume, number of runs
   with enough volume, repeat_eligible, last active date and
-  status (active or ended), best run, action_text, reason, caveat.
+  status (active or ended), best run, action_text, reason, caveat,
+  and base_label / base_action_text / base_reason (copies that
+  src/recent_trend.py rebuilds from, so it is idempotent).
 - outputs/results/recommendation_sensitivity.csv: one row per
   campaign and per combination of the sensitivity threshold
   lists, with the resulting label and label_stable.
@@ -27,6 +29,16 @@ the benchmark of the other campaigns in them. Each run row
 carries the benchmark it used and its basis. The report lists
 the pooled and leave-one-out benchmarks with and without the
 not_comparable groups.
+
+Recent-window label (recommendation_rules.recent_label,
+default off): with window_days set, an active campaign without a
+fixed label is labelled from its last window_days of daily data
+(ending at the last data date minus
+recent_trend.conversion_lag_days), with the same volume rule
+and thresholds as a run. Too little volume in the window gives
+insufficient_data. label_basis says where each label comes
+from (recent_window, latest_run or fixed); run_label keeps the
+latest-run label; label_ratio is the ratio behind the label.
 
 Fixed labels, which win over every other label:
 - not_comparable for a campaign whose group is in
@@ -60,6 +72,7 @@ Only counts per label are printed, never campaign names or rows.
 
 import argparse
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -80,6 +93,7 @@ LABEL_PAUSE = "pause_or_review"
 LABEL_NOT_COMPARABLE = "not_comparable"
 LABEL_NOT_JUDGED = "not_judged"
 DEFAULT_BENCHMARK_GROUPS = ("core",)
+BASE_COLUMNS = ("label", "action_text", "reason")
 BASIS_POOLED = "pooled"
 BASIS_LOO = "leave_one_out"
 BASIS_LOO_FALLBACK = "pooled (leave-one-out not possible)"
@@ -214,6 +228,11 @@ def recommend_runs(runs_df, benchmark, rules, caveat,
         for _, run in part.iterrows():
             cost_per_conversion = run.get("cost_per_conversion")
             fixed = fixed_label(run["group"], rules)
+            # Every reason states the period its signal covers.
+            run_text = (
+                f"run {int(run['run_number'])} of {total_runs} "
+                f"for this campaign ({run['start']} to {run['end']})"
+            )
             ratio = (
                 cost_per_conversion / run_benchmark
                 if fixed is None
@@ -225,23 +244,18 @@ def recommend_runs(runs_df, benchmark, rules, caveat,
             if fixed is not None:
                 fixed_text = _fixed_reason(
                     fixed, run["group"], cost_per_conversion, name)
-                reason = (
-                    f"{fixed_text}; run {int(run['run_number'])} "
-                    f"of {total_runs} for this campaign"
-                )
+                reason = f"{fixed_text}; {run_text}"
             elif label == LABEL_INSUFFICIENT:
                 reason = (
                     f"not enough volume to judge: "
                     f"{run['conversions']:.0f} tracked conversions "
                     f"over {int(run['active_days'])} active days; "
-                    f"run {int(run['run_number'])} of {total_runs} "
-                    f"for this campaign"
+                    f"{run_text}"
                 )
             else:
                 reason = (
                     f"cost per conversion is {ratio:.2f} times the "
-                    f"{name}; run {int(run['run_number'])} "
-                    f"of {total_runs} for this campaign"
+                    f"{name}; {run_text}"
                 )
             rows.append({
                 "campaign": campaign,
@@ -305,7 +319,73 @@ def action_text(label, status_now, repeat_eligible, best_run,
     return text
 
 
-def recommend_campaigns(run_recs, day_summary, rules, caveat):
+def recent_label_settings(rules):
+    """window_days from rules["recent_label"], or None (off)."""
+    settings = rules.get("recent_label") or {}
+    days = settings.get("window_days")
+    return int(days) if days else None
+
+
+def recent_window_results(day_df, campaigns, window_days, lag_days,
+                          per_campaign, benchmark, rules,
+                          volume_rule):
+    """Recent-window volume, cost and label per campaign.
+
+    The window is window_days long and ends at the last date in
+    day_df minus lag_days (the same lag as the recent trend). The
+    volume rule and the label thresholds are the same as for
+    runs; the ratio uses the campaign's own benchmark from
+    per_campaign (or benchmark). Returns {campaign: dict}.
+    """
+    day = day_df.copy()
+    day["date"] = pd.to_datetime(day["date"]).dt.date
+    end = day["date"].max() - timedelta(days=lag_days)
+    start = end - timedelta(days=window_days - 1)
+    min_conversions = (volume_rule or {}).get("min_conversions", 0)
+    min_days = (volume_rule or {}).get("min_days_active", 0)
+    results = {}
+    for campaign in campaigns:
+        part = day.loc[(day["campaign"] == campaign)
+                       & (day["date"] >= start)
+                       & (day["date"] <= end)]
+        spend = float(part["cost"].sum())
+        conversions = float(part["conversions"].sum())
+        active_days = int(part["date"].nunique())
+        cost = spend / conversions if conversions else None
+        flag = ("ok" if conversions >= min_conversions
+                and active_days >= min_days and conversions > 0
+                else LABEL_INSUFFICIENT)
+        value = (per_campaign or {}).get(
+            campaign, (benchmark, BASIS_POOLED))[0]
+        ratio = (cost / value if cost is not None and value
+                 and flag == "ok" else None)
+        results[campaign] = {
+            "start": start, "end": end, "window_days": window_days,
+            "spend": spend, "conversions": conversions,
+            "active_days": active_days, "cost_per_conversion": cost,
+            "ratio": ratio,
+            "label": label_run(ratio, flag, rules),
+        }
+    return results
+
+
+def _recent_reason(result, name, run_label, run_text):
+    """Reason for a label taken from the recent window."""
+    period = (f"last {result['window_days']} days "
+              f"({result['start']} to {result['end']})")
+    if result["label"] == LABEL_INSUFFICIENT:
+        signal = (f"not enough volume to judge: "
+                  f"{result['conversions']:.0f} tracked conversions "
+                  f"over {result['active_days']} active days")
+    else:
+        signal = (f"cost per conversion is {result['ratio']:.2f} "
+                  f"times the {name}")
+    return (f"{period}: {signal}; label from the recent window, "
+            f"not the run: {run_text} was labelled {run_label}")
+
+
+def recommend_campaigns(run_recs, day_summary, rules, caveat,
+                        recent_windows=None):
     """Recommend per campaign from its runs.
 
     The label is the label of its latest run with enough volume,
@@ -318,7 +398,15 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
     active date is within active_window_days of the latest date
     in the daily data, otherwise ended), the best run with enough
     volume (lowest cost per conversion) and action_text.
+
+    recent_windows, from recent_window_results, switches active
+    campaigns without a fixed label to the recent-window label
+    (label_basis "recent_window"); the run label is kept in
+    run_label. Without it every label comes from the latest run,
+    as before.
     """
+    groups, leave_one_out = benchmark_settings(rules)
+    name = benchmark_name(groups, leave_one_out)
     repeat_min = rules.get("repeat_min_runs", 2)
     window = rules.get("active_window_days", 14)
     latest_date = pd.to_datetime(
@@ -351,14 +439,16 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
             latest_cost = (
                 part.sort_values("run_number").iloc[-1][
                     "cost_per_conversion"] if total_runs else None)
-            groups, leave_one_out = benchmark_settings(rules)
             reason = _fixed_reason(
-                fixed, campaign_row["group"], latest_cost,
-                benchmark_name(groups, leave_one_out))
+                fixed, campaign_row["group"], latest_cost, name)
+            label_ratio = None
+            run_text = "the latest run"
         elif with_volume.empty:
             label = LABEL_INSUFFICIENT
             latest_run_number = None
             best_run = None
+            label_ratio = None
+            run_text = "no run with enough volume"
             reason = (
                 f"no run had enough volume to judge: "
                 f"{total_runs} runs, 0 with enough volume"
@@ -377,18 +467,36 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
                     best["cost_per_conversion"]),
             }
             ratio = latest["ratio_to_benchmark"]
+            label_ratio = ratio
+            run_text = (f"latest run {latest_run_number} "
+                        f"({latest['start']} to {latest['end']}, "
+                        f"{ratio:.2f} times the benchmark)")
             reason = (
-                f"latest run with enough volume is labelled "
+                f"latest run with enough volume (run "
+                f"{latest_run_number}, {latest['start']} to "
+                f"{latest['end']}) is labelled "
                 f"{label}; cost per conversion is {ratio:.2f} "
-                f"times the core benchmark; {runs_with_volume} "
+                f"times the {name}; {runs_with_volume} "
                 f"of {total_runs} runs had enough volume"
             )
+        run_label = label
+        label_basis = "fixed" if fixed is not None else "latest_run"
+        recent = (recent_windows or {}).get(campaign)
+        if (recent is not None and fixed is None
+                and status_now == "active"):
+            label = recent["label"]
+            label_ratio = recent["ratio"]
+            label_basis = "recent_window"
+            reason = _recent_reason(recent, name, run_label, run_text)
         rows.append({
             "campaign": campaign,
             "group": campaign_row["group"],
             "last_active_date": campaign_row["last_active_date"],
             "status_now": status_now,
             "label": label,
+            "label_basis": label_basis,
+            "run_label": run_label,
+            "label_ratio": label_ratio,
             "latest_run_number": latest_run_number,
             "runs_with_volume": runs_with_volume,
             "repeat_eligible": repeat_eligible,
@@ -408,10 +516,16 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat):
     table = pd.DataFrame(rows)
     if table.empty:
         return table
+    # Base copies: later stages (recent_trend) rebuild label,
+    # action_text and reason from these, so rerunning them never
+    # stacks changes on top of earlier ones.
+    for column in BASE_COLUMNS:
+        table[f"base_{column}"] = table[column]
     return table.sort_values("campaign").reset_index(drop=True)
 
 
-def sensitivity_table(run_recs, day_summary, rules):
+def sensitivity_table(run_recs, day_summary, rules,
+                      campaign_recs=None):
     """One row per campaign and per sensitivity combination.
 
     Only combinations where continue_max_ratio <= test_max_ratio
@@ -419,7 +533,19 @@ def sensitivity_table(run_recs, day_summary, rules):
     with enough volume under those thresholds, or
     insufficient_data if it has none. label_stable is true when
     the campaign's label is the same in every combination.
+
+    When campaign_recs is given, a campaign labelled from its
+    recent window (label_basis "recent_window") is tested with
+    that window's ratio instead of its latest run's.
     """
+    recent_ratios = {}
+    if campaign_recs is not None and "label_basis" in campaign_recs:
+        for _, rec in campaign_recs.iterrows():
+            if rec["label_basis"] == "recent_window":
+                ratio = rec["label_ratio"]
+                recent_ratios[rec["campaign"]] = (
+                    None if ratio is None or pd.isna(ratio)
+                    else float(ratio))
     continue_list = rules.get("sensitivity_continue_max_ratio") or []
     test_list = rules.get("sensitivity_test_max_ratio") or []
     base = {key: rules[key] for key in
@@ -434,7 +560,9 @@ def sensitivity_table(run_recs, day_summary, rules):
         ]
         fixed = fixed_label(campaign_row["group"], rules)
         ratio = None
-        if fixed is None and not with_volume.empty:
+        if fixed is None and campaign in recent_ratios:
+            ratio = recent_ratios[campaign]
+        elif fixed is None and not with_volume.empty:
             latest = with_volume.sort_values("run_number").iloc[-1]
             ratio = latest["ratio_to_benchmark"]
         labels = []
@@ -531,6 +659,23 @@ def write_recommend_report(report_path, run_recs, campaign_recs,
                     f"- Leave-one-out ({names}): "
                     f"{row['loo_min']:.2f} to {row['loo_max']:.2f}")
         lines.append("")
+    if "label_basis" in campaign_recs.columns:
+        recent = campaign_recs.loc[
+            campaign_recs["label_basis"] == "recent_window"]
+        if not recent.empty:
+            changed = recent.loc[recent["label"] != recent["run_label"]]
+            lines.append("## Recent-window label")
+            lines.append("")
+            lines.append(
+                f"- Active campaigns labelled from the recent window: "
+                f"{len(recent)}")
+            lines.append(
+                f"- Of these, label differs from the run label: "
+                f"{len(changed)}")
+            for (old, new), count in changed.groupby(
+                    ["run_label", "label"]).size().items():
+                lines.append(f"  - {old} -> {new}: {int(count)}")
+            lines.append("")
     lines.append("## Runs per label")
     lines.append("")
     for label, count in run_recs["label"].value_counts().items():
@@ -584,6 +729,10 @@ def main(argv=None):
     analysis = config["analysis"]
     outputs = analysis.get("outputs") or {}
     rules = analysis.get("recommendation_rules") or {}
+    volume_rule = analysis.get("volume_rule") or {}
+    window_days = recent_label_settings(rules)
+    lag_days = int((analysis.get("recent_trend") or {}).get(
+        "conversion_lag_days", 0))
     if "pause_above_ratio" in rules:
         print("WARNING: recommendation_rules.pause_above_ratio is "
               "not used (test_max_ratio is the pause boundary); "
@@ -591,6 +740,9 @@ def main(argv=None):
     try:
         runs_df = pd.read_csv(outputs["runs"])
         day_summary = pd.read_csv(outputs["campaign_summary_day"])
+        # The daily table is only needed for the recent-window
+        # label (recommendation_rules.recent_label).
+        day_df = pd.read_csv(outputs["day"]) if window_days else None
     except (KeyError, FileNotFoundError) as exc:
         print(f"ERROR: {exc} (run the earlier stages first)",
               file=sys.stderr)
@@ -604,9 +756,16 @@ def main(argv=None):
         caveat = analysis["caveat_text"]
         run_recs = recommend_runs(runs_df, benchmark, rules, caveat,
                                   per_campaign)
+        recent_windows = (
+            recent_window_results(
+                day_df, day_summary["campaign"], window_days,
+                lag_days, per_campaign, benchmark, rules,
+                volume_rule)
+            if window_days else None)
         campaign_recs = recommend_campaigns(
-            run_recs, day_summary, rules, caveat)
-        sensitivity = sensitivity_table(run_recs, day_summary, rules)
+            run_recs, day_summary, rules, caveat, recent_windows)
+        sensitivity = sensitivity_table(
+            run_recs, day_summary, rules, campaign_recs)
     except (KeyError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

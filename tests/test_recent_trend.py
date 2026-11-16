@@ -145,8 +145,9 @@ def test_recent_trend_worsening_by_prior_only():
     assert row["recent_vs_prior_ratio"] == pytest.approx(1.3)
     assert row["ratio_vs_run_average"] == pytest.approx(1.3)
     assert row["trend_reason"] == (
-        "cost per tracked action is 1.30 times the prior 28 days "
-        "and 1.30 times the run average")
+        "cost per tracked action in the recent window (2026-01-15 to 2026-02-11) is "
+        "1.30 times the prior window (2025-12-18 to 2026-01-14) "
+        "and 1.30 times the run 1 average (2025-12-18 to 2026-02-14)")
 
 
 def test_recent_trend_worsening_by_run_average_only():
@@ -216,8 +217,9 @@ def test_recent_trend_example_from_the_task():
     assert row["recent_vs_prior_ratio"] == pytest.approx(1.52, abs=0.01)
     assert row["ratio_vs_run_average"] == pytest.approx(1.34)
     assert row["trend_reason"] == (
-        "cost per tracked action is 1.52 times the prior 28 days "
-        "and 1.34 times the run average")
+        "cost per tracked action in the recent window (2026-01-15 to 2026-02-11) is "
+        "1.52 times the prior window (2025-12-18 to 2026-01-14) "
+        "and 1.34 times the run 1 average (2025-12-18 to 2026-02-14)")
 
 
 def test_recent_trend_prior_window_empty():
@@ -257,7 +259,8 @@ def test_recent_trend_without_a_current_run_uses_prior_only():
     assert pd.isna(row["ratio_vs_run_average"])
     assert row["recent_vs_prior_ratio"] == pytest.approx(1.0)
     assert row["trend_reason"] == (
-        "cost per tracked action is 1.00 times the prior 28 days")
+        "cost per tracked action in the recent window (2026-01-15 to 2026-02-11) is "
+        "1.00 times the prior window (2025-12-18 to 2026-01-14)")
 
 
 def test_current_run_average_uses_the_latest_run():

@@ -299,8 +299,13 @@ def _fmt(value):
     return str(value)
 
 
-def write_report(results, cross, out_path, generated_at):
-    """Write the markdown report. Only dates, counts and sums appear."""
+def write_report(results, cross, out_path, generated_at, unreadable=()):
+    """Write the markdown report. Only dates, counts and sums appear.
+
+    unreadable lists (file, error) for configured files that are
+    missing or could not be read; any of them makes the overall
+    result FAIL.
+    """
     lines = []
     lines.append("# Export validation report")
     lines.append("")
@@ -312,8 +317,16 @@ def write_report(results, cross, out_path, generated_at):
             overall = "FAIL"
     if cross["status"] == "FAIL":
         overall = "FAIL"
+    if unreadable:
+        overall = "FAIL"
     lines.append(f"Overall: **{overall}**")
     lines.append("")
+    if unreadable:
+        lines.append("## Files that could not be read")
+        lines.append("")
+        for name, error in unreadable:
+            lines.append(f"- {name}: FAIL, {error}")
+        lines.append("")
     lines.append(
         "Note: a lower row count than the UI is INFO, not FAIL. "
         "The UI may list a full campaign x period grid, including "
@@ -395,6 +408,7 @@ def main(argv=None):
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     results = []
+    unreadable = []
     failed = False
     for entry in config["files"]:
         try:
@@ -402,6 +416,8 @@ def main(argv=None):
         except (FileNotFoundError, ValueError) as exc:
             print(f"FAIL {entry.get('path')}: {exc}", file=sys.stderr)
             failed = True
+            unreadable.append(
+                (entry.get("kind") or entry.get("path"), str(exc)))
             continue
         result["metrics"] = validate_file(entry, result)
         if any(m[4] == "FAIL" for m in result["metrics"]):
@@ -416,7 +432,8 @@ def main(argv=None):
     if cross["status"] == "FAIL":
         failed = True
     generated_at = datetime.now().isoformat(timespec="seconds")
-    overall = write_report(results, cross, args.out, generated_at)
+    overall = write_report(results, cross, args.out, generated_at,
+                           unreadable)
     print(f"Cross-file check: {cross['status']} "
           f"(tolerances: {cross.get('tolerance')})")
     print(f"Overall: {overall} (report: {args.out})")
