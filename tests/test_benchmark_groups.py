@@ -107,3 +107,30 @@ def test_main_has_no_warning_without_pause_above_ratio(
     path = _write_main_config(tmp_path, RULES)
     assert recommend.main(["--config", str(path)]) == 0
     assert "WARNING" not in capsys.readouterr().out
+
+
+# --- M1: run_groups replaces the hard-coded extra group ---------
+
+def test_run_groups_from_config():
+    from src.time_patterns import resolve_run_groups
+    analysis = {"time_groups": ["core"],
+                "run_groups": ["core", "core_pmax"]}
+    assert resolve_run_groups(analysis) == ["core", "core_pmax"]
+
+
+def test_run_groups_default_keeps_old_behaviour():
+    from src.time_patterns import resolve_run_groups
+    assert resolve_run_groups({"time_groups": ["core"]}) == [
+        "core", "sep_2026_group"]
+
+
+def test_runs_table_covers_only_run_groups():
+    from src.time_patterns import runs_table
+    groups = {"core": ["Alpha"], "core_pmax": ["Pmax"],
+              "other": ["Gamma"]}
+    rows = [{"date": f"2024-01-{day:02d}", "campaign": name,
+             "clicks": 1, "cost": 1.0, "conversions": 1.0}
+            for day in range(1, 4) for name in ("Alpha", "Pmax", "Gamma")]
+    table = runs_table(pd.DataFrame(rows), groups,
+                       ["core", "core_pmax"], 14, {})
+    assert sorted(table["campaign"]) == ["Alpha", "Pmax"]
