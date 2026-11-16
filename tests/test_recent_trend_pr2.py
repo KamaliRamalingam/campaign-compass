@@ -161,3 +161,68 @@ def test_recommendation_reasons_state_the_run_period():
     recs = recommend_campaigns(run_recs, summary, rules, "caveat")
     assert ("latest run with enough volume (run 1, 2025-12-18 to "
             "2026-02-14)") in recs["reason"].iloc[0]
+
+
+# --- M2: trend_overrides -----------------------------------------
+
+OVERRIDES = dict(SETTINGS,
+                 trend_overrides={"worsening": {"continue": "test"}})
+
+
+def test_worsening_continue_becomes_test():
+    trend = recent_trend.compute_recent_trend(
+        _day_df(), _runs_df(), _recs(), OVERRIDES)
+    assert trend["recent_trend"].iloc[0] == "worsening"
+    row = recent_trend.apply_to_recommendations(
+        _recs(), trend, OVERRIDES).iloc[0]
+    assert row["label"] == "test"
+    assert row["base_label"] == "continue"
+    assert row["trend_override"] == "continue -> test"
+    assert row["action_text"] == (
+        "keep running, but test changes" + WORSENING_SUFFIX)
+    assert ("label changed continue -> test because the recent "
+            "trend is worsening (recent window 2026-01-15 to "
+            "2026-02-11)") in row["reason"]
+
+
+def test_without_overrides_label_is_unchanged():
+    trend = recent_trend.compute_recent_trend(
+        _day_df(), _runs_df(), _recs(), SETTINGS)
+    row = recent_trend.apply_to_recommendations(
+        _recs(), trend, SETTINGS).iloc[0]
+    assert row["label"] == "continue"
+    assert row["trend_override"] == ""
+    assert row["action_text"] == "keep running" + WORSENING_SUFFIX
+
+
+def test_override_only_matches_its_label():
+    trend = recent_trend.compute_recent_trend(
+        _day_df(), _runs_df(), _recs("test"), OVERRIDES)
+    row = recent_trend.apply_to_recommendations(
+        _recs("test", "keep running, but test changes"), trend,
+        OVERRIDES).iloc[0]
+    assert row["label"] == "test"
+    assert row["trend_override"] == ""
+
+
+def test_unknown_override_label_is_an_error():
+    import pytest
+    bad = dict(SETTINGS,
+               trend_overrides={"worsening": {"continue": "watch"}})
+    with pytest.raises(ValueError, match="unknown label 'watch'"):
+        recent_trend.trend_overrides(bad)
+
+
+def test_override_rerun_is_idempotent_and_reported(tmp_path):
+    path, recs = _write_config(tmp_path, OVERRIDES)
+    assert recent_trend.main(["--config", str(path)]) == 0
+    first = recs.read_text()
+    assert recent_trend.main(["--config", str(path)]) == 0
+    assert recs.read_text() == first
+    row = pd.read_csv(recs).iloc[0]
+    assert row["label"] == "test"
+    assert row["reason"].count("label changed") == 1
+    report = (tmp_path / "trend.md").read_text()
+    assert "## Labels changed by trend_overrides" in report
+    assert "  - continue -> test: 1" in report
+    assert "Alpha" not in report

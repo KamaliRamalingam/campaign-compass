@@ -55,9 +55,11 @@ import pandas as pd
 try:
     from src.paths import apply_output_root
     from src.clean import load_config
+    from src.recommend import ACTION_TEXT, action_text
 except ImportError:  # running as `python src/recent_trend.py`
     from clean import load_config
     from paths import apply_output_root
+    from recommend import ACTION_TEXT, action_text
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 TREND_WORSENING = "worsening"
@@ -341,7 +343,59 @@ def _base_columns(recs):
     return recs
 
 
-def apply_to_recommendations(recommendations, trend_table):
+def trend_overrides(settings):
+    """{trend: {label: new_label}} from settings, checked.
+
+    Default {} (no overrides). Every new label must be a known
+    label, so the action text can be rebuilt for it.
+    """
+    overrides = (settings or {}).get("trend_overrides") or {}
+    known = {label for label, _ in ACTION_TEXT}
+    for trend, mapping in overrides.items():
+        for old, new in (mapping or {}).items():
+            if new not in known:
+                raise ValueError(
+                    f"trend_overrides.{trend}.{old}: unknown label "
+                    f"{new!r} (known: {', '.join(sorted(known))})")
+    return overrides
+
+
+def _best_run(row):
+    """best_run dict for action_text from a recommendation row."""
+    number = row.get("best_run_number")
+    if number is None or pd.isna(number):
+        return None
+    return {"run_number": int(number),
+            "start": row.get("best_run_start"),
+            "end": row.get("best_run_end")}
+
+
+def _override(row, trend, window, overrides):
+    """(label, action_text, reason, note) after trend_overrides.
+
+    Without a matching override the base values are returned
+    and note is "".
+    """
+    label = row["base_label"]
+    text = row["base_action_text"]
+    reason = row.get("base_reason", "")
+    new = (overrides.get(trend) or {}).get(label)
+    if new is None or new == label:
+        return label, text, reason, ""
+    latest = row.get("latest_run_number")
+    latest = None if latest is None or pd.isna(latest) else int(latest)
+    repeat = bool(row.get("repeat_eligible")) \
+        if not pd.isna(row.get("repeat_eligible", False)) else False
+    text = action_text(new, row["status_now"], repeat,
+                       _best_run(row), latest)
+    note = f"{label} -> {new}"
+    reason = (f"{reason}; label changed {label} -> {new} because "
+              f"the recent trend is {trend} ({window})")
+    return new, text, reason, note
+
+
+def apply_to_recommendations(recommendations, trend_table,
+                             settings=None):
     """Add recent trend, ratios and reason, and the suffix.
 
     Campaigns that are not active get recent_trend not_active
@@ -352,7 +406,14 @@ def apply_to_recommendations(recommendations, trend_table):
     Idempotent: label, action_text and reason are always rebuilt
     from the base_ columns, so running the stage twice gives the
     same file.
+
+    settings["trend_overrides"] (default none) changes the label
+    of an active campaign by its trend, e.g. {worsening:
+    {continue: test}}: the action text is rebuilt for the new
+    label, the reason says why and for which window, and the
+    trend_override column records the change.
     """
+    overrides = trend_overrides(settings)
     recs = _base_columns(recommendations)
     by_campaign = trend_table.set_index("campaign") \
         if not trend_table.empty else None
@@ -382,21 +443,46 @@ def apply_to_recommendations(recommendations, trend_table):
     recs["ratio_vs_run_average"] = run_ratios
     recs["recent_vs_prior_ratio"] = prior_ratios
     recs["trend_reason"] = reasons
+    windows = {}
+    if by_campaign is not None:
+        for campaign, trend_row in by_campaign.iterrows():
+            windows[campaign] = (
+                f"recent window {trend_row['recent_window_start']} "
+                f"to {trend_row['recent_window_end']}")
+    labels, texts, new_reasons, notes = [], [], [], []
+    for (_, row), trend in zip(recs.iterrows(), trends):
+        if "label" in recs.columns and overrides:
+            label, text, reason, note = _override(
+                row, trend, windows.get(row["campaign"], ""),
+                overrides)
+        else:
+            label, text, reason, note = (
+                row.get("base_label"), row["base_action_text"],
+                row.get("base_reason", ""), "")
+        labels.append(label)
+        texts.append(text)
+        new_reasons.append(reason)
+        notes.append(note)
     if "label" in recs.columns:
-        recs["label"] = recs["base_label"]
+        recs["label"] = labels
     if "reason" in recs.columns:
-        recs["reason"] = recs["base_reason"]
+        recs["reason"] = new_reasons
+    recs["trend_override"] = notes
     recs["action_text"] = [
         text + WORSENING_SUFFIX if trend == TREND_WORSENING
         else text
-        for text, trend in zip(recs["base_action_text"], trends)
+        for text, trend in zip(texts, trends)
     ]
     return recs
 
 
 def write_recent_trend_report(report_path, trend_table, bounds,
-                              last_date):
-    """Write the recent-trend report: counts only, no names."""
+                              last_date, updated=None):
+    """Write the recent-trend report: counts only, no names.
+
+    updated (the recommendations after trend_overrides) adds the
+    number of labels the overrides changed, by transition.
+    """
     recent_start, recent_end, prior_start, prior_end = bounds
     lines = ["# Recent trend report", ""]
     lines.append(f"- Last data date: {last_date}")
@@ -414,6 +500,15 @@ def write_recent_trend_report(report_path, trend_table, bounds,
                 .value_counts().items():
             lines.append(f"- {trend}: {int(count)}")
     lines.append("")
+    if updated is not None and "trend_override" in updated.columns:
+        changed = updated.loc[updated["trend_override"].fillna("") != ""]
+        lines.append("## Labels changed by trend_overrides")
+        lines.append("")
+        lines.append(f"- Campaigns: {len(changed)}")
+        for note, count in changed["trend_override"] \
+                .value_counts().items():
+            lines.append(f"  - {note}: {int(count)}")
+        lines.append("")
     path = Path(report_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -453,7 +548,7 @@ def main(argv=None):
             day_df, runs_df, recommendations, settings)
         weekly = weekly_table(day_df)
         updated = apply_to_recommendations(
-            recommendations, trend_table)
+            recommendations, trend_table, settings)
     except (KeyError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -473,7 +568,7 @@ def main(argv=None):
     weekly.to_csv(weekly_out, index=False)
     updated.to_csv(recs_out, index=False)
     write_recent_trend_report(
-        report_out, trend_table, bounds, last_date)
+        report_out, trend_table, bounds, last_date, updated)
 
     print(f"Last data date: {last_date}")
     print(f"Recent window: {bounds[0]} to {bounds[1]}")
