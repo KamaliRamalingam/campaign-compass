@@ -139,6 +139,12 @@ run_stage metrics .venv/bin/python src/metrics.py --config "$LOAD_CONFIG"
 # Prints counts only.
 run_stage time_patterns .venv/bin/python src/time_patterns.py --config "$LOAD_CONFIG"
 
+# Stage 6b: weekday decomposition (PR 3). Splits the pooled
+# weekday cells by campaign (click shares, actions per click,
+# leave-one-out, top days). Aggregates only; skipped with a
+# message when analysis.weekday_decomposition is not set.
+run_stage weekday_decomposition .venv/bin/python src/weekday_decomposition.py --config "$LOAD_CONFIG"
+
 # Stage 7: recommendations (T5). Writes result tables under
 # outputs/results/ and a report under outputs/reports/.
 # Prints counts per label only.

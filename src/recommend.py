@@ -681,7 +681,7 @@ def write_recommend_report(report_path, run_recs, campaign_recs,
     for label, count in run_recs["label"].value_counts().items():
         lines.append(f"- {label}: {int(count)}")
     lines.append("")
-    lines.append("## Campaigns per label")
+    lines.append("## Campaigns per label (before trend override)")
     lines.append("")
     for label, count in campaign_recs["label"].value_counts().items():
         lines.append(f"- {label}: {int(count)}")
@@ -792,7 +792,7 @@ def main(argv=None):
     print("Runs per label:")
     for label, count in run_recs["label"].value_counts().items():
         print(f"  {label}: {int(count)}")
-    print("Campaigns per label:")
+    print("Campaigns per label (before trend override):")
     for label, count in campaign_recs["label"].value_counts().items():
         print(f"  {label}: {int(count)}")
     print("Campaigns per status:")

@@ -288,3 +288,28 @@ def test_unknown_run_average_mode_is_an_error():
         recent_trend.compute_recent_trend(
             _day_df(), _runs_df(), _recs(),
             dict(SETTINGS, run_average="other"))
+
+
+# --- PR 3: final label counts in the recommend report ----------
+
+def test_final_label_counts_are_added_once(tmp_path, capsys):
+    path, _ = _write_config(tmp_path, OVERRIDES)
+    report = tmp_path / "recommend-report.md"
+    report.write_text(
+        "# Recommend report\n\n"
+        "## Campaigns per label (before trend override)\n\n"
+        "- continue: 1\n")
+    config = yaml.safe_load(path.read_text())
+    config["analysis"]["outputs"]["recommend_report"] = str(report)
+    path.write_text(yaml.safe_dump(config))
+    for _ in range(2):
+        assert recent_trend.main(["--config", str(path)]) == 0
+    text = report.read_text()
+    heading = recent_trend.FINAL_LABELS_HEADING
+    assert text.count(heading) == 1
+    final = text.split(heading)[1]
+    assert "- test: 1" in final
+    assert "- continue: 1" in text.split(heading)[0]
+    out = capsys.readouterr().out
+    assert "Campaigns per final label (after trend override):" in out
+    assert "Alpha" not in text
