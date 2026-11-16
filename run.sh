@@ -4,7 +4,7 @@
 #   bash run.sh --client synthetic_b
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, clean, overview, metrics, time, recommend, conversion, recent trend, journey).
+# stages that exist so far (validation, load, clean, overview, metrics, time, recommend, conversion, recent trend, lag check, journey).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
@@ -153,6 +153,13 @@ run_stage conversion_mix .venv/bin/python src/conversion_mix.py --config "$LOAD_
 # result tables under outputs/results/ and a report under
 # outputs/reports/. Prints counts only.
 run_stage recent_trend .venv/bin/python src/recent_trend.py --config "$LOAD_CONFIG"
+
+# Stage 9b: lag check (PR 2). Reruns the recent-window label,
+# the recent trend and the trend overrides with each lag in
+# analysis.recent_trend.lag_check_days and reports how many
+# change (counts only). Skipped with a message when the key is
+# not set. The configured lag is not changed.
+run_stage lag_check .venv/bin/python src/lag_check.py --config "$LOAD_CONFIG"
 
 # Stage 10: acquisition journey, what-if and break-even
 # (T12). Writes the journey table, the what-if table and the
