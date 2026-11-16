@@ -146,6 +146,141 @@ def _page_summary(ctx):
                 st.write(f"Action: {row['action_text']}")
 
 
+# --- Campaign -----------------------------------------------------
+
+def _period_slider(values, label, key):
+    """A from-to slider over the sorted periods; returns (start, end)."""
+    options = sorted(set(str(value) for value in values))
+    if len(options) < 2:
+        return None, None
+    return st.select_slider(label, options=options,
+                            value=(options[0], options[-1]), key=key)
+
+
+def _page_campaign(ctx):
+    """One campaign: label and reasons, runs, trend, weekday, journey."""
+    st.header("Campaign")
+    _context(ctx)
+    tables = ctx["tables"]
+    currency = ctx["currency"]
+    if not ctx["campaigns"]:
+        st.info("No campaigns in this group.")
+        return
+    campaign = st.selectbox("Campaign", ctx["campaigns"])
+    detail = dashboard_data.campaign_detail(
+        ctx["all_recommendations"], tables["recent_trend"], campaign)
+
+    cols = st.columns(3)
+    cols[0].metric("Final label", detail["label"], border=True)
+    cols[1].metric("Status now", detail["status_now"], border=True)
+    cols[2].metric("Recent trend", detail["recent_trend"] or "—",
+                   border=True)
+    with st.container(border=True):
+        st.markdown(f"**Action:** {detail['action']}")
+        label_period = detail["label_period"] or "no period"
+        st.markdown(f"**Label** (from {detail['label_from']}, "
+                    f"{label_period})")
+        st.write(detail["reason"])
+        if detail["trend_window"]:
+            st.markdown(
+                f"**Trend** (recent window {detail['trend_window']}, "
+                f"prior window {detail['prior_window']})")
+            st.write(detail["trend_reason"])
+        else:
+            st.caption("No recent trend: the campaign is not active "
+                       "or its group is not judged.")
+
+    st.subheader("Runs")
+    runs = dashboard_data.run_recommendations_for_campaign(
+        tables["recommendations_by_run"], campaign)
+    if runs.empty:
+        st.caption("No runs: runs are built only for the run groups "
+                   "in the config.")
+    else:
+        _table(dashboard_data.display_table(runs),
+               f"runs_{campaign}.csv", key="campaign_runs")
+
+    st.subheader("Trend")
+    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True,
+                    key="campaign_view")
+    if view == "Monthly":
+        table = dashboard_data.trend_for_campaign(
+            tables["timeline_by_campaign"], campaign)
+        timeline = tables["timeline_by_campaign"]
+        flag_columns = [column for column in ("is_partial", "is_lagged")
+                        if column in timeline.columns]
+        if flag_columns:
+            flags = timeline.loc[timeline["campaign"] == campaign,
+                                 ["month", "source"] + flag_columns]
+            table = table.merge(flags, on=["month", "source"],
+                                how="left")
+            table[flag_columns] = table[flag_columns].astype(
+                "object").fillna("").astype(str)
+        x_field, x_title, key = "month", "Month", "month"
+    else:
+        table = dashboard_data.weekly_for_campaign(
+            tables["weekly_by_campaign"], campaign)
+        x_field, x_title, key = "week_start", "Week starting", "week"
+    if table.empty:
+        st.caption("No monthly or weekly rows: the trend tables "
+                   "cover the time groups in the config.")
+    else:
+        start, end = _period_slider(table[x_field], "Period",
+                                    f"period_{key}")
+        table = dashboard_data.filter_period(table, x_field, start, end)
+        tooltip = [x_field, "spend", "tracked_actions",
+                   alt.Tooltip("cost_per_tracked_action", format=".2f")]
+        tooltip += [column for column in ("source", "is_partial",
+                                          "is_lagged")
+                    if column in table.columns]
+        chart = alt.Chart(table).mark_line(point=True).encode(
+            x=alt.X(f"{x_field}:O", title=x_title,
+                    axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y("cost_per_tracked_action:Q",
+                    title=f"Cost per tracked action ({currency})"),
+            tooltip=tooltip,
+        )
+        st.altair_chart(chart, width="stretch")
+        if "is_partial" in table.columns:
+            st.caption("Hover a point: is_partial marks a month the "
+                       "campaign ran only part of; is_lagged marks "
+                       "a month with days still being reported.")
+        _table(dashboard_data.display_table(table),
+               f"{key}ly_{campaign}.csv", key="campaign_trend")
+
+    st.subheader("Weekday pattern")
+    by_campaign = tables["weekday_by_campaign"]
+    if campaign not in set(by_campaign["campaign"]):
+        st.caption("No weekday rows: weekday tables cover the time "
+                   "groups in the config.")
+    else:
+        weekday = dashboard_data.weekday_campaign_table(
+            by_campaign, campaign)
+        chart = alt.Chart(weekday).mark_bar().encode(
+            x=alt.X("weekday:N", sort=list(weekday["weekday"]),
+                    title="Weekday"),
+            y=alt.Y("cost_per_tracked_action:Q",
+                    title=f"Cost per tracked action ({currency})"),
+            tooltip=["weekday", "tracked_actions", "clicks",
+                     alt.Tooltip("cost_per_tracked_action",
+                                 format=".2f"), "volume_flag"],
+        )
+        st.altair_chart(chart, width="stretch")
+        _table(dashboard_data.display_table(weekday),
+               f"weekday_{campaign}.csv", key="campaign_weekday")
+
+    st.subheader("Acquisition journey")
+    journey = dashboard_data.journey_row(
+        tables["journey_by_campaign"], campaign)
+    if journey.empty:
+        st.caption("No journey row: the journey covers the time "
+                   "groups in the config.")
+    else:
+        _table(dashboard_data.display_table(
+            dashboard_data.journey_display(journey)),
+            key="campaign_journey")
+
+
 # --- Pages kept from T8 (fixed in a later commit) ----------------
 
 def _page_conversion(ctx):
@@ -292,6 +427,7 @@ def _page_journey(ctx):
 
 PAGES = {
     "Summary": _page_summary,
+    "Campaign": _page_campaign,
     "What counts as a tracked action": _page_conversion,
     "Runs": _page_runs,
     "Trend": _page_trend,
