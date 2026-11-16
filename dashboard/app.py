@@ -281,6 +281,118 @@ def _page_campaign(ctx):
             key="campaign_journey")
 
 
+# --- Weekday ------------------------------------------------------
+
+def _what_if(ctx):
+    """What-if rows, the range and the note."""
+    st.subheader("What-if: move weekday spend to the weekend")
+    what_if = ctx["tables"]["what_if_weekday_shift"]
+    rows, span = dashboard_data.what_if_parts(what_if)
+    columns = [column for column in (
+        "variant", "groups", "scenario", "spend_moved",
+        "tracked_actions_before", "tracked_actions_after", "display")
+        if column in rows.columns]
+    shown = rows[columns].copy()
+    for column in ("spend_moved", "tracked_actions_before",
+                   "tracked_actions_after"):
+        if column in shown.columns:
+            shown[column] = shown[column].round(0)
+    _table(shown, "what_if.csv", key="what_if", column_config={
+        "scenario": WIDE("Scenario", width="medium"),
+        "display": WIDE("Change", width="medium"),
+    })
+    if span is not None:
+        st.markdown(f"**Range across variants:** {span['display']}")
+    note = rows["note"].iloc[0] if "note" in rows.columns else ""
+    st.warning(f"{note}.", icon="⚠️")
+
+
+def _page_weekday(ctx):
+    """Pooled weekdays, the decomposition and the what-if."""
+    st.header("Weekday")
+    _context(ctx)
+    tables = ctx["tables"]
+    optional = ctx["optional"]
+    currency = ctx["currency"]
+    try:
+        pooled = dashboard_data.weekday_core_table(
+            tables["weekday_core"])
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
+    st.subheader("Time groups, pooled")
+    st.caption("Pooled over every campaign in the config's "
+               "time_groups. The group filter does not change "
+               "pooled numbers: that would mean recomputing.")
+    chart = alt.Chart(pooled).mark_bar().encode(
+        x=alt.X("weekday:N", sort=list(pooled["weekday"]),
+                title="Weekday"),
+        y=alt.Y("cost_per_tracked_action:Q",
+                title=f"Cost per tracked action ({currency})"),
+        tooltip=["weekday", "tracked_actions", "clicks",
+                 alt.Tooltip("cost_per_tracked_action", format=".2f"),
+                 "volume_flag"],
+    )
+    st.altair_chart(chart, width="stretch")
+    _table(dashboard_data.display_table(pooled), "weekday_pooled.csv",
+           key="weekday_pooled")
+
+    mix = optional["weekday_mix_by_campaign"]
+    loo = optional["weekday_leave_one_out"]
+    top = optional["weekday_top_days"]
+    st.subheader("Is one campaign behind a weekday?")
+    if mix is None or loo is None:
+        st.info("The weekday decomposition is not turned on for "
+                "this client (analysis.weekday_decomposition in its "
+                "config).")
+    else:
+        weekdays = [day for day in dashboard_data.WEEKDAYS
+                    if day[:3] in set(mix["weekday"])]
+        short = [day[:3] for day in weekdays]
+        focus = (top["weekday"].iloc[0]
+                 if top is not None and not top.empty else short[0])
+        weekday = st.selectbox(
+            "Weekday", short, index=short.index(focus),
+            help="Default: the weekday with the most pooled clicks")
+        share = dashboard_data.weekday_focus_table(mix, weekday)
+        share = share.loc[share["campaign"].isin(ctx["campaigns"])]
+        chart = alt.Chart(share).mark_bar().encode(
+            x=alt.X("share_of_weekday_clicks:Q",
+                    axis=alt.Axis(format=".0%"),
+                    title=f"Share of pooled {weekday} clicks"),
+            y=alt.Y("campaign:N", sort="-x", axis=_campaign_axis()),
+            tooltip=["campaign", "clicks",
+                     alt.Tooltip("share_of_weekday_clicks",
+                                 format=".1%"),
+                     alt.Tooltip("share_vs_even", format=".2f",
+                                 title="own share vs 1/7"),
+                     alt.Tooltip("actions_per_click_vs_baseline",
+                                 format=".2f",
+                                 title="actions per click vs Mon-Thu")],
+        )
+        st.altair_chart(chart, width="stretch")
+        _table(share, f"weekday_share_{weekday}.csv",
+               key="weekday_share", column_config={
+                   "campaign": WIDE("Campaign", width="medium",
+                                    pinned=True)})
+        st.markdown(f"**Leave-one-out ({weekday})** — the pooled "
+                    f"{weekday} with one campaign left out; closest "
+                    f"to the Mon-Thu baseline first.")
+        _table(dashboard_data.leave_one_out_for_weekday(loo, weekday),
+               f"weekday_leave_one_out_{weekday}.csv",
+               key="weekday_loo", column_config={
+                   "left_out": WIDE("Left out", width="medium",
+                                    pinned=True)})
+        if top is not None and not top.empty:
+            top_weekday = top["weekday"].iloc[0]
+            st.markdown(f"**Top {len(top)} {top_weekday}s by pooled "
+                        f"clicks** — together "
+                        f"{top['share_of_weekday_clicks'].sum():.1%} "
+                        f"of {top_weekday} clicks.")
+            _table(top, "weekday_top_days.csv", key="weekday_top")
+    _what_if(ctx)
+
+
 # --- Pages kept from T8 (fixed in a later commit) ----------------
 
 def _page_conversion(ctx):
@@ -428,6 +540,7 @@ def _page_journey(ctx):
 PAGES = {
     "Summary": _page_summary,
     "Campaign": _page_campaign,
+    "Weekday": _page_weekday,
     "What counts as a tracked action": _page_conversion,
     "Runs": _page_runs,
     "Trend": _page_trend,
