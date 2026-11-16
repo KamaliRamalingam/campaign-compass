@@ -14,6 +14,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.time_patterns import (monthly_table, pooled_weekday_table,
+                               resolve_run_groups,
                                runs_table, split_runs, timeline_table,
                                weekday_table, write_time_report, main)
 
@@ -110,7 +111,10 @@ def test_runs_include_sep_2026_group():
         ("2024-01-01", "Super Sales", 10, 10.0, 6.0),
         ("2024-01-01", "Other", 10, 10.0, 6.0),
     ])
-    table = runs_table(df, GROUPS, ["core"], 14, VOLUME)
+    # Without analysis.run_groups the default still adds
+    # sep_2026_group to the time groups (old behaviour).
+    run_groups = resolve_run_groups({"time_groups": ["core"]})
+    table = runs_table(df, GROUPS, run_groups, 14, VOLUME)
     assert table["campaign"].tolist() == ["Super Sales"]
 
 

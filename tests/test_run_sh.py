@@ -127,7 +127,6 @@ def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
         "  recommendation_rules:\n"
         "    continue_max_ratio: 1.0\n"
         "    test_max_ratio: 2.0\n"
-        "    pause_above_ratio: 2.0\n"
         "    repeat_min_runs: 2\n"
         "    active_window_days: 14\n"
         "    sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]\n"

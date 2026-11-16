@@ -9,7 +9,10 @@ config's output_root, git-ignored), listing:
 - which analyses were skipped and why;
 - which config keys had to differ from the restaurant config,
   found by comparing the two configs leaf by leaf (paths and
-  campaign names are listed as keys, never as values);
+  campaign names are listed as keys, never as values), split
+  into keys synthetic_b had to set (a different value, or a
+  key only synthetic_b has) and restaurant-only optional keys
+  that synthetic_b does not set (their defaults apply);
 - which config sections are identical, so the reader can see
   what reuse did NOT need to change.
 
@@ -66,7 +69,23 @@ def config_diff(base, other):
     return differing, identical
 
 
-def write_report(report_path, skipped, differing, identical):
+def split_differing(base, other, differing):
+    """(had_to_set, base_only) from the differing leaf paths.
+
+    had_to_set: paths the other config sets, with a different
+    value or as a key only it has. base_only: paths only the
+    base config has, i.e. optional keys the other config leaves
+    unset, so their defaults apply.
+    """
+    other_leaves = dict(_leaves(other))
+    had_to_set = [path for path in differing if path in other_leaves]
+    base_only = [path for path in differing
+                 if path not in other_leaves]
+    return had_to_set, base_only
+
+
+def write_report(report_path, skipped, had_to_set, base_only,
+                 identical):
     """Write the reuse report: skips and differing keys only."""
     lines = ["# Reuse report — synthetic Company B", ""]
     lines.append(
@@ -84,10 +103,24 @@ def write_report(report_path, skipped, differing, identical):
     lines.append("")
     lines.append("## Config keys that had to differ")
     lines.append("")
+    total = len(had_to_set) + len(base_only)
     lines.append(
-        f"- {len(differing)} leaf keys differ from "
-        "config/restaurant.yaml.")
-    for path in differing:
+        f"- {total} leaf keys differ from config/restaurant.yaml: "
+        f"{len(had_to_set)} that synthetic_b had to set, and "
+        f"{len(base_only)} restaurant-only optional keys that "
+        "synthetic_b does not set (their defaults apply).")
+    lines.append("")
+    lines.append(
+        f"### Keys synthetic_b had to set ({len(had_to_set)})")
+    lines.append("")
+    for path in had_to_set:
+        lines.append(f"- {path}")
+    lines.append("")
+    lines.append(
+        "### Restaurant-only optional keys not set by synthetic_b "
+        f"({len(base_only)})")
+    lines.append("")
+    for path in base_only:
         lines.append(f"- {path}")
     lines.append("")
     lines.append("## Config keys that did not need to change")
@@ -122,14 +155,19 @@ def main(argv=None):
     config = apply_output_root(config)
     skipped = skipped_analyses(config)
     differing, identical = config_diff(base, config)
+    had_to_set, base_only = split_differing(base, config, differing)
     root = (config.get("analysis") or {}).get("output_root") \
         or "outputs"
     report_path = Path(root) / "reports" / "reuse-report.md"
-    write_report(report_path, skipped, differing, identical)
+    write_report(report_path, skipped, had_to_set, base_only,
+                 identical)
     print(f"Skipped analyses: {len(skipped)}")
     for name, reason in skipped:
         print(f"  {name}: {reason}")
     print(f"Config keys that differed: {len(differing)}")
+    print(f"  synthetic_b had to set: {len(had_to_set)}")
+    print(f"  restaurant-only, not set by synthetic_b: "
+          f"{len(base_only)}")
     print(f"Config keys unchanged: {len(identical)}")
     print(f"report: {report_path}")
     return 0

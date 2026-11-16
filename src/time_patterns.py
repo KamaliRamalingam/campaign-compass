@@ -24,8 +24,10 @@ Reads the cleaned day and month tables written by src/clean.py
   number of runs, number of cells flagged insufficient). No
   campaign names, no rows.
 
-Only the groups in analysis.time_groups are analysed; the
-sep_2026_group gets runs only. Use active days only; never fill
+Only the groups in analysis.time_groups are analysed. Runs
+are built for the groups in analysis.run_groups; when that key
+is not set, runs cover time_groups plus sep_2026_group (the
+behaviour before run_groups existed). Use active days only; never fill
 missing days. A gap of more than analysis.run_gap_days with no
 activity starts a new run. A weekday cell below
 analysis.weekday_min_conversions is flagged insufficient_data.
@@ -51,7 +53,18 @@ except ImportError:  # running as `python src/time_patterns.py`
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-RUN_GROUPS_EXTRA = ("sep_2026_group",)
+# Used only when analysis.run_groups is not set, so configs
+# without the key behave exactly as before run_groups existed.
+LEGACY_RUN_GROUPS_EXTRA = ("sep_2026_group",)
+
+
+def resolve_run_groups(analysis):
+    """analysis.run_groups, or time_groups plus the legacy group."""
+    run_groups = analysis.get("run_groups")
+    if run_groups is not None:
+        return list(run_groups)
+    return (list(analysis.get("time_groups") or [])
+            + list(LEGACY_RUN_GROUPS_EXTRA))
 
 
 def _prepare(df):
@@ -210,13 +223,13 @@ def split_runs(dates, run_gap_days):
     return [(run[0], run[-1], run) for run in runs]
 
 
-def runs_table(day_df, groups, time_groups, run_gap_days,
+def runs_table(day_df, groups, run_groups, run_gap_days,
                volume_rule):
     """Per campaign, activity split into runs.
 
-    Covers the groups in time_groups plus sep_2026_group.
+    Covers the groups in run_groups (see resolve_run_groups).
     """
-    wanted = list(time_groups) + list(RUN_GROUPS_EXTRA)
+    wanted = list(run_groups)
     df = _with_group(_prepare(day_df), groups)
     df = df.loc[df["group"].isin(wanted)].copy()
     min_conversions = (volume_rule or {}).get("min_conversions", 0)
@@ -301,8 +314,9 @@ def main(argv=None):
             day_df, groups, time_groups, weekday_min)
         monthly = monthly_table(day_df, groups, time_groups)
         timeline = timeline_table(day_df, month_df, groups, time_groups)
-        runs = runs_table(day_df, groups, time_groups, run_gap_days,
-                          volume_rule)
+        runs = runs_table(day_df, groups,
+                          resolve_run_groups(analysis),
+                          run_gap_days, volume_rule)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

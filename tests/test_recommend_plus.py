@@ -20,13 +20,11 @@ CAVEAT = "Tracked actions only (mainly get-directions requests and phone calls),
 RULES = {
     "continue_max_ratio": 1.0,
     "test_max_ratio": 2.0,
-    "pause_above_ratio": 2.0,
     "repeat_min_runs": 2,
     "active_window_days": 14,
     "sensitivity_continue_max_ratio": [0.75, 1.0, 1.25, 1.5],
     "sensitivity_test_max_ratio": [1.5, 2.0, 3.0],
 }
-VOLUME = {"min_conversions": 10, "min_days_active": 14}
 
 
 def _runs_df():
@@ -87,7 +85,7 @@ def test_status_now_at_the_window_boundary():
 
 
 def test_best_run_is_the_earlier_run():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, CAVEAT)
     campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     alpha = campaigns[campaigns["campaign"] == "Alpha"].iloc[0]
     # Latest run with volume is run 2 (test, ratio 2.0); the best
@@ -168,7 +166,7 @@ def _sensitivity_for_ratio(ratio):
          "clicks": 10, "conversions": 10.0,
          "last_active_date": "2024-01-14"},
     ])
-    recs = recommend_runs(runs, 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(runs, 5.0, RULES, CAVEAT)
     return sensitivity_table(recs, summary, RULES)
 
 
@@ -210,7 +208,7 @@ def test_sensitivity_insufficient_is_stable():
 
 
 def test_report_has_no_names(tmp_path):
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, CAVEAT)
     campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     sens = sensitivity_table(recs, _day_summary(), RULES)
     report = tmp_path / "recommend-report.md"

@@ -22,7 +22,6 @@ CAVEAT = "Tracked actions only (mainly get-directions requests and phone calls),
 RULES = {
     "continue_max_ratio": 1.0,
     "test_max_ratio": 2.0,
-    "pause_above_ratio": 2.0,
     "repeat_min_runs": 2,
     "active_window_days": 14,
     "sensitivity_continue_max_ratio": [0.75, 1.0, 1.25, 1.5],
@@ -87,7 +86,7 @@ def test_insufficient_data_always_wins():
 
 
 def test_recommend_runs_labels_and_reasons():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, CAVEAT)
     alpha1 = recs[(recs["campaign"] == "Alpha")
                   & (recs["run_number"] == 1)].iloc[0]
     alpha2 = recs[(recs["campaign"] == "Alpha")
@@ -108,7 +107,7 @@ def test_recommend_runs_labels_and_reasons():
 
 
 def test_repeat_eligible_needs_two_runs():
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, CAVEAT)
     campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     alpha = campaigns[campaigns["campaign"] == "Alpha"].iloc[0]
     beta = campaigns[campaigns["campaign"] == "Beta"].iloc[0]
@@ -140,7 +139,7 @@ def test_latest_run_with_volume_wins():
          "conversions": 1.0, "cost_per_conversion": 1.0,
          "volume_flag": "insufficient_data"},
     ])
-    recs = recommend_runs(runs, 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(runs, 5.0, RULES, CAVEAT)
     campaigns = recommend_campaigns(
         recs, _day_summary().iloc[[0]], RULES, CAVEAT)
     alpha = campaigns.iloc[0]
@@ -150,7 +149,7 @@ def test_latest_run_with_volume_wins():
 
 
 def test_report_has_no_names(tmp_path):
-    recs = recommend_runs(_runs_df(), 5.0, RULES, VOLUME, CAVEAT)
+    recs = recommend_runs(_runs_df(), 5.0, RULES, CAVEAT)
     campaigns = recommend_campaigns(recs, _day_summary(), RULES, CAVEAT)
     sens = sensitivity_table(recs, _day_summary(), RULES)
     report = tmp_path / "recommend-report.md"

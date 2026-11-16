@@ -2,9 +2,6 @@
 # go/no-go checks. Do not put account IDs or credentials in this file.
 client: restaurant_chain
 currency: SEK
-primary_conversions: []      # names of the conversion actions that count
-min_conversions: 10          # volume threshold (decide and justify)
-min_days_active: 14
 # Optional: remove these if campaign names do not show location/offer
 # location_rule:
 #   source: campaign_name
@@ -52,7 +49,7 @@ required_columns: [date, campaign, cost, clicks, conversions]
 # no monthly start limit. Missing days are NOT filled: a missing
 # day means no activity.
 analysis:
-  daily_start: "2023-10-13"
+  daily_start: "2024-07-01"
   daily_end: "2026-11-12"
   monthly_end: "2023-09-30"
   # Campaign selection (T3a). Both empty means use all campaigns.
@@ -73,6 +70,9 @@ analysis:
       - Restaurang The South Indian
       - South Indian Restaurant
       - Indisk Mat i Södertälje
+    # Performance Max (PR 1, 2026-11-16): kept out of core so it
+    # does not set the Search benchmark; labelled not_comparable.
+    core_pmax:
       - Website traffic-Performance Max-2
     sep_2026_group:
       exact:
@@ -98,17 +98,22 @@ analysis:
     min_conversions: 10
     min_days_active: 14
   # Time patterns (T4). Analysis uses only the groups in
-  # time_groups; sep_2026_group gets runs only. A weekday cell
+  # time_groups; runs are built for the groups in run_groups
+  # (sep_2026_group gets runs only). A weekday cell
   # below weekday_min_conversions is flagged insufficient_data.
   # A gap of more than run_gap_days with no activity starts a
   # new run. Both values are provisional.
-  time_groups: [core]
+  # core_pmax stays in time_groups so the weekday, what-if and
+  # journey outputs are unchanged by PR 1 (benchmark only).
+  time_groups: [core, core_pmax]
+  run_groups: [core, core_pmax, sep_2026_group]
   weekday_min_conversions: 5
   run_gap_days: 14
   # Recommendation rules (T5). Provisional, the student's
   # decision, 2026-11-12. The benchmark is calculated, not
-  # typed in: core group overall cost per conversion = sum of
-  # core spend / sum of core conversions.
+  # typed in: sum of spend / sum of conversions over the groups
+  # in benchmark.groups; with leave_one_out a campaign is not
+  # part of its own benchmark (PR 1, 2026-11-16).
   # The caveat text (T8) is written here once and used
   # everywhere: recommend.py, the reports and the dashboard read
   # it from the config instead of their own text.
@@ -116,8 +121,16 @@ analysis:
   recommendation_rules:
     continue_max_ratio: 1.0
     test_max_ratio: 2.0
-    pause_above_ratio: 2.0
     repeat_min_runs: 2
+    # Benchmark (PR 1). groups: which groups define it.
+    benchmark:
+      groups: [core]
+      leave_one_out: true
+    # Never compared with the benchmark: labelled not_comparable.
+    not_comparable_groups: [core_pmax]
+    # Only these groups (plus not_comparable_groups) are judged;
+    # any other campaign is labelled not_judged.
+    judged_groups: [core, sep_2026_group]
     # Recommendation improvements (T5b), provisional. A campaign
     # is active if its last active date is within
     # active_window_days of the latest date in the daily data.

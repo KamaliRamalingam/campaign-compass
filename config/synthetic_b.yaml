@@ -5,9 +5,6 @@
 # account IDs or credentials in this file.
 client: synthetic_b
 currency: EUR
-primary_conversions: []
-min_conversions: 10
-min_days_active: 14
 
 # Input exports (T7). The files do not exist until
 # `bash run.sh --client synthetic_b` generates them. Paths are
@@ -82,7 +79,6 @@ analysis:
   recommendation_rules:
     continue_max_ratio: 1.0
     test_max_ratio: 2.0
-    pause_above_ratio: 2.0
     repeat_min_runs: 2
     active_window_days: 14
     sensitivity_continue_max_ratio: [0.75, 1.0, 1.25, 1.5]
