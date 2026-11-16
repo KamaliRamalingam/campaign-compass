@@ -1,44 +1,160 @@
-"""Local Streamlit dashboard (T8).
+"""Local Streamlit dashboard (T8, reworked in PR 4).
 
-Run it with: bash dashboard.sh (after bash run.sh).
-Reads only outputs/results/ and outputs/reports/ — never
-data/raw/. All data preparation lives in dashboard/data.py;
-this file only displays. No hosting, login, uploads or network
-access.
+Run it with: bash dashboard.sh (after bash run.sh). It listens
+on localhost only.
 
-Every page shows the caveat from the config, the data date
-range and the last-updated date. The wording is "tracked
+Reads only the client's results and reports folders, never
+data/raw/ or outputs/interim/. All data preparation lives in
+dashboard/data.py; this file only displays. Labels are the FINAL
+labels (after the trend override) from
+recommendations_by_campaign.csv; nothing is recomputed here. No
+hosting, login, uploads or network access.
+
+Every page shows the client's caveat from its config, the data
+date range and the last-updated date. The wording is "tracked
 actions" everywhere.
 """
 
 import sys
 from pathlib import Path
 
+import altair as alt
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import data as dashboard_data  # noqa: E402
 
+WIDE = st.column_config.TextColumn  # shorthand below
 
-def _context(caveat, date_range, updated):
-    """Caveat, data date range and last-updated date, every page."""
-    st.info(caveat)
-    first, last = date_range
+
+def _context(ctx):
+    """Caveat banner, data date range and last-updated date."""
+    st.info(ctx["caveat"], icon="ℹ️")
+    first, last = ctx["date_range"]
     st.caption(
-        f"Data date range: {first} to {last} · "
-        f"Last updated: {updated:%Y-%m-%d %H:%M}"
+        f"Client: {ctx['client']} · Data date range: {first} to "
+        f"{last} · Last updated: {ctx['updated']:%Y-%m-%d %H:%M}"
     )
 
 
-def _page_conversion(tables, caveat, date_range, updated,
-                     currency="SEK"):
-    """What counts as a conversion."""
+def _table(table, file_name=None, column_config=None, key=None,
+           height="auto"):
+    """A sortable table (click a header), with a CSV download.
+
+    The download is the table exactly as shown.
+    """
+    st.dataframe(table, hide_index=True, width="stretch",
+                 height=height, column_config=column_config or {})
+    if file_name:
+        st.download_button(
+            "Download CSV", dashboard_data.csv_bytes(table),
+            file_name=file_name, mime="text/csv",
+            key=key or f"download_{file_name}")
+
+
+def _campaign_axis(title="Campaign"):
+    """A y axis that never cuts campaign names short."""
+    return alt.Axis(title=title, labelLimit=0)
+
+
+# --- Summary ------------------------------------------------------
+
+def _page_summary(ctx):
+    """Answer first: KPIs, final labels and one row per campaign."""
+    st.header("Summary")
+    _context(ctx)
+    tables = ctx["tables"]
+    currency = ctx["currency"]
+    kpi = dashboard_data.kpi_values(tables["benchmarks"])
+    cols = st.columns(4)
+    cols[0].metric("Spend", f"{kpi['spend']:,.0f} {currency}",
+                   border=True)
+    cols[1].metric("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+                   border=True)
+    cols[2].metric("Cost per tracked action",
+                   f"{kpi['cost_per_tracked_action']:.2f} {currency}",
+                   border=True)
+    bench_help = f"Pooled cost per tracked action of group(s) " \
+                 f"{kpi['benchmark_groups']}."
+    if kpi["leave_one_out"]:
+        bench_help += (
+            f" Each campaign is judged against the benchmark "
+            f"without itself: {kpi['loo_min']:.2f} to "
+            f"{kpi['loo_max']:.2f}.")
+    cols[3].metric("Benchmark", f"{kpi['benchmark']:.2f} {currency}",
+                   help=bench_help, border=True)
+    st.caption(
+        f"Tiles cover the {kpi['judged_campaigns']} judged campaigns "
+        f"over the whole daily range, read from benchmarks.csv. "
+        f"The group filter does not change them: that would mean "
+        f"recomputing.")
+
+    recs = ctx["recommendations"]
+    st.subheader("Final labels (after the trend override)")
+    counts = dashboard_data.final_label_counts(recs)
+    chart = alt.Chart(counts).mark_bar().encode(
+        x=alt.X("campaigns:Q", title="Campaigns",
+                axis=alt.Axis(format="d", tickMinStep=1)),
+        y=alt.Y("label:N", sort="-x", axis=_campaign_axis("Label")),
+        tooltip=["label", "campaigns"],
+    )
+    st.altair_chart(chart, width="stretch")
+
+    st.subheader("Judged campaigns")
+    show_hidden = st.checkbox(
+        "Show not_judged / insufficient_data campaigns", value=False)
+    rows = dashboard_data.summary_rows(
+        ctx["all_recommendations"], tables["recent_trend"],
+        show_hidden=show_hidden, group=ctx["group"])
+    _table(rows, "summary_campaigns.csv", column_config={
+        "campaign": WIDE("Campaign", width="medium", pinned=True),
+        "group": WIDE("Group", width="small"),
+        "label": WIDE("Final label", width="small"),
+        "status_now": WIDE("Status now", width="small"),
+        "recent_trend": WIDE("Recent trend", width="small"),
+        "action": WIDE("Action", width="large",
+                       help="One-line action for the final label"),
+        "label_from": WIDE("Label from", width="small",
+                           help="recent_window, latest_run or fixed"),
+        "label_period": WIDE("Label period", width="medium"),
+        "trend_period": WIDE("Trend window", width="medium",
+                             help="Recent window of the trend; "
+                                  "empty for campaigns not active"),
+    })
+    with st.expander("Full reasons"):
+        for _, row in rows.iterrows():
+            detail = dashboard_data.campaign_detail(
+                ctx["all_recommendations"], tables["recent_trend"],
+                row["campaign"])
+            st.markdown(f"**{detail['campaign']}** — {detail['label']}")
+            st.write(detail["reason"])
+            if detail["trend_reason"]:
+                st.write(f"Trend: {detail['trend_reason']}")
+
+    not_comparable = dashboard_data.not_comparable_rows(
+        ctx["all_recommendations"])
+    if not not_comparable.empty:
+        with st.container(border=True):
+            st.subheader("Not comparable")
+            st.caption("Judged against their own history, not the "
+                       "benchmark.")
+            for _, row in not_comparable.iterrows():
+                st.markdown(f"**{row['campaign']}** ({row['group']}, "
+                            f"{row['status_now']})")
+                st.write(row["reason"])
+                st.write(f"Action: {row['action_text']}")
+
+
+# --- Pages kept from T8 (fixed in a later commit) ----------------
+
+def _page_conversion(ctx):
+    """What counts as a tracked action."""
     st.header("What counts as a tracked action")
-    _context(caveat, date_range, updated)
+    _context(ctx)
+    tables = ctx["tables"]
     shares = dashboard_data.conversion_shares(
         tables["conversion_mix_by_campaign"])
-    import altair as alt
     chart = alt.Chart(shares).mark_bar().encode(
         x=alt.X("share", axis=alt.Axis(format=".2%"),
                 title="Share of tracked actions"),
@@ -46,12 +162,12 @@ def _page_conversion(tables, caveat, date_range, updated,
         tooltip=["action", "action_group", "tracked_actions",
                  alt.Tooltip("share", format=".2%")],
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
     display = shares[["action", "action_group", "tracked_actions",
                       "share_pct"]].copy()
     display.columns = ["Action", "Action group", "Tracked actions",
                        "Share of tracked actions (%)"]
-    st.dataframe(display, use_container_width=True)
+    st.dataframe(display, width="stretch")
     engagement_all = dashboard_data.engagement_share_all(
         tables["conversion_mix_by_campaign"])
     st.write(
@@ -62,88 +178,15 @@ def _page_conversion(tables, caveat, date_range, updated,
     )
 
 
-def _page_overview(tables, caveat, date_range, updated,
-                     currency="SEK"):
-    """Spend and conversions by group; core campaigns table."""
-    st.header("Overview")
-    _context(caveat, date_range, updated)
-    groups = dashboard_data.overview_groups(tables["group_summary"])
-    st.subheader("Spend and tracked actions by group")
-    st.dataframe(
-        dashboard_data.display_table(groups),
-        use_container_width=True,
-        column_config={
-            "group": st.column_config.TextColumn(
-                "Group", width="large"),
-        },
-    )
-    core = dashboard_data.core_campaigns(
-        tables["campaign_summary_day"],
-        tables["recommendations_by_campaign"])
-    st.subheader("Core campaigns")
-    st.dataframe(
-        dashboard_data.display_table(core),
-        use_container_width=True,
-        column_config={
-            "campaign": st.column_config.TextColumn(
-                "Campaign", width="large"),
-            "label": st.column_config.TextColumn(
-                "Label", width="medium"),
-            "action_text": st.column_config.TextColumn(
-                "Action", width="large"),
-        },
-    )
-
-
-def _page_comparison(tables, caveat, date_range, updated,
-                     currency="SEK"):
-    """Cost per tracked action for core campaigns."""
-    st.header("Campaign comparison")
-    _context(caveat, date_range, updated)
-    comparison = dashboard_data.comparison_data(
-        tables["campaign_summary_day"],
-        tables["recommendations_by_campaign"])
-    log_scale = st.checkbox("Log scale", value=False)
-    chart_data = comparison.loc[
-        comparison["volume_flag"] != "insufficient_data"]
-    import altair as alt
-    chart = alt.Chart(chart_data).mark_bar().encode(
-        x=alt.X("cost_per_tracked_action",
-                scale=alt.Scale(type="log") if log_scale else
-                alt.Scale(type="linear"),
-                title=f"Cost per tracked action ({currency})"),
-        y=alt.Y("campaign", sort="-x", title="Campaign"),
-        tooltip=["campaign", "cost_per_tracked_action", "rank"],
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.write(
-        "Campaigns marked insufficient_data are not ranked; "
-        "they are listed below the chart."
-    )
-    st.dataframe(
-        dashboard_data.display_table(comparison),
-        use_container_width=True,
-        column_config={
-            "campaign": st.column_config.TextColumn(
-                "Campaign", width="large"),
-            "label": st.column_config.TextColumn(
-                "Label", width="medium"),
-            "action_text": st.column_config.TextColumn(
-                "Action", width="large"),
-        },
-    )
-
-
-def _page_runs(tables, caveat, date_range, updated,
-                     currency="SEK"):
+def _page_runs(ctx):
     """One campaign's runs as a chart and a table."""
     st.header("Runs")
-    _context(caveat, date_range, updated)
-    runs = tables["runs"]
+    _context(ctx)
+    currency = ctx["currency"]
+    runs = ctx["tables"]["runs"]
     campaign = st.selectbox(
         "Campaign", sorted(runs["campaign"].unique()))
     table = dashboard_data.runs_for_campaign(runs, campaign)
-    import altair as alt
     chart = alt.Chart(table).mark_bar().encode(
         x=alt.X("run_number", axis=alt.Axis(format="d"),
                 title="Run"),
@@ -152,59 +195,20 @@ def _page_runs(tables, caveat, date_range, updated,
         tooltip=["run_number", "start", "end", "spend",
                  "cost_per_tracked_action", "volume_flag"],
     )
-    st.altair_chart(chart, use_container_width=True)
-    st.dataframe(dashboard_data.display_table(table),
-                 use_container_width=True)
+    st.altair_chart(chart, width="stretch")
+    st.dataframe(dashboard_data.display_table(table), width="stretch")
 
 
-def _page_weekday(tables, caveat, date_range, updated,
-                     currency="SEK"):
-    """Pooled core weekday chart and a campaign selector."""
-    st.header("Weekday")
-    _context(caveat, date_range, updated)
-    try:
-        pooled = dashboard_data.weekday_core_table(
-            tables["weekday_core"])
-    except ValueError as exc:
-        st.error(str(exc))
-        st.stop()
-    import altair as alt
-    st.subheader("Core group, pooled")
-    chart = alt.Chart(pooled).mark_bar().encode(
-        x=alt.X("weekday", sort=list(pooled["weekday"]),
-                title="Weekday"),
-        y=alt.Y("cost_per_tracked_action",
-                title=f"Cost per tracked action ({currency})"),
-        tooltip=["weekday", "tracked_actions",
-                 "cost_per_tracked_action"],
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.dataframe(dashboard_data.display_table(pooled),
-                 use_container_width=True)
-    by_campaign = tables["weekday_by_campaign"]
-    campaign = st.selectbox(
-        "Campaign", sorted(by_campaign["campaign"].unique()))
-    try:
-        table = dashboard_data.weekday_campaign_table(
-            by_campaign, campaign)
-    except ValueError as exc:
-        st.error(str(exc))
-        st.stop()
-    st.subheader(f"Weekday for {campaign}")
-    st.dataframe(dashboard_data.display_table(table),
-                 use_container_width=True)
-
-
-def _page_trend(tables, caveat, date_range, updated,
-                     currency="SEK"):
+def _page_trend(ctx):
     """Monthly or weekly trend for a selected campaign."""
     st.header("Trend")
-    _context(caveat, date_range, updated)
+    _context(ctx)
+    currency = ctx["currency"]
+    tables = ctx["tables"]
     timeline = tables["timeline_by_campaign"]
     campaign = st.selectbox(
         "Campaign", sorted(timeline["campaign"].unique()))
     view = st.radio("View", ["Monthly", "Weekly"], horizontal=True)
-    import altair as alt
     if view == "Weekly":
         table = dashboard_data.weekly_for_campaign(
             tables["weekly_by_campaign"], campaign)
@@ -215,10 +219,10 @@ def _page_trend(tables, caveat, date_range, updated,
             tooltip=["week_start", "spend", "tracked_actions",
                      "cost_per_tracked_action"],
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
         st.write("Weeks start on Monday, from the daily data.")
         st.dataframe(dashboard_data.display_table(table),
-                     use_container_width=True)
+                     width="stretch")
         return
     table = dashboard_data.trend_for_campaign(timeline, campaign)
     chart = alt.Chart(table).mark_line(point=True).encode(
@@ -229,54 +233,19 @@ def _page_trend(tables, caveat, date_range, updated,
         tooltip=["month", "source", "spend", "tracked_actions",
                  "cost_per_tracked_action"],
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width="stretch")
     st.write(
         "Source marks where each month comes from: day is the "
         "daily export, month is the monthly-history export."
     )
-    st.dataframe(dashboard_data.display_table(table),
-                 use_container_width=True)
+    st.dataframe(dashboard_data.display_table(table), width="stretch")
 
 
-def _page_recommendations(tables, caveat, date_range, updated,
-                     currency="SEK"):
-    """Recommendations: small table, then one block per campaign."""
-    st.header("Recommendations")
-    _context(caveat, date_range, updated)
-    table = dashboard_data.recommendations_display(
-        tables["recommendations_by_campaign"])
-    st.dataframe(
-        table[["campaign", "label", "status_now",
-               "recent_trend"]],
-        use_container_width=True,
-        column_config={
-            "campaign": st.column_config.TextColumn(
-                "Campaign", width="large"),
-            "label": st.column_config.TextColumn(
-                "Label", width="medium"),
-        },
-    )
-    for _, row in table.iterrows():
-        st.subheader(row["campaign"])
-        st.markdown(
-            f"**Label:** {row['label']}  \n"
-            f"**Status:** {row['status_now']}  \n"
-            f"**Recent trend:** {row['recent_trend']}  \n"
-            "**Ratio vs run average:** "
-            f"{dashboard_data.format_ratio(row['ratio_vs_run_average'])}  \n"
-            "**Ratio vs prior 28 days:** "
-            f"{dashboard_data.format_ratio(row['recent_vs_prior_ratio'])}  \n"
-            f"**Trend reason:** {row['trend_reason']}  \n"
-            f"**Action:** {row['action_text']}  \n"
-            f"**Reason:** {row['reason']}"
-        )
-
-
-def _page_journey(tables, caveat, date_range, updated,
-                  currency="SEK"):
+def _page_journey(ctx):
     """Acquisition journey, what-if and break-even."""
     st.header("Acquisition journey")
-    _context(caveat, date_range, updated)
+    _context(ctx)
+    tables = ctx["tables"]
     st.subheader("Journey by campaign")
     st.dataframe(
         dashboard_data.display_table(
@@ -286,10 +255,9 @@ def _page_journey(tables, caveat, date_range, updated,
             "calls share": "calls share (%)",
             "store visits share": "store visits share (%)",
         }),
-        use_container_width=True,
+        width="stretch",
         column_config={
-            "campaign": st.column_config.TextColumn(
-                "Campaign", width="large"),
+            "campaign": WIDE("Campaign", width="large"),
         },
     )
     st.write(
@@ -299,7 +267,6 @@ def _page_journey(tables, caveat, date_range, updated,
     )
     campaigns = dashboard_data.journey_campaigns(
         tables["journey_by_campaign"])
-    import altair as alt
     chart = alt.Chart(campaigns).mark_bar().encode(
         x=alt.X("tracked_actions_per_click",
                 title="Tracked actions per click"),
@@ -307,22 +274,15 @@ def _page_journey(tables, caveat, date_range, updated,
         tooltip=["campaign", "tracked_actions_per_click",
                  "cost_per_tracked_action"],
     )
-    st.altair_chart(chart, use_container_width=True)
-    st.subheader("What-if: weekday spend to the weekend")
-    st.dataframe(
-        dashboard_data.display_table(
-            tables["what_if_weekday_shift"]),
-        use_container_width=True,
-    )
-    break_even = tables.get("break_even")
+    st.altair_chart(chart, width="stretch")
+    break_even = ctx["break_even"]
     if break_even is not None:
         st.subheader("Break-even")
         st.dataframe(
             dashboard_data.display_table(break_even),
-            use_container_width=True,
+            width="stretch",
             column_config={
-                "campaign": st.column_config.TextColumn(
-                    "Campaign", width="large"),
+                "campaign": WIDE("Campaign", width="large"),
             },
         )
         st.write(
@@ -331,52 +291,59 @@ def _page_journey(tables, caveat, date_range, updated,
 
 
 PAGES = {
+    "Summary": _page_summary,
     "What counts as a tracked action": _page_conversion,
-    "Overview": _page_overview,
-    "Campaign comparison": _page_comparison,
     "Runs": _page_runs,
-    "Weekday": _page_weekday,
     "Trend": _page_trend,
-    "Recommendations": _page_recommendations,
     "Acquisition journey": _page_journey,
 }
 
 
+def _load(client):
+    """Config, tables and context for one client."""
+    config = dashboard_data.load_config(
+        dashboard_data.client_config_path(client))
+    output_root = dashboard_data.client_output_root(client, config)
+    tables = dashboard_data.load_tables(config, output_root=output_root)
+    optional = dashboard_data.load_optional_tables(
+        config, output_root=output_root)
+    paths = dashboard_data.table_paths(config, output_root=output_root)
+    return {
+        "client": client,
+        "config": config,
+        "caveat": dashboard_data.caveat_text(config),
+        "currency": config.get("currency", "SEK"),
+        "tables": tables,
+        "optional": optional,
+        "break_even": dashboard_data.load_break_even(
+            config, output_root=output_root),
+        "date_range": dashboard_data.data_date_range(
+            tables["campaign_summary_day"]),
+        "updated": dashboard_data.last_updated(paths.values()),
+    }
+
+
 def main():
-    """Load the result tables and show the selected page."""
-    st.set_page_config(layout="wide")
+    """Pick a client and a page, load the tables, show the page."""
+    st.set_page_config(page_title="CampaignCompass", layout="wide")
     st.title("CampaignCompass")
-    clients = dashboard_data.list_clients()
-    client = st.sidebar.selectbox("Client", clients, index=0)
-    repo_root = Path(__file__).resolve().parents[1]
-    if client == "restaurant":
-        config = dashboard_data.load_config()
-        output_root = None
-    else:
-        client_config = repo_root / "config" / f"{client}.yaml"
-        config = (dashboard_data.load_config(client_config)
-                  if client_config.is_file()
-                  else dashboard_data.load_config())
-        output_root = repo_root / "outputs" / client
-    caveat = dashboard_data.caveat_text(config)
-    currency = config.get("currency", "SEK")
+    client = st.sidebar.selectbox(
+        "Client", dashboard_data.list_clients(), index=0)
     try:
-        tables = dashboard_data.load_tables(
-            config, output_root=output_root)
-    except FileNotFoundError:
-        st.error("Run bash run.sh first")
+        ctx = _load(client)
+    except FileNotFoundError as exc:
+        st.error(f"{exc}")
         st.stop()
-    # The break-even table exists only when the config sets a
-    # revenue value; the journey page shows it only then.
-    tables["break_even"] = dashboard_data.load_break_even(
-        config, output_root=output_root)
-    paths = dashboard_data.table_paths(
-        config, output_root=output_root)
-    date_range = dashboard_data.data_date_range(
-        tables["campaign_summary_day"])
-    updated = dashboard_data.last_updated(paths.values())
+    recs = ctx["tables"]["recommendations_by_campaign"]
+    group = st.sidebar.selectbox(
+        "Campaign group", dashboard_data.group_options(recs))
+    ctx["group"] = group
+    ctx["all_recommendations"] = recs
+    ctx["campaigns"] = dashboard_data.campaigns_in_group(recs, group)
+    ctx["recommendations"] = recs.loc[
+        recs["campaign"].isin(ctx["campaigns"])]
     page = st.sidebar.radio("Page", list(PAGES))
-    PAGES[page](tables, caveat, date_range, updated, currency)
+    PAGES[page](ctx)
 
 
 if __name__ == "__main__":
