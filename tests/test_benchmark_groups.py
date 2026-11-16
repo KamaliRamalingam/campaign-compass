@@ -316,3 +316,38 @@ def test_report_lists_both_benchmarks(tmp_path):
     assert "- Pooled (core+core_pmax): 15.00" in text
     for name in ("Alpha", "Beta", "Pmax", "Gamma"):
         assert name not in text
+
+
+# --- M4: no recent-trend row for not_judged campaigns ----------
+
+def test_not_judged_gets_no_recent_trend_row():
+    from src.recent_trend import (apply_to_recommendations,
+                                  compute_recent_trend)
+    days = pd.date_range("2024-01-01", "2024-03-31", freq="D")
+    day = pd.DataFrame(
+        [{"date": d.date().isoformat(), "campaign": name,
+          "clicks": 10, "cost": 10.0, "conversions": 2.0}
+         for d in days for name in ("Alpha", "Gamma")])
+    runs = pd.DataFrame([
+        _run("Alpha", "core", 1, 910.0, 182.0),
+    ]).assign(start="2024-01-01", end="2024-03-31")
+    recs = pd.DataFrame([
+        {"campaign": "Alpha", "group": "core", "label": "continue",
+         "status_now": "active", "action_text": "keep running"},
+        {"campaign": "Gamma", "group": "monthly_history_only",
+         "label": "not_judged", "status_now": "active",
+         "action_text": "not evaluated: group not judged"},
+    ])
+    settings = {"recent_window_days": 28, "conversion_lag_days": 3,
+                "worsening_ratio": 1.5, "improving_ratio": 0.67,
+                "worsening_vs_prior_ratio": 1.3,
+                "improving_vs_prior_ratio": 0.77,
+                "min_tracked_actions_in_window": 30}
+    trend = compute_recent_trend(day, runs, recs, settings)
+    assert list(trend["campaign"]) == ["Alpha"]
+    updated = apply_to_recommendations(recs, trend).set_index(
+        "campaign")
+    assert updated.loc["Gamma", "recent_trend"] == "not_judged"
+    assert updated.loc["Gamma", "action_text"] == (
+        "not evaluated: group not judged")
+    assert updated.loc["Alpha", "recent_trend"] == "stable"

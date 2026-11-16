@@ -7,7 +7,9 @@ Reads outputs/interim/clean_day.csv, outputs/results/runs.csv
 and outputs/results/recommendations_by_campaign.csv (their paths
 come from the config) and writes, all git-ignored:
 - outputs/results/recent_trend.csv: one row per campaign with
-  status_now = active. Recent window = the recent_window_days
+  status_now = active, except campaigns labelled not_judged
+  (their group is not evaluated, so they get no trend row).
+  Recent window = the recent_window_days
   ending at (last data date minus conversion_lag_days); prior
   window = the same number of days before that. Run average =
   cost per tracked action of the campaign's current run (its
@@ -63,6 +65,8 @@ TREND_IMPROVING = "improving"
 TREND_STABLE = "stable"
 TREND_INSUFFICIENT = "insufficient_data"
 TREND_NOT_ACTIVE = "not_active"
+TREND_NOT_JUDGED = "not_judged"
+LABEL_NOT_JUDGED = "not_judged"
 WORSENING_SUFFIX = (
     "; cost per tracked action has risen recently: check "
     "budget changes and conversion reporting"
@@ -188,6 +192,8 @@ def compute_recent_trend(day_df, runs_df, recommendations,
     for _, rec in recommendations.iterrows():
         if rec["status_now"] != "active":
             continue
+        if rec.get("label") == LABEL_NOT_JUDGED:
+            continue
         campaign = rec["campaign"]
         recent_spend, recent_actions = _window_totals(
             day, campaign, recent_start, recent_end)
@@ -278,7 +284,8 @@ def apply_to_recommendations(recommendations, trend_table):
     """Add recent trend, ratios and reason, and the suffix.
 
     Campaigns that are not active get recent_trend not_active
-    and no ratio or reason. The suffix is appended to
+    and no ratio or reason; campaigns labelled not_judged get
+    recent_trend not_judged. The suffix is appended to
     action_text only when recent_trend is worsening.
     """
     recs = recommendations.copy()
@@ -296,6 +303,11 @@ def apply_to_recommendations(recommendations, trend_table):
             run_ratios.append(trend_row["ratio_vs_run_average"])
             prior_ratios.append(trend_row["recent_vs_prior_ratio"])
             reasons.append(trend_row["trend_reason"])
+        elif row.get("label") == LABEL_NOT_JUDGED:
+            trends.append(TREND_NOT_JUDGED)
+            run_ratios.append(None)
+            prior_ratios.append(None)
+            reasons.append("")
         else:
             trends.append(TREND_NOT_ACTIVE)
             run_ratios.append(None)
