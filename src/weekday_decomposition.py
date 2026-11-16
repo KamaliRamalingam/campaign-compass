@@ -297,6 +297,18 @@ def write_report(path, mix, loo, top, weekday, baseline,
             f"{_pct(on_focus.set_index('campaign').loc[biggest['left_out'], 'share_of_weekday_clicks'])}"
             f") moves it from {_num(full)} to "
             f"{_num(biggest['actions_per_click_vs_baseline'])}")
+        # The question behind the check: which single campaign,
+        # when left out, brings the weekday back to the baseline?
+        others["from_baseline"] = (
+            others["actions_per_click_vs_baseline"] - 1).abs()
+        closest = others.sort_values("from_baseline").iloc[0]
+        lines.append(
+            f"- Leaving out the campaign that brings {weekday} "
+            f"closest to the baseline (its share of {weekday} "
+            f"clicks: "
+            f"{_pct(on_focus.set_index('campaign').loc[closest['left_out'], 'share_of_weekday_clicks'])}"
+            f") moves it from {_num(full)} to "
+            f"{_num(closest['actions_per_click_vs_baseline'])}")
     else:
         lines.append("- Not enough data for leave-one-out.")
     lines.append("")

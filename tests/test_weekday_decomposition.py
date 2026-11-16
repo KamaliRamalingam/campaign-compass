@@ -138,5 +138,8 @@ def test_main_writes_aggregates_and_name_free_report(tmp_path, capsys):
     assert ("Leaving out the campaign with the largest effect (its "
             "share of Fri clicks: 75.0%) moves it from 0.42 to 1.00"
             ) in report
+    assert ("Leaving out the campaign that brings Fri closest to the "
+            "baseline (its share of Fri clicks: 75.0%) moves it from "
+            "0.42 to 1.00") in report
     assert "the top 2 hold 100.0% of Fri clicks" in report
     assert "| 1 | 2026-01-16 | 56.2% | 0.056 |" in report
