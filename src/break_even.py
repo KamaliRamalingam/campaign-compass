@@ -97,15 +97,32 @@ def write_journey_report(report_path, journey, what_if_row,
     lines.append("")
     lines.append("## What-if: weekday spend to the weekend")
     lines.append("")
-    lines.append(f"- Scenario: {what_if_row['scenario']}")
-    lines.append(
-        f"- Spend moved: {float(what_if_row['spend_moved']):.2f}")
-    lines.append(
-        f"- Tracked actions: "
-        f"{float(what_if_row['tracked_actions_before']):.2f} -> "
-        f"{float(what_if_row['tracked_actions_after']):.2f} "
-        f"(delta {float(what_if_row['delta']):+.2f})")
-    lines.append(f"- Note: {what_if_row['note']}")
+    # what_if_row is one row (dict) or the whole what-if table
+    # (one row per variant plus a range row). Numbers are
+    # rounded: whole currency and actions, one-decimal percent.
+    what_if_rows = (what_if_row.to_dict("records")
+                    if isinstance(what_if_row, pd.DataFrame)
+                    else [what_if_row])
+    lines.append(f"- Scenario: {what_if_rows[0]['scenario']}")
+    for row in what_if_rows:
+        variant = row.get("variant")
+        if variant is not None and pd.isna(variant):
+            variant = None
+        if variant == "range":
+            lines.append(f"- Range across variants: {row['display']}")
+            continue
+        prefix = (f"- {variant} ({row['groups']}): "
+                  if variant else "- ")
+        display = row.get("display")
+        if display is None or pd.isna(display):
+            display = f"{float(row['delta']):+.0f} tracked actions"
+        lines.append(
+            f"{prefix}spend moved {float(row['spend_moved']):,.0f}; "
+            f"tracked actions "
+            f"{float(row['tracked_actions_before']):,.0f} -> "
+            f"{float(row['tracked_actions_after']):,.0f} "
+            f"({display})")
+    lines.append(f"- Note: {what_if_rows[0]['note']}")
     lines.append("")
     lines.append("## Break-even")
     lines.append("")
@@ -160,7 +177,7 @@ def main(argv=None):
         "journey_report", "outputs/reports/journey-report.md"))
     dates = pd.to_datetime(clean_day["date"]).dt.date
     daily_start, daily_end = dates.min(), dates.max()
-    what_if_row = what_if.iloc[0].to_dict()
+    what_if_row = what_if
     if revenue is None:
         print("Break-even skipped: avg_revenue_per_visit is not "
               "set in the config (the owner has not given a "
