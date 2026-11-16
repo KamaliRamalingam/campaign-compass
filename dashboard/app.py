@@ -393,6 +393,67 @@ def _page_weekday(ctx):
     _what_if(ctx)
 
 
+# --- Method and checks ------------------------------------------
+
+BENCHMARK_NAMES = {
+    "benchmark": "Benchmark (pooled, the one used)",
+    "with_not_comparable": "Including not-comparable groups",
+    "judged_campaigns": "Judged campaigns (KPI tiles)",
+}
+
+
+def _page_method(ctx):
+    """Benchmarks, lag check, sensitivity, rules from the config."""
+    st.header("Method and checks")
+    _context(ctx)
+    tables = ctx["tables"]
+    config = ctx["config"]
+
+    st.subheader("Benchmarks")
+    benchmarks = tables["benchmarks"].copy()
+    benchmarks.insert(0, "what", benchmarks["variant"].map(
+        BENCHMARK_NAMES).fillna(benchmarks["variant"]))
+    _table(benchmarks.drop(columns=["variant"]), "benchmarks.csv",
+           key="method_benchmarks", column_config={
+               "what": WIDE("What", width="medium", pinned=True)})
+    st.caption("loo_min / loo_max: the range of leave-one-out "
+               "benchmarks, each campaign judged without itself.")
+
+    st.subheader("Lag check")
+    lag_check = ctx["optional"]["lag_check"]
+    configured = (config.get("analysis", {}).get("recent_trend", {})
+                  .get("conversion_lag_days"))
+    if lag_check is None:
+        st.info("The lag check is not turned on for this client "
+                "(recent_trend.lag_check_days in its config).")
+    else:
+        st.caption(f"Configured lag: {configured} days (unchanged). "
+                   f"Changes are counted against that lag.")
+        _table(dashboard_data.lag_check_summary(lag_check),
+               "lag_check_summary.csv", key="method_lag")
+        with st.expander("All lag-check counts"):
+            _table(lag_check, "lag_check.csv", key="method_lag_all")
+
+    st.subheader("Sensitivity of the labels to the thresholds")
+    sensitivity = tables["recommendation_sensitivity"]
+    sensitivity = sensitivity.loc[
+        sensitivity["campaign"].isin(ctx["campaigns"])]
+    stable = sensitivity.drop_duplicates("campaign")["label_stable"]
+    st.caption(f"{int(stable.sum())} of {len(stable)} campaigns keep "
+               f"the same label in every threshold combination. "
+               f"These are labels before the trend override.")
+    _table(sensitivity, "recommendation_sensitivity.csv",
+           key="method_sensitivity", column_config={
+               "campaign": WIDE("Campaign", width="medium",
+                                pinned=True)})
+
+    st.subheader("Volume rule and thresholds (from the config)")
+    _table(dashboard_data.rules_table(config), "rules.csv",
+           key="method_rules", column_config={
+               "setting": WIDE("Setting", width="large"),
+               "value": WIDE("Value", width="medium")})
+
+
 # --- Pages kept from T8 (fixed in a later commit) ----------------
 
 def _page_conversion(ctx):
@@ -541,6 +602,7 @@ PAGES = {
     "Summary": _page_summary,
     "Campaign": _page_campaign,
     "Weekday": _page_weekday,
+    "Method and checks": _page_method,
     "What counts as a tracked action": _page_conversion,
     "Runs": _page_runs,
     "Trend": _page_trend,
