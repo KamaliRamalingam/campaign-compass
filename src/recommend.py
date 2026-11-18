@@ -44,6 +44,10 @@ and thresholds as a run. Too little volume in the window gives
 insufficient_data. label_basis says where each label comes
 from (recent_window, latest_run or fixed); run_label keeps the
 latest-run label; label_ratio is the ratio behind the label.
+label_spend, label_tracked_actions, label_cost_per_tracked_action
+and label_benchmark (PR 5) are the figures behind label_ratio:
+from the latest run with enough volume, or from the recent
+window. They are empty for fixed and insufficient_data labels.
 
 Fixed labels, which win over every other label:
 - not_comparable for a campaign whose group is in
@@ -369,6 +373,7 @@ def recent_window_results(day_df, campaigns, window_days, lag_days,
             "spend": spend, "conversions": conversions,
             "active_days": active_days, "cost_per_conversion": cost,
             "ratio": ratio,
+            "benchmark": value,
             "label": label_run(ratio, flag, rules),
         }
     return results
@@ -430,6 +435,9 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
         runs_with_volume = len(with_volume)
         repeat_eligible = runs_with_volume >= repeat_min
         fixed = fixed_label(campaign_row["group"], rules)
+        # Figures behind label_ratio (PR 5); None unless the label
+        # comes from a ratio.
+        figures = (None, None, None, None)
         if fixed is not None:
             # not_comparable / not_judged: no benchmark, no best
             # run, never repeat eligible.
@@ -477,6 +485,10 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             }
             ratio = latest["ratio_to_benchmark"]
             label_ratio = ratio
+            figures = (float(latest["spend"]),
+                       float(latest["conversions"]),
+                       float(latest["cost_per_conversion"]),
+                       float(latest["benchmark"]))
             period = (latest["start"], latest["end"])
             run_text = (f"latest run {latest_run_number} "
                         f"({latest['start']} to {latest['end']}, "
@@ -498,6 +510,11 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             label_ratio = recent["ratio"]
             label_basis = "recent_window"
             period = (str(recent["start"]), str(recent["end"]))
+            figures = ((recent["spend"], recent["conversions"],
+                        recent["cost_per_conversion"],
+                        recent.get("benchmark"))
+                       if recent["ratio"] is not None
+                       else (None, None, None, None))
             reason = _recent_reason(recent, name, run_label, run_text)
         rows.append({
             "campaign": campaign,
@@ -512,6 +529,10 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             # window, or the run the label comes from.
             "label_period_start": period[0],
             "label_period_end": period[1],
+            "label_spend": figures[0],
+            "label_tracked_actions": figures[1],
+            "label_cost_per_tracked_action": figures[2],
+            "label_benchmark": figures[3],
             "latest_run_number": latest_run_number,
             "runs_with_volume": runs_with_volume,
             "repeat_eligible": repeat_eligible,
