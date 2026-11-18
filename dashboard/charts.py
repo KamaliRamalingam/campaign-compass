@@ -7,6 +7,8 @@ data.LABEL_STYLE, so a label always looks the same and is always
 named in text, never shown by colour alone.
 """
 
+import math
+
 import plotly.graph_objects as go
 
 import data as dashboard_data
@@ -31,6 +33,7 @@ def _layout(fig, height=420, legend=True):
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02,
                 "xanchor": "left", "x": 0, "title": None},
         hoverlabel={"bgcolor": "white", "font_size": 13},
+        legend_traceorder="normal",
     )
     fig.update_xaxes(automargin=True, gridcolor=GRID, zeroline=False,
                      title_font={"color": GREY})
@@ -49,8 +52,14 @@ def bubble_chart(rows, lines, currency):
     """
     fig = go.Figure()
     max_spend = float(rows["label_spend"].max()) if len(rows) else 1.0
+    # Alternate name positions over all bubbles, ordered by cost, so
+    # names of bubbles close together do not print on each other.
+    ordered = rows.sort_values("label_cost_per_tracked_action")["campaign"]
+    positions = {name: ("bottom center", "top center")[i % 2]
+                 for i, name in enumerate(ordered)}
     for label in dashboard_data.JUDGED_LABELS:
-        part = rows.loc[rows["label"] == label]
+        part = rows.loc[rows["label"] == label].sort_values(
+            "label_cost_per_tracked_action")
         if part.empty:
             continue
         style = dashboard_data.LABEL_STYLE[label]
@@ -60,8 +69,9 @@ def bubble_chart(rows, lines, currency):
             mode="markers+text",
             name=dashboard_data.label_text(label),
             text=part["campaign"],
-            textposition="top center",
+            textposition=[positions[name] for name in part["campaign"]],
             textfont={"size": 12, "color": "#1C2430"},
+            cliponaxis=False,
             marker={
                 "size": part["label_spend"],
                 "sizemode": "area",
@@ -85,19 +95,41 @@ def bubble_chart(rows, lines, currency):
                 "<br>Ratio to benchmark: %{customdata[4]:.2f}x"
                 "<extra></extra>"),
         ))
-    for index, (name, _ratio, value) in enumerate(lines):
-        fig.add_hline(
-            y=value, line_dash="dash" if index == 0 else "dot",
-            line_color=NAVY if index == 0 else GREY, line_width=1.5,
-            annotation_text=f"{name}: {value:,.2f} {currency}",
-            annotation_position="top right",
-            annotation_font={"color": NAVY if index == 0 else GREY,
-                             "size": 12})
-    fig.update_xaxes(title="Tracked actions in the label period",
-                     rangemode="tozero")
-    fig.update_yaxes(title=f"Cost per tracked action ({currency})",
-                     rangemode="tozero")
-    return _layout(fig, height=480)
+    # The benchmark line is also the 1.0x line: name it once.
+    drawn = []
+    for name, ratio, value in lines:
+        if drawn and abs(value - drawn[0][2]) < 1e-9:
+            drawn[0] = (f"{drawn[0][0]} = {name.lower()}", 1.0, value)
+            continue
+        drawn.append((name, ratio, value))
+    # Log axes: one campaign far above the benchmark must not squash
+    # the rest; equal steps on the y axis are equal ratios. Ranges
+    # are set explicitly (in log10 units) so the lines always show.
+    xs = list(rows["label_tracked_actions"]) or [1.0]
+    ys = list(rows["label_cost_per_tracked_action"]) + [
+        value for _name, _ratio, value in drawn]
+    x_range = [math.log10(min(xs) / 2.0), math.log10(max(xs) * 3.0)]
+    y_range = [math.log10(min(ys) / 1.6), math.log10(max(ys) * 1.6)]
+    x_line = [10 ** x_range[0], 10 ** x_range[1]]
+    for index, (name, _ratio, value) in enumerate(drawn):
+        colour = NAVY if index == 0 else GREY
+        fig.add_trace(go.Scatter(
+            x=x_line, y=[value, value], mode="lines",
+            line={"color": colour, "width": 1.5,
+                  "dash": "dash" if index == 0 else "dot"},
+            showlegend=False, hoverinfo="skip"))
+        # On a log axis an annotation's y is given in log10 units.
+        fig.add_annotation(
+            x=0.01, xref="paper", y=math.log10(value), yref="y",
+            text=f"{name}: {value:,.2f} {currency}", showarrow=False,
+            xanchor="left", yanchor="bottom",
+            font={"color": colour, "size": 12},
+            bgcolor="rgba(255,255,255,0.85)")
+    fig.update_xaxes(title="Tracked actions in the label period (log)",
+                     type="log", range=x_range)
+    fig.update_yaxes(title=f"Cost per tracked action ({currency}, log)",
+                     type="log", range=y_range)
+    return _layout(fig, height=520)
 
 
 def label_count_bar(counts):
@@ -149,7 +181,8 @@ def trend_line(table, x_field, x_title, currency):
 
 def weekday_bar(table, currency, highlight=None):
     """Cost per tracked action by weekday, Monday to Sunday."""
-    colours = [("#D55E00" if day == highlight else NEUTRAL)
+    short = str(highlight)[:3] if highlight else None
+    colours = [("#D55E00" if str(day)[:3] == short else NEUTRAL)
                for day in table["weekday"]]
     fig = go.Figure(go.Bar(
         x=table["weekday"], y=table["cost_per_tracked_action"],

@@ -1,7 +1,12 @@
-"""Local Streamlit dashboard (T8, reworked in PR 4).
+"""Local Streamlit dashboard (T8, reworked in PR 4, restyled in PR 5).
 
 Run it with: bash dashboard.sh (after bash run.sh). It listens
 on localhost only.
+
+Three pages (PR 5): Act (which campaigns to continue, test or
+pause), Context (can we trust this?) and Campaign detail (opened
+from the Act ranking or picked directly). Charts are Plotly,
+built in dashboard/charts.py.
 
 Reads only the client's results and reports folders, never
 data/raw/ or outputs/interim/. All data preparation lives in
@@ -19,7 +24,7 @@ import html
 import sys
 from pathlib import Path
 
-import altair as alt
+import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -31,6 +36,9 @@ WIDE = st.column_config.TextColumn  # shorthand below
 NUM = st.column_config.NumberColumn
 PAGE_KEY = "page"
 DETAIL_KEY = "detail_campaign"
+# Widgets whose options depend on the client: reset on a switch.
+CLIENT_WIDGETS = ("act_group", "act_status", "act_pick", DETAIL_KEY,
+                  "ctx_trend_campaign", "ctx_weekday")
 
 STYLE = """
 <style>
@@ -42,6 +50,15 @@ h1, h2, h3, h4 {color: #1F3A5F !important;}
            border-radius: 999px; font-weight: 600; font-size: 1.05rem;
            border: 2px solid; color: #1C2430;}
 .cc-foot {color: #5B6573; font-size: 0.88rem; line-height: 1.5;}
+.cc-table {width: 100%; border-collapse: collapse; font-size: 0.92rem;
+           margin: 0.4rem 0 1rem;}
+.cc-table th {text-align: left; color: #1F3A5F; font-weight: 600;
+              border-bottom: 2px solid #1F3A5F; padding: 0.5rem 0.6rem;}
+.cc-table td {border-bottom: 1px solid #E6E9EF; padding: 0.55rem 0.6rem;
+              vertical-align: top;}
+.cc-table .n {text-align: right; white-space: nowrap;}
+.cc-table .nw {white-space: nowrap;}
+.cc-table .lab {font-weight: 600; white-space: nowrap; color: #1C2430;}
 </style>
 """
 
@@ -138,30 +155,53 @@ def _table(table, file_name=None, column_config=None, key=None,
             key=key or f"download_{file_name}")
 
 
-def _campaign_axis(title="Campaign"):
-    """A y axis that never cuts campaign names short."""
-    return alt.Axis(title=title, labelLimit=0)
-
-
 # --- Act ----------------------------------------------------------
 
-ACT_COLUMNS = {
-    "rank": NUM("#", width="small", format="%d"),
-    "campaign": WIDE("Campaign", width="large", pinned=True),
-    "group": WIDE("Group", width="small"),
-    "final_label": WIDE("Final label", width="medium",
-                        help="After the trend override"),
-    "status_now": WIDE("Status now", width="small"),
-    "ratio_to_benchmark": NUM("Ratio to benchmark", format="%.2fx",
-                              width="small"),
-    "tracked_actions": NUM("Tracked actions", format="%.0f",
-                           width="small"),
-    "recent_trend": WIDE("Recent trend", width="small"),
-    "action": WIDE("Action", width="large"),
-    "label_period": WIDE("Label period", width="medium",
-                         help="The run or recent window the label "
-                              "comes from"),
-}
+def _fmt(value, pattern):
+    """A formatted number, or an em dash for a missing one."""
+    if value is None or pd.isna(value):
+        return "—"
+    return pattern.format(value)
+
+
+def _action_html(table):
+    """The ranked action table as HTML: text wraps, nothing is cut.
+
+    The label cell is tinted with the label colour and also names
+    the label in text (with its symbol).
+    """
+    head = ("<tr><th>#</th><th>Campaign</th><th>Final label</th>"
+            "<th>Status</th><th class='n'>Ratio</th>"
+            "<th class='n'>Tracked actions</th><th>Trend</th>"
+            "<th>Action</th><th>Label period</th></tr>")
+    body = []
+    for _, row in table.iterrows():
+        colour = dashboard_data.label_colour(row["label"])
+        body.append(
+            "<tr>"
+            f"<td class='n'>{int(row['rank'])}</td>"
+            f"<td><b>{html.escape(str(row['campaign']))}</b></td>"
+            f"<td class='lab' style='background:{_tint(colour)};"
+            f"border-left:4px solid {colour}'>"
+            f"{html.escape(row['final_label'])}</td>"
+            f"<td>{html.escape(str(row['status_now']))}</td>"
+            f"<td class='n'>{_fmt(row['ratio_to_benchmark'], '{:.2f}x')}</td>"
+            f"<td class='n'>{_fmt(row['tracked_actions'], '{:,.0f}')}</td>"
+            f"<td>{html.escape(_readable(row['recent_trend']))}</td>"
+            f"<td>{html.escape(_readable(row['action'], keep=True))}</td>"
+            f"<td class='nw'>{html.escape(str(row['label_period'] or '—'))}"
+            "</td></tr>")
+    return (f"<table class='cc-table'><thead>{head}</thead>"
+            f"<tbody>{''.join(body)}</tbody></table>")
+
+
+def _readable(value, keep=False):
+    """Text for a cell: empty for missing; underscores to spaces."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return "—"
+    return str(value) if keep else str(value).replace("_", " ")
+
+
 
 
 def _act_definitions(ctx, kpi):
@@ -273,7 +313,8 @@ def _page_act(ctx):
     st.markdown("#### What should we do, most urgent first?")
     st.caption("Pause or review first, then test, then continue; within "
                "a label, the highest ratio to the benchmark first. "
-               "Select a row to open its detail.")
+               "Ratio = cost per tracked action in the label period / "
+               "its benchmark. Costs and group are in the CSV.")
     show_hidden = st.checkbox(
         "Also show insufficient data / not judged campaigns",
         value=False, key="act_show_hidden")
@@ -284,20 +325,15 @@ def _page_act(ctx):
     if table.empty:
         st.info("No campaign matches the filters.")
     else:
-        columns = list(ACT_COLUMNS)
-        event = st.dataframe(
-            _styled(table, ["final_label"]), hide_index=True,
-            width="stretch", column_order=columns,
-            column_config=ACT_COLUMNS, on_select="rerun",
-            selection_mode="single-row", key="act_table")
-        selected = event.selection.rows if event else []
-        buttons = st.columns([1, 1, 3])
-        if selected:
-            campaign = table.loc[selected[0], "campaign"]
-            buttons[0].button(f"Open detail: {campaign}",
-                              on_click=_open_detail, args=(campaign,),
-                              type="primary", key="act_open")
-        buttons[1].download_button(
+        st.markdown(_action_html(table), unsafe_allow_html=True)
+        picks = st.columns([2, 1, 1], vertical_alignment="bottom")
+        campaign = picks[0].selectbox(
+            "Open a campaign's detail", list(table["campaign"]),
+            key="act_pick")
+        picks[1].button("Open detail", on_click=_open_detail,
+                        args=(campaign,), type="primary",
+                        key="act_open")
+        picks[2].download_button(
             "Download CSV",
             dashboard_data.csv_bytes(table.drop(columns=["label"])),
             file_name="actions.csv", mime="text/csv",
@@ -320,154 +356,6 @@ def _page_act(ctx):
 
     st.divider()
     _footnotes(_act_definitions(ctx, kpi))
-
-
-# --- Campaign -----------------------------------------------------
-
-def _period_slider(values, label, key):
-    """A from-to slider over the sorted periods; returns (start, end)."""
-    options = sorted(set(str(value) for value in values))
-    if len(options) < 2:
-        return None, None
-    return st.select_slider(label, options=options,
-                            value=(options[0], options[-1]), key=key)
-
-
-def _trend_section(ctx, campaign, prefix):
-    """Monthly or weekly chart and table for one campaign.
-
-    A period slider limits the rows shown (a filter, not a
-    recalculation); tooltips include the partial/lagged
-    flags for months.
-    """
-    tables = ctx["tables"]
-    currency = ctx["currency"]
-    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True,
-                    key=f"{prefix}_view")
-    if view == "Monthly":
-        table = dashboard_data.trend_for_campaign(
-            tables["timeline_by_campaign"], campaign)
-        timeline = tables["timeline_by_campaign"]
-        flag_columns = [column for column in ("is_partial", "is_lagged")
-                        if column in timeline.columns]
-        if flag_columns:
-            flags = timeline.loc[timeline["campaign"] == campaign,
-                                 ["month", "source"] + flag_columns]
-            table = table.merge(flags, on=["month", "source"],
-                                how="left")
-            table[flag_columns] = table[flag_columns].astype(
-                "object").fillna("").astype(str)
-        x_field, x_title, key = "month", "Month", "month"
-    else:
-        table = dashboard_data.weekly_for_campaign(
-            tables["weekly_by_campaign"], campaign)
-        x_field, x_title, key = "week_start", "Week starting", "week"
-    if table.empty:
-        st.caption("No monthly or weekly rows: the trend tables "
-                   "cover the time groups in the config.")
-    else:
-        start, end = _period_slider(table[x_field], "Period",
-                                    f"{prefix}_period_{key}")
-        table = dashboard_data.filter_period(table, x_field, start, end)
-        tooltip = [x_field, "spend", "tracked_actions",
-                   alt.Tooltip("cost_per_tracked_action", format=".2f")]
-        tooltip += [column for column in ("source", "is_partial",
-                                          "is_lagged")
-                    if column in table.columns]
-        chart = alt.Chart(table).mark_line(point=True).encode(
-            x=alt.X(f"{x_field}:O", title=x_title,
-                    axis=alt.Axis(labelAngle=-45)),
-            y=alt.Y("cost_per_tracked_action:Q",
-                    title=f"Cost per tracked action ({currency})"),
-            tooltip=tooltip,
-        )
-        st.altair_chart(chart, width="stretch")
-        if "is_partial" in table.columns:
-            st.caption("Hover a point: is_partial marks a month the "
-                       "campaign ran only part of; is_lagged marks "
-                       "a month with days still being reported.")
-        _table(dashboard_data.display_table(table),
-               f"{key}ly_{campaign}.csv", key=f"{prefix}_trend")
-
-
-
-def _page_campaign(ctx):
-    """One campaign: label and reasons, runs, trend, weekday, journey."""
-    st.header("Campaign")
-    _context(ctx)
-    tables = ctx["tables"]
-    currency = ctx["currency"]
-    if not ctx["campaigns"]:
-        st.info("No campaigns in this group.")
-        return
-    campaign = st.selectbox("Campaign", ctx["campaigns"])
-    detail = dashboard_data.campaign_detail(
-        ctx["all_recommendations"], tables["recent_trend"], campaign)
-
-    cols = st.columns(3)
-    cols[0].metric("Final label", detail["label"], border=True)
-    cols[1].metric("Status now", detail["status_now"], border=True)
-    cols[2].metric("Recent trend", detail["recent_trend"] or "—",
-                   border=True)
-    with st.container(border=True):
-        st.markdown(f"**Action:** {detail['action']}")
-        label_period = detail["label_period"] or "no period"
-        st.markdown(f"**Label** (from {detail['label_from']}, "
-                    f"{label_period})")
-        st.write(detail["reason"])
-        if detail["trend_window"]:
-            st.markdown(
-                f"**Trend** (recent window {detail['trend_window']}, "
-                f"prior window {detail['prior_window']})")
-            st.write(detail["trend_reason"])
-        else:
-            st.caption("No recent trend: the campaign is not active "
-                       "or its group is not judged.")
-
-    st.subheader("Runs")
-    runs = dashboard_data.run_recommendations_for_campaign(
-        tables["recommendations_by_run"], campaign)
-    if runs.empty:
-        st.caption("No runs: runs are built only for the run groups "
-                   "in the config.")
-    else:
-        _table(dashboard_data.display_table(runs),
-               f"runs_{campaign}.csv", key="campaign_runs")
-
-    st.subheader("Trend")
-    _trend_section(ctx, campaign, "campaign")
-
-    st.subheader("Weekday pattern")
-    by_campaign = tables["weekday_by_campaign"]
-    if campaign not in set(by_campaign["campaign"]):
-        st.caption("No weekday rows: weekday tables cover the time "
-                   "groups in the config.")
-    else:
-        weekday = dashboard_data.weekday_campaign_table(
-            by_campaign, campaign)
-        chart = alt.Chart(weekday).mark_bar().encode(
-            x=alt.X("weekday:N", sort=list(weekday["weekday"]),
-                    title="Weekday"),
-            y=alt.Y("cost_per_tracked_action:Q",
-                    title=f"Cost per tracked action ({currency})"),
-            tooltip=["weekday", "tracked_actions", "clicks",
-                     alt.Tooltip("cost_per_tracked_action",
-                                 format=".2f"), "volume_flag"],
-        )
-        st.altair_chart(chart, width="stretch")
-        _table(dashboard_data.display_table(weekday),
-               f"weekday_{campaign}.csv", key="campaign_weekday")
-
-    st.subheader("Acquisition journey")
-    journey = dashboard_data.journey_row(
-        tables["journey_by_campaign"], campaign)
-    if journey.empty:
-        st.caption("No journey row: the journey covers the time "
-                   "groups in the config.")
-    else:
-        _table(dashboard_data.display_table(
-            dashboard_data.journey_display(journey)),
-            key="campaign_journey")
 
 
 # --- Context ------------------------------------------------------
@@ -498,23 +386,20 @@ def _context_trend(ctx):
     if rows.empty:
         st.caption("No active campaign has a recent trend.")
     else:
-        _table(rows, "recent_trend.csv", key="ctx_recent",
+        _table(rows.drop(columns=["recent_tracked_actions"]),
+               "recent_trend.csv", key="ctx_recent",
                column_config={
-                   "campaign": WIDE("Campaign", width="large",
-                                    pinned=True),
-                   "final_label": WIDE("Final label", width="medium"),
-                   "recent_trend": WIDE("Recent trend", width="small"),
-                   "recent_window": WIDE("Recent window",
-                                         width="medium"),
+                   "campaign": WIDE("Campaign", pinned=True),
+                   "final_label": WIDE("Final label"),
+                   "recent_trend": WIDE("Trend"),
+                   "recent_window": WIDE("Recent window"),
                    "recent_cost_per_tracked_action": NUM(
-                       f"Recent cost ({currency})", format="%.2f"),
-                   "prior_window": WIDE("Prior window", width="medium"),
+                       f"Recent ({currency})", format="%.2f"),
+                   "prior_window": WIDE("Prior window"),
                    "prior_cost_per_tracked_action": NUM(
-                       f"Prior cost ({currency})", format="%.2f"),
+                       f"Prior ({currency})", format="%.2f"),
                    "recent_vs_prior_ratio": NUM(
-                       "Recent vs prior", format="%.2fx"),
-                   "recent_tracked_actions": NUM(
-                       "Recent tracked actions", format="%.0f"),
+                       "Recent / prior", format="%.2fx"),
                })
     timeline = tables["timeline_by_campaign"]
     campaigns = sorted(set(timeline["campaign"]))
@@ -613,11 +498,20 @@ def _context_weekday(ctx):
         st.markdown(f"**{weekday} with one campaign left out**")
         st.caption("Closest to the Mon-Thu baseline first: that campaign "
                    "explains most of the weekday's difference.")
-        _table(dashboard_data.leave_one_out_for_weekday(loo, weekday),
+        loo_table = dashboard_data.leave_one_out_for_weekday(
+            loo, weekday)
+        loo_columns = [column for column in (
+            "left_out", "actions_per_click_vs_baseline",
+            "actions_per_click", "clicks") if column in loo_table]
+        _table(loo_table[loo_columns],
                f"weekday_leave_one_out_{weekday}.csv", key="ctx_loo",
                column_config={
-                   "left_out": WIDE("Left out", width="large",
-                                    pinned=True)})
+                   "left_out": WIDE("Left out", pinned=True),
+                   "actions_per_click_vs_baseline": NUM(
+                       "vs Mon-Thu", format="%.2fx"),
+                   "actions_per_click": NUM("Actions / click",
+                                            format="%.3f"),
+                   "clicks": NUM("Clicks", format="%.0f")})
     if top is not None and not top.empty:
         top_weekday = top["weekday"].iloc[0]
         with st.expander(f"Top {len(top)} {top_weekday}s by pooled clicks "
@@ -639,7 +533,7 @@ def _context_what_if(ctx):
             st.metric("Change in tracked actions, range across variants",
                       span["display"])
     columns = [column for column in (
-        "variant", "groups", "scenario", "spend_moved",
+        "groups", "scenario", "spend_moved",
         "tracked_actions_before", "tracked_actions_after", "display")
         if column in rows.columns]
     shown = rows[columns].copy()
@@ -648,8 +542,13 @@ def _context_what_if(ctx):
         if column in shown.columns:
             shown[column] = shown[column].round(0)
     _table(shown, "what_if.csv", key="ctx_what_if", column_config={
-        "scenario": WIDE("Scenario", width="large"),
-        "display": WIDE("Change", width="medium")})
+        "groups": WIDE("Groups"),
+        "scenario": WIDE("Scenario"),
+        "spend_moved": NUM(f"Spend moved ({ctx['currency']})",
+                           format="%.0f"),
+        "tracked_actions_before": NUM("Actions before", format="%.0f"),
+        "tracked_actions_after": NUM("Actions after", format="%.0f"),
+        "display": WIDE("Change")})
     note = rows["note"].iloc[0] if "note" in rows.columns else ""
     if note:
         st.warning(f"{note}.", icon="⚠️")
@@ -756,64 +655,202 @@ def _page_context(ctx):
     _context_method(ctx)
 
 
-# --- Pages kept from T8 -------------------------------------------
+# --- Campaign detail ----------------------------------------------
 
-def _page_runs(ctx):
-    """One campaign's runs, with run labels, as a chart and a table."""
-    st.header("Runs")
-    _context(ctx)
+def _period_slider(values, label, key):
+    """A from-to slider over the sorted periods; returns (start, end)."""
+    options = sorted(set(str(value) for value in values))
+    if len(options) < 2:
+        return None, None
+    return st.select_slider(label, options=options,
+                            value=(options[0], options[-1]), key=key)
+
+
+def _detail_trend(ctx, campaign):
+    """Monthly or weekly cost per tracked action for one campaign.
+
+    The period slider limits the rows shown (a filter, not a
+    recalculation). Partial and lagged months are marked.
+    """
+    tables = ctx["tables"]
     currency = ctx["currency"]
-    run_recs = ctx["tables"]["recommendations_by_run"]
-    campaigns = [name for name in ctx["campaigns"]
-                 if name in set(run_recs["campaign"])]
-    if not campaigns:
-        st.info("No runs for the campaigns in this group: runs are "
-                "built only for the run groups in the config.")
+    view = st.radio("View", ["Monthly", "Weekly"], horizontal=True,
+                    key="detail_view")
+    if view == "Monthly":
+        table = dashboard_data.trend_with_flags(
+            tables["timeline_by_campaign"], campaign)
+        x_field, x_title, key = "month", "Month", "month"
+    else:
+        table = dashboard_data.weekly_for_campaign(
+            tables["weekly_by_campaign"], campaign)
+        x_field, x_title, key = "week_start", "Week starting", "week"
+    if table.empty:
+        st.caption("No monthly or weekly rows: the trend tables cover "
+                   "the time groups in the config.")
         return
-    campaign = st.selectbox("Campaign", campaigns)
-    table = dashboard_data.run_recommendations_for_campaign(
-        run_recs, campaign)
-    chart = alt.Chart(table).mark_bar().encode(
-        x=alt.X("run_number:O", title="Run"),
-        y=alt.Y("cost_per_conversion:Q",
-                title=f"Cost per tracked action ({currency})"),
-        color=alt.Color("run_label:N", title="Run label"),
-        tooltip=["run_number", "start", "end", "spend",
-                 alt.Tooltip("cost_per_conversion", format=".2f",
-                             title="cost per tracked action"),
-                 alt.Tooltip("ratio_to_benchmark", format=".2f"),
-                 "run_label"],
-    )
-    st.altair_chart(chart, width="stretch")
-    st.caption("Run labels judge each run on its own; the campaign's "
-               "final label is on the Summary and Campaign pages.")
-    _table(dashboard_data.display_table(table), f"runs_{campaign}.csv",
-           key="runs")
+    start, end = _period_slider(table[x_field], "Period",
+                                f"detail_period_{key}")
+    table = dashboard_data.filter_period(table, x_field, start, end)
+    st.plotly_chart(charts.trend_line(table, x_field, x_title, currency),
+                    width="stretch", key=f"detail_trend_{key}")
+    if "month_note" in table.columns:
+        st.caption("Hollow ring = partial or lagged month. Monthly "
+                   "source: day is the daily export, month is the "
+                   "monthly-history export.")
+    with st.expander(f"{view} table"):
+        _table(dashboard_data.display_table(table),
+               f"{key}ly_{campaign}.csv", key=f"detail_trend_table_{key}",
+               column_config={"month note": WIDE("Month note",
+                                                 width="medium")})
 
 
-def _page_trend(ctx):
-    """Monthly or weekly trend for a selected campaign."""
-    st.header("Trend")
+def _page_detail(ctx):
+    """One campaign: cards, action and reasons, runs, trend, weekday,
+    journey."""
+    _title("Campaign detail",
+           "Everything behind one campaign's label. Open it from the "
+           "ranked table on the Act page, or pick a campaign here.",
+           level=1)
     _context(ctx)
-    timeline = ctx["tables"]["timeline_by_campaign"]
-    campaigns = [name for name in ctx["campaigns"]
-                 if name in set(timeline["campaign"])]
-    if not campaigns:
-        st.info("No trend rows for the campaigns in this group: the "
-                "trend tables cover the time groups in the config.")
+    tables = ctx["tables"]
+    currency = ctx["currency"]
+    recs = ctx["all_recommendations"]
+    ranked = list(dashboard_data.action_table(recs)["campaign"])
+    options = ranked + sorted(set(recs["campaign"]) - set(ranked))
+    if not options:
+        st.info("No campaigns.")
         return
-    campaign = st.selectbox("Campaign", campaigns)
-    _trend_section(ctx, campaign, "trend")
-    st.caption("Monthly source: day is the daily export, month is "
-               "the monthly-history export. Weeks start on Monday.")
+    if st.session_state.get(DETAIL_KEY) not in options:
+        st.session_state[DETAIL_KEY] = options[0]
+    campaign = st.selectbox(
+        "Campaign", options, key=DETAIL_KEY,
+        help="Ordered as in the Act ranking; not-comparable last.")
+    detail = dashboard_data.campaign_detail(
+        recs, tables["recent_trend"], campaign)
+    row = recs.set_index("campaign").loc[campaign]
+    ratio = row.get("label_ratio")
+
+    cards = st.columns(4)
+    with cards[0].container(border=True):
+        st.markdown("Final label")
+        st.markdown(_badge(detail["label"]), unsafe_allow_html=True)
+        st.caption(f"From {detail['label_from'].replace('_', ' ')}"
+                   + (f", {detail['label_period']}"
+                      if detail["label_period"] else ""))
+    _card(cards[1], "Status now",
+          (detail["status_now"] or "—").replace("_", " "),
+          "Active if it ran in the last days of the data.")
+    _card(cards[2], "Recent trend",
+          (detail["recent_trend"] or "—").replace("_", " "),
+          "Recent window against the prior window.")
+    _card(cards[3], "Ratio to benchmark",
+          f"{ratio:.2f}x" if ratio is not None and not pd.isna(ratio)
+          else "—",
+          "Cost per tracked action in the label period / its benchmark.")
+
+    with st.container(border=True):
+        st.markdown(f"**Action:** {detail['action']}")
+        st.markdown("**Why this label**")
+        st.write(detail["reason"])
+        if detail["trend_window"]:
+            st.markdown(f"**Trend** (recent window {detail['trend_window']}"
+                        f", prior window {detail['prior_window']})")
+            st.write(detail["trend_reason"])
+        else:
+            st.caption("No recent trend: the campaign is not active or "
+                       "its group is not judged.")
+
+    st.write("")
+    _title("Runs", "Each run judged on its own; the final label comes "
+           "from the latest run with enough volume or the recent "
+           "window.", level=3)
+    runs = dashboard_data.run_recommendations_for_campaign(
+        tables["recommendations_by_run"], campaign)
+    if runs.empty:
+        st.caption("No runs: runs are built only for the run groups in "
+                   "the config.")
+    else:
+        runs["run_label"] = runs["run_label"].map(
+            dashboard_data.label_text)
+        order = [column for column in (
+            "run_number", "run_label", "start", "end", "active_days",
+            "spend", "conversions", "cost_per_conversion",
+            "ratio_to_benchmark") if column in runs.columns]
+        runs = runs[order]
+        st.dataframe(_styled(runs, ["run_label"]), hide_index=True,
+                     width="stretch", key="detail_runs", column_config={
+                         "run_number": NUM("Run", format="%d"),
+                         "run_label": WIDE("Run label"),
+                         "start": WIDE("Start"),
+                         "end": WIDE("End"),
+                         "active_days": NUM("Days", format="%d"),
+                         "spend": NUM(f"Spend ({currency})",
+                                      format="%.0f"),
+                         "conversions": NUM("Tracked actions",
+                                            format="%.0f"),
+                         "cost_per_conversion": NUM(
+                             f"Cost per action ({currency})",
+                             format="%.2f"),
+                         "ratio_to_benchmark": NUM("Ratio",
+                                                   format="%.2fx")})
+        st.download_button("Download CSV",
+                           dashboard_data.csv_bytes(
+                               dashboard_data.display_table(runs)),
+                           file_name=f"runs_{campaign}.csv",
+                           mime="text/csv", key="detail_runs_download")
+
+    st.write("")
+    _title("Trend", "Cost per tracked action over time.", level=3)
+    _detail_trend(ctx, campaign)
+
+    st.write("")
+    _title("Weekday pattern", "This campaign's cost per tracked action "
+           "by weekday.", level=3)
+    by_campaign = tables["weekday_by_campaign"]
+    if campaign not in set(by_campaign["campaign"]):
+        st.caption("No weekday rows: weekday tables cover the time "
+                   "groups in the config.")
+    else:
+        weekday = dashboard_data.weekday_campaign_table(
+            by_campaign, campaign)
+        st.plotly_chart(charts.weekday_bar(weekday, currency),
+                        width="stretch", key="detail_weekday")
+        with st.expander("Weekday table"):
+            _table(dashboard_data.display_table(weekday),
+                   f"weekday_{campaign}.csv", key="detail_weekday_table")
+
+    st.write("")
+    _title("Acquisition journey", "How this campaign's tracked actions "
+           "split into directions, calls and store visits.", level=3)
+    journey = dashboard_data.journey_row(
+        tables["journey_by_campaign"], campaign)
+    if journey.empty:
+        st.caption("No journey row: the journey covers the time groups "
+                   "in the config.")
+    else:
+        long = dashboard_data.journey_intent_long(journey)
+        st.plotly_chart(charts.intent_stack(long), width="stretch",
+                        key="detail_journey_chart")
+        keep = [column for column in (
+            "spend", "clicks", "tracked_actions", "engagement_actions",
+            "tracked_actions_per_click", "cost_per_tracked_action")
+            if column in journey.columns]
+        _table(journey[keep], key="detail_journey", column_config={
+            "spend": NUM(f"Spend ({currency})", format="%.0f"),
+            "clicks": NUM("Clicks", format="%.0f"),
+            "tracked_actions": NUM("Tracked actions", format="%.0f"),
+            "engagement_actions": NUM("Engagement actions",
+                                      format="%.0f"),
+            "tracked_actions_per_click": NUM("Actions / click",
+                                             format="%.3f"),
+            "cost_per_tracked_action": NUM(
+                f"Cost per action ({currency})", format="%.2f")})
 
 
 PAGES = {
     "Act": _page_act,
     "Context": _page_context,
-    "Campaign": _page_campaign,
-    "Runs": _page_runs,
-    "Trend": _page_trend,
+    "Campaign detail": _page_detail,
 }
 
 
@@ -848,6 +885,10 @@ def main():
     st.sidebar.markdown("## CampaignCompass")
     client = st.sidebar.selectbox(
         "Client", dashboard_data.list_clients(), index=0)
+    if st.session_state.get("_client") != client:
+        for key in CLIENT_WIDGETS:
+            st.session_state.pop(key, None)
+        st.session_state["_client"] = client
     try:
         ctx = _load(client)
     except FileNotFoundError as exc:
