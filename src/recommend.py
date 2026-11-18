@@ -13,7 +13,12 @@ the config) and writes, all git-ignored:
   with enough volume, repeat_eligible, last active date and
   status (active or ended), best run, action_text, reason, caveat,
   and base_label / base_action_text / base_reason (copies that
-  src/recent_trend.py rebuilds from, so it is idempotent).
+  src/recent_trend.py rebuilds from, so it is idempotent), and
+  label_period_start / label_period_end (the period the label's
+  signal covers).
+- outputs/results/benchmarks.csv (next to the recommendation
+  tables): the benchmark variants (pooled and leave-one-out
+  min/max) and the judged-campaign totals, for the dashboard.
 - outputs/results/recommendation_sensitivity.csv: one row per
   campaign and per combination of the sensitivity threshold
   lists, with the resulting label and label_stable.
@@ -443,12 +448,16 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
                 fixed, campaign_row["group"], latest_cost, name)
             label_ratio = None
             run_text = "the latest run"
+            period = ((part.sort_values("run_number").iloc[-1]["start"],
+                       part.sort_values("run_number").iloc[-1]["end"])
+                      if total_runs else (None, None))
         elif with_volume.empty:
             label = LABEL_INSUFFICIENT
             latest_run_number = None
             best_run = None
             label_ratio = None
             run_text = "no run with enough volume"
+            period = (None, None)
             reason = (
                 f"no run had enough volume to judge: "
                 f"{total_runs} runs, 0 with enough volume"
@@ -468,6 +477,7 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             }
             ratio = latest["ratio_to_benchmark"]
             label_ratio = ratio
+            period = (latest["start"], latest["end"])
             run_text = (f"latest run {latest_run_number} "
                         f"({latest['start']} to {latest['end']}, "
                         f"{ratio:.2f} times the benchmark)")
@@ -487,6 +497,7 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             label = recent["label"]
             label_ratio = recent["ratio"]
             label_basis = "recent_window"
+            period = (str(recent["start"]), str(recent["end"]))
             reason = _recent_reason(recent, name, run_label, run_text)
         rows.append({
             "campaign": campaign,
@@ -497,6 +508,10 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
             "label_basis": label_basis,
             "run_label": run_label,
             "label_ratio": label_ratio,
+            # The period the label's signal covers: the recent
+            # window, or the run the label comes from.
+            "label_period_start": period[0],
+            "label_period_end": period[1],
             "latest_run_number": latest_run_number,
             "runs_with_volume": runs_with_volume,
             "repeat_eligible": repeat_eligible,
@@ -627,6 +642,55 @@ def benchmark_summary(day_summary, rules):
         })
     return {"groups": groups, "leave_one_out": leave_one_out,
             "variants": rows}
+
+
+def benchmark_table(day_summary, rules):
+    """Benchmarks and judged-campaign totals as a result table.
+
+    One row per benchmark variant from benchmark_summary
+    (variant "benchmark" for benchmark.groups, "with_not_comparable"
+    when not_comparable_groups exist), plus a "judged_campaigns"
+    row: the campaigns without a fixed label. Each row has
+    campaigns, spend, tracked_actions, pooled cost per tracked
+    action and, for the variants, the leave-one-out min and max.
+    Same arithmetic as the benchmark itself, written out so the
+    dashboard only reads it.
+    """
+    summary = benchmark_summary(day_summary, rules)
+    rows = []
+    for index, variant in enumerate(summary["variants"]):
+        part = day_summary.loc[day_summary["group"].isin(
+            variant["groups"])]
+        rows.append({
+            "variant": ("benchmark" if index == 0
+                        else "with_not_comparable"),
+            "groups": "+".join(variant["groups"]),
+            "leave_one_out": (summary["leave_one_out"]
+                              if index == 0 else None),
+            "campaigns": int(len(part)),
+            "spend": float(part["spend"].sum()),
+            "tracked_actions": float(part["conversions"].sum()),
+            "cost_per_tracked_action": variant["pooled"],
+            "loo_min": variant["loo_min"],
+            "loo_max": variant["loo_max"],
+        })
+    judged = day_summary.loc[[
+        fixed_label(group, rules) is None
+        for group in day_summary["group"]]]
+    spend = float(judged["spend"].sum())
+    actions = float(judged["conversions"].sum())
+    rows.append({
+        "variant": "judged_campaigns",
+        "groups": "+".join(sorted(judged["group"].unique())),
+        "leave_one_out": None,
+        "campaigns": int(len(judged)),
+        "spend": spend,
+        "tracked_actions": actions,
+        "cost_per_tracked_action": spend / actions if actions else None,
+        "loo_min": None,
+        "loo_max": None,
+    })
+    return pd.DataFrame(rows)
 
 
 def write_recommend_report(report_path, run_recs, campaign_recs,
@@ -786,6 +850,12 @@ def main(argv=None):
     run_recs.to_csv(run_out, index=False)
     campaign_recs.to_csv(campaign_out, index=False)
     sensitivity.to_csv(sensitivity_out, index=False)
+    # Next to the other recommendation tables, so it follows the
+    # client's output_root without a new config key.
+    benchmarks_out = Path(outputs.get(
+        "benchmarks", campaign_out.parent / "benchmarks.csv"))
+    benchmark_table(day_summary, rules).to_csv(
+        benchmarks_out, index=False)
     write_recommend_report(report_out, run_recs, campaign_recs,
                            sensitivity, benchmark, benchmarks)
 
@@ -807,6 +877,7 @@ def main(argv=None):
     print(f"wrote: {run_out}")
     print(f"wrote: {campaign_out}")
     print(f"wrote: {sensitivity_out}")
+    print(f"wrote: {benchmarks_out}")
     print(f"report: {report_out}")
     return 0
 

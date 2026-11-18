@@ -210,3 +210,15 @@ def test_main_with_recent_label(tmp_path):
     recs = pd.read_csv(tmp_path / "rc.csv").set_index("campaign")
     assert recs.loc["Alpha", "label"] == "test"
     assert recs.loc["Alpha", "base_label"] == "test"
+
+
+def test_label_period_follows_the_label_signal():
+    recs = recommend.recommend_campaigns(
+        _run_recs(), _summary(), RULES, "caveat",
+        _windows()).set_index("campaign")
+    # Alpha: label from the 30-day window.
+    assert recs.loc["Alpha", "label_period_start"] == "2024-03-02"
+    assert recs.loc["Alpha", "label_period_end"] == "2024-03-31"
+    # Beta (ended): label from its run.
+    assert recs.loc["Beta", "label_period_start"] == "2024-01-01"
+    assert recs.loc["Beta", "label_period_end"] == "2024-01-31"

@@ -14,4 +14,8 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/pip install -q -r requirements.txt
 .venv/bin/pip install -q -r requirements-dashboard.txt
-.venv/bin/streamlit run dashboard/app.py
+# Localhost only (PR 4): listen on 127.0.0.1 and send no usage
+# statistics to Streamlit. The browser still opens as before.
+.venv/bin/streamlit run dashboard/app.py \
+    --server.address 127.0.0.1 \
+    --browser.gatherUsageStats false
