@@ -709,3 +709,262 @@ def rules_table(config):
 def csv_bytes(table):
     """A table as CSV bytes, for a download button."""
     return table.to_csv(index=False).encode("utf-8")
+
+
+# --- PR 5: three-page report -------------------------------------
+
+# Display text, symbol and colour per label. Okabe-Ito colours
+# (colour-blind safe); every label also has its own text and
+# symbol, so the meaning never depends on colour alone.
+LABEL_STYLE = {
+    "continue": {"text": "Continue", "symbol": "✓",
+                 "colour": "#009E73", "marker": "circle"},
+    "test": {"text": "Test", "symbol": "◆",
+             "colour": "#E69F00", "marker": "diamond"},
+    "pause_or_review": {"text": "Pause or review", "symbol": "✕",
+                        "colour": "#D55E00", "marker": "x"},
+    "not_comparable": {"text": "Not comparable", "symbol": "○",
+                       "colour": "#0072B2", "marker": "circle-open"},
+    "insufficient_data": {"text": "Insufficient data", "symbol": "–",
+                          "colour": "#8C8C8C", "marker": "circle-open"},
+    "not_judged": {"text": "Not judged", "symbol": "–",
+                   "colour": "#8C8C8C", "marker": "circle-open"},
+}
+JUDGED_LABELS = ("continue", "test", "pause_or_review")
+# Most urgent first in the ranked action table.
+LABEL_RANK = {"pause_or_review": 0, "test": 1, "continue": 2,
+              "not_comparable": 3, "insufficient_data": 4,
+              "not_judged": 5}
+ALL_STATUSES = "All"
+DEFAULT_FOOTNOTE = "Labels are prompts for review, not proof of cause."
+INTENT_COLUMNS = {"directions_share": "Directions",
+                  "calls_share": "Calls",
+                  "store_visits_share": "Store visits"}
+
+
+def label_text(label):
+    """"✓ Continue" style display text; unknown labels unchanged."""
+    style = LABEL_STYLE.get(label)
+    if style is None:
+        return "" if label is None or pd.isna(label) else str(label)
+    return f"{style['symbol']} {style['text']}"
+
+
+def label_colour(label):
+    """Colour of a label (grey for unknown labels)."""
+    return LABEL_STYLE.get(label, {}).get("colour", "#8C8C8C")
+
+
+def footnote_text(config):
+    """analysis.footnote_text from the config, or the default."""
+    analysis = config.get("analysis") or {}
+    return analysis.get("footnote_text") or DEFAULT_FOOTNOTE
+
+
+def judged_label_counts(recommendations):
+    """(counts of the judged labels, counts of the other labels).
+
+    The first table has one row per judged label (continue,
+    test, pause_or_review, in that order, zero rows kept) with its
+    display text and colour. The second is a dict label -> count
+    for every other label, for a "not shown" caption.
+    """
+    counts = recommendations["label"].value_counts()
+    judged = pd.DataFrame({
+        "label": list(JUDGED_LABELS),
+        "label_text": [label_text(label) for label in JUDGED_LABELS],
+        "colour": [label_colour(label) for label in JUDGED_LABELS],
+        "campaigns": [int(counts.get(label, 0))
+                      for label in JUDGED_LABELS],
+    })
+    others = {label: int(count) for label, count in counts.items()
+              if label not in JUDGED_LABELS}
+    return judged, others
+
+
+def status_options(recommendations):
+    """Choices for the status filter: ALL_STATUSES, then each status."""
+    return [ALL_STATUSES] + sorted(
+        recommendations["status_now"].dropna().unique())
+
+
+def filter_view(recommendations, group=None, status=None,
+                min_tracked_actions=0):
+    """Rows to show; a display filter only.
+
+    Hides rows by group, status now and the tracked actions in
+    the label period. It never changes a label or a KPI. A row
+    without label-period figures is kept only when the minimum is
+    0 (so insufficient_data rows are not hidden by accident).
+    """
+    recs = recommendations
+    if group not in (None, ALL_GROUPS):
+        recs = recs.loc[recs["group"] == group]
+    if status not in (None, ALL_STATUSES):
+        recs = recs.loc[recs["status_now"] == status]
+    if min_tracked_actions and min_tracked_actions > 0:
+        if "label_tracked_actions" in recs.columns:
+            actions = recs["label_tracked_actions"]
+            recs = recs.loc[actions.notna()
+                            & (actions >= min_tracked_actions)]
+        else:
+            recs = recs.iloc[0:0]
+    return recs.reset_index(drop=True)
+
+
+def bubble_rows(recommendations):
+    """Judged campaigns with label-period figures, for the bubble chart."""
+    columns = ["label_spend", "label_tracked_actions",
+               "label_cost_per_tracked_action", "label_benchmark"]
+    if not set(columns) <= set(recommendations.columns):
+        return pd.DataFrame(columns=["campaign", "label"] + columns)
+    part = recommendations.loc[
+        recommendations["label"].isin(JUDGED_LABELS)].dropna(
+        subset=columns).copy()
+    part["label_text"] = part["label"].map(label_text)
+    part["colour"] = part["label"].map(label_colour)
+    part["label_period"] = [
+        _period(start, end) for start, end in zip(
+            part["label_period_start"], part["label_period_end"])]
+    keep = ["campaign", "group", "label", "label_text", "colour",
+            "status_now", "label_basis", "label_period",
+            "label_ratio"] + columns
+    keep = [column for column in keep if column in part.columns]
+    return part[keep].sort_values("campaign").reset_index(drop=True)
+
+
+def reference_lines(config, benchmark):
+    """[(name, ratio, cost)] for the benchmark and the two thresholds.
+
+    Ratios from analysis.recommendation_rules (continue_max_ratio,
+    test_max_ratio); cost = benchmark x ratio, a line to draw, not
+    a recomputed result.
+    """
+    rules = (config.get("analysis") or {}).get(
+        "recommendation_rules") or {}
+    lines = [("Benchmark", 1.0, float(benchmark))]
+    for key, name in (("continue_max_ratio", "Continue up to"),
+                      ("test_max_ratio", "Test up to")):
+        ratio = rules.get(key)
+        if ratio is None:
+            continue
+        lines.append((f"{name} {float(ratio):.1f}x", float(ratio),
+                      float(benchmark) * float(ratio)))
+    return lines
+
+
+def action_table(recommendations, recent_trend=None):
+    """Ranked action table: most urgent first.
+
+    pause_or_review, then test, then continue (then any other
+    label), and within a label the highest ratio to the
+    benchmark first. not_comparable rows are left out (they have
+    their own box).
+    """
+    recs = recommendations.loc[
+        recommendations["label"] != NOT_COMPARABLE].copy()
+    windows = {}
+    if recent_trend is not None and not recent_trend.empty:
+        for _, row in recent_trend.iterrows():
+            windows[row["campaign"]] = _period(
+                row["recent_window_start"], row["recent_window_end"])
+    recs["_rank"] = recs["label"].map(LABEL_RANK).fillna(9)
+    ratio = recs["label_ratio"] if "label_ratio" in recs.columns \
+        else pd.Series(float("nan"), index=recs.index)
+    recs["_ratio"] = pd.to_numeric(ratio, errors="coerce").fillna(-1)
+    recs = recs.sort_values(["_rank", "_ratio", "campaign"],
+                            ascending=[True, False, True])
+
+    def column(name):
+        if name in recs.columns:
+            return recs[name].tolist()
+        return [None] * len(recs)
+
+    table = pd.DataFrame({
+        "campaign": column("campaign"),
+        "group": column("group"),
+        "label": column("label"),
+        "final_label": [label_text(label) for label in recs["label"]],
+        "status_now": column("status_now"),
+        "ratio_to_benchmark": column("label_ratio"),
+        "cost_per_tracked_action": column(
+            "label_cost_per_tracked_action"),
+        "benchmark": column("label_benchmark"),
+        "tracked_actions": column("label_tracked_actions"),
+        "spend": column("label_spend"),
+        "recent_trend": column("recent_trend"),
+        "action": column("action_text"),
+        "label_from": column("label_basis"),
+        "label_period": [_period(start, end) for start, end in zip(
+            column("label_period_start"), column("label_period_end"))],
+        "trend_window": [windows.get(name, "")
+                         for name in column("campaign")],
+    })
+    table.insert(0, "rank", range(1, len(table) + 1))
+    return table.reset_index(drop=True)
+
+
+def trend_with_flags(timeline_df, campaign):
+    """One campaign's monthly trend with partial / lagged flags.
+
+    Adds month_note: "partial", "lagged", "partial, lagged" or "".
+    Missing flag columns give an empty note.
+    """
+    table = trend_for_campaign(timeline_df, campaign)
+    part = timeline_df.loc[timeline_df["campaign"] == campaign]
+    flags = [column for column in ("is_partial", "is_lagged")
+             if column in part.columns]
+    if flags:
+        table = table.merge(part[["month", "source"] + flags],
+                            on=["month", "source"], how="left")
+    notes = []
+    for _, row in table.iterrows():
+        note = [name for name, column in (("partial", "is_partial"),
+                                          ("lagged", "is_lagged"))
+                if column in table.columns
+                and str(row[column]).strip().lower() == "true"]
+        notes.append(", ".join(note))
+    table["month_note"] = notes
+    return table.drop(columns=flags)
+
+
+def recent_trend_rows(recent_trend, recommendations):
+    """Active campaigns' recent trend: recent vs prior cost and windows."""
+    if recent_trend is None or recent_trend.empty:
+        return pd.DataFrame(columns=[
+            "campaign", "final_label", "recent_trend", "recent_window",
+            "recent_cost_per_tracked_action", "prior_window",
+            "prior_cost_per_tracked_action", "recent_vs_prior_ratio",
+            "recent_tracked_actions"])
+    labels = recommendations.set_index("campaign")["label"]
+    table = pd.DataFrame({
+        "campaign": recent_trend["campaign"],
+        "final_label": [label_text(labels.get(name))
+                        for name in recent_trend["campaign"]],
+        "recent_trend": recent_trend["recent_trend"],
+        "recent_window": [_period(a, b) for a, b in zip(
+            recent_trend["recent_window_start"],
+            recent_trend["recent_window_end"])],
+        "recent_cost_per_tracked_action":
+            recent_trend["recent_cost_per_tracked_action"],
+        "prior_window": [_period(a, b) for a, b in zip(
+            recent_trend["prior_window_start"],
+            recent_trend["prior_window_end"])],
+        "prior_cost_per_tracked_action":
+            recent_trend["prior_cost_per_tracked_action"],
+        "recent_vs_prior_ratio": recent_trend["recent_vs_prior_ratio"],
+        "recent_tracked_actions":
+            recent_trend["recent_tracked_actions"],
+    })
+    return table.sort_values("campaign").reset_index(drop=True)
+
+
+def journey_intent_long(journey):
+    """(campaign, intent, share) rows for a stacked intent bar."""
+    campaigns = journey_campaigns(journey)
+    present = [column for column in INTENT_COLUMNS
+               if column in campaigns.columns]
+    long = campaigns.melt(id_vars=["campaign"], value_vars=present,
+                          var_name="intent", value_name="share")
+    long["intent"] = long["intent"].map(INTENT_COLUMNS)
+    return long.reset_index(drop=True)
