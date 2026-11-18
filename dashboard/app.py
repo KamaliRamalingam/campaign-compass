@@ -15,6 +15,7 @@ date range and the last-updated date. The wording is "tracked
 actions" everywhere.
 """
 
+import html
 import sys
 from pathlib import Path
 
@@ -23,9 +24,93 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import charts  # noqa: E402
 import data as dashboard_data  # noqa: E402
 
 WIDE = st.column_config.TextColumn  # shorthand below
+NUM = st.column_config.NumberColumn
+PAGE_KEY = "page"
+DETAIL_KEY = "detail_campaign"
+
+STYLE = """
+<style>
+.block-container {padding-top: 2.2rem; padding-bottom: 4rem;
+                  max-width: 1400px;}
+h1, h2, h3, h4 {color: #1F3A5F !important;}
+.cc-sub {color: #5B6573; font-size: 1.02rem; margin: -0.4rem 0 1.1rem;}
+.cc-badge {display: inline-block; padding: 0.2rem 0.75rem;
+           border-radius: 999px; font-weight: 600; font-size: 1.05rem;
+           border: 2px solid; color: #1C2430;}
+.cc-foot {color: #5B6573; font-size: 0.88rem; line-height: 1.5;}
+</style>
+"""
+
+
+def _title(question, subtitle, level=2):
+    """A navy question heading with a grey subtitle under it."""
+    st.markdown(f"{'#' * level} {question}")
+    st.markdown(f"<p class='cc-sub'>{html.escape(subtitle)}</p>",
+                unsafe_allow_html=True)
+
+
+def _card(column, label, value, definition):
+    """A bordered KPI card with a one-line definition."""
+    with column.container(border=True):
+        st.metric(label, value)
+        st.caption(definition)
+
+
+def _tint(colour, amount=0.78):
+    """A light tint of a hex colour, for readable cell backgrounds."""
+    colour = colour.lstrip("#")
+    red, green, blue = (int(colour[i:i + 2], 16) for i in (0, 2, 4))
+    mix = [round(value + (255 - value) * amount)
+           for value in (red, green, blue)]
+    return "#{:02X}{:02X}{:02X}".format(*mix)
+
+
+LABEL_CELL = {dashboard_data.label_text(label): style["colour"]
+              for label, style in dashboard_data.LABEL_STYLE.items()}
+
+
+def _label_cell(value):
+    """Cell style for a label shown as text: tinted, dark text."""
+    colour = LABEL_CELL.get(value)
+    if colour is None:
+        return ""
+    return (f"background-color: {_tint(colour)}; color: #1C2430; "
+            f"font-weight: 600")
+
+
+def _styled(table, columns):
+    """A Styler that colours the given label-text columns."""
+    present = [column for column in columns if column in table.columns]
+    return table.style.map(_label_cell, subset=present)
+
+
+def _badge(label):
+    """A coloured label badge that also says the label in text."""
+    colour = dashboard_data.label_colour(label)
+    text = html.escape(dashboard_data.label_text(label) or "—")
+    return (f"<span class='cc-badge' style='background:{_tint(colour)};"
+            f"border-color:{colour}'>{text}</span>")
+
+
+def _footnotes(lines):
+    """Small grey footnotes under a page."""
+    items = "".join(f"<li>{line}</li>" for line in lines)
+    st.markdown(f"<div class='cc-foot'><ul>{items}</ul></div>",
+                unsafe_allow_html=True)
+
+
+def _open_detail(campaign):
+    """Drill-through: open the Campaign detail page on a campaign.
+
+    Runs as a button callback, before the next rerun, so it may set
+    the page radio and the campaign selector.
+    """
+    st.session_state[PAGE_KEY] = "Campaign detail"
+    st.session_state[DETAIL_KEY] = campaign
 
 
 def _context(ctx):
@@ -58,92 +143,183 @@ def _campaign_axis(title="Campaign"):
     return alt.Axis(title=title, labelLimit=0)
 
 
-# --- Summary ------------------------------------------------------
+# --- Act ----------------------------------------------------------
 
-def _page_summary(ctx):
-    """Answer first: KPIs, final labels and one row per campaign."""
-    st.header("Summary")
+ACT_COLUMNS = {
+    "rank": NUM("#", width="small", format="%d"),
+    "campaign": WIDE("Campaign", width="large", pinned=True),
+    "group": WIDE("Group", width="small"),
+    "final_label": WIDE("Final label", width="medium",
+                        help="After the trend override"),
+    "status_now": WIDE("Status now", width="small"),
+    "ratio_to_benchmark": NUM("Ratio to benchmark", format="%.2fx",
+                              width="small"),
+    "tracked_actions": NUM("Tracked actions", format="%.0f",
+                           width="small"),
+    "recent_trend": WIDE("Recent trend", width="small"),
+    "action": WIDE("Action", width="large"),
+    "label_period": WIDE("Label period", width="medium",
+                         help="The run or recent window the label "
+                              "comes from"),
+}
+
+
+def _act_definitions(ctx, kpi):
+    """Footnote lines: definitions, then the config footnote."""
+    config = ctx["config"]
+    rules = (config.get("analysis") or {}).get(
+        "recommendation_rules") or {}
+    currency = ctx["currency"]
+    window = (rules.get("recent_label") or {}).get("window_days")
+    bench = (f"<b>Benchmark</b>: pooled cost per tracked action of "
+             f"group(s) {html.escape(str(kpi['benchmark_groups']))}, "
+             f"{kpi['benchmark']:,.2f} {currency}.")
+    if kpi["leave_one_out"]:
+        bench += (f" Each campaign is compared with the benchmark "
+                  f"without itself ({kpi['loo_min']:,.2f} to "
+                  f"{kpi['loo_max']:,.2f}); the hover shows its own.")
+    lines = [
+        "<b>Tracked action</b>: a conversion the account counts "
+        "(mainly get-directions requests and calls), not a booking.",
+        bench,
+        f"<b>Ratio lines</b>: continue up to "
+        f"{rules.get('continue_max_ratio')}x and test up to "
+        f"{rules.get('test_max_ratio')}x the benchmark (from the "
+        f"config); above that, pause or review.",
+        "<b>Label period</b>: the latest run with enough volume"
+        + (f", or the last {window} days for active campaigns"
+           if window else "") + ". Bubbles use that period's figures.",
+        "<b>Filters</b> only hide rows and bubbles; they never change "
+        "a label or a KPI card.",
+        f"<b>{html.escape(dashboard_data.footnote_text(config))}</b>",
+    ]
+    return lines
+
+
+def _page_act(ctx):
+    """Which campaigns should we continue, test or pause?"""
+    _title("Act: which campaigns should we continue, test or pause?",
+           "Final labels after the trend override, ranked by urgency. "
+           "Read the Context page before acting on any of them.",
+           level=1)
     _context(ctx)
     tables = ctx["tables"]
     currency = ctx["currency"]
+    recs = ctx["all_recommendations"]
+
+    filters = st.columns(3)
+    group = filters[0].selectbox(
+        "Campaign group", dashboard_data.group_options(recs),
+        key="act_group")
+    status = filters[1].selectbox(
+        "Status now", dashboard_data.status_options(recs),
+        key="act_status")
+    min_actions = filters[2].number_input(
+        "Minimum tracked actions", min_value=0, value=0, step=10,
+        key="act_min_actions",
+        help="Display filter only: hides campaigns with fewer tracked "
+             "actions in their label period. Labels do not change.")
+    view = dashboard_data.filter_view(recs, group, status, min_actions)
+
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
-    cols = st.columns(4)
-    cols[0].metric("Spend", f"{kpi['spend']:,.0f} {currency}",
-                   border=True)
-    cols[1].metric("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
-                   border=True)
-    cols[2].metric("Cost per tracked action",
-                   f"{kpi['cost_per_tracked_action']:.2f} {currency}",
-                   border=True)
-    bench_help = f"Pooled cost per tracked action of group(s) " \
-                 f"{kpi['benchmark_groups']}."
-    if kpi["leave_one_out"]:
-        bench_help += (
-            f" Each campaign is judged against the benchmark "
-            f"without itself: {kpi['loo_min']:.2f} to "
-            f"{kpi['loo_max']:.2f}.")
-    cols[3].metric("Benchmark", f"{kpi['benchmark']:.2f} {currency}",
-                   help=bench_help, border=True)
-    st.caption(
-        f"Tiles cover the {kpi['judged_campaigns']} judged campaigns "
-        f"over the whole daily range, read from benchmarks.csv. "
-        f"The group filter does not change them: that would mean "
-        f"recomputing.")
+    cards = st.columns(4)
+    _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
+          "Total spend of the judged campaigns.")
+    _card(cards[1], "Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+          "Directions requests and calls the account counts.")
+    _card(cards[2], "Cost per tracked action",
+          f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+          "Spend divided by tracked actions.")
+    bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
+                  f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
+                  else "Pooled over the benchmark group(s).")
+    _card(cards[3], "Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
+          f"What a campaign is compared with. {bench_note}")
+    st.caption(f"Cards cover all {kpi['judged_campaigns']} judged "
+               f"campaigns over the whole daily range "
+               f"(benchmarks.csv). The filters do not change them.")
 
-    recs = ctx["recommendations"]
-    st.subheader("Final labels (after the trend override)")
-    counts = dashboard_data.final_label_counts(recs)
-    chart = alt.Chart(counts).mark_bar().encode(
-        x=alt.X("campaigns:Q", title="Campaigns",
-                axis=alt.Axis(format="d", tickMinStep=1)),
-        y=alt.Y("label:N", sort="-x", axis=_campaign_axis("Label")),
-        tooltip=["label", "campaigns"],
-    )
-    st.altair_chart(chart, width="stretch")
+    st.write("")
+    left, right = st.columns([2.2, 1], gap="large")
+    with left:
+        st.markdown("#### Where does each campaign sit against the "
+                    "benchmark?")
+        bubbles = dashboard_data.bubble_rows(view)
+        if bubbles.empty:
+            st.info("No judged campaign with label-period figures "
+                    "matches the filters.")
+        else:
+            lines = dashboard_data.reference_lines(
+                ctx["config"], kpi["benchmark"])
+            st.plotly_chart(charts.bubble_chart(bubbles, lines, currency),
+                            width="stretch", key="act_bubble")
+            st.caption("Bubble size = spend in the label period. Marker "
+                       "shape and legend text name the label, so colour "
+                       "is never the only cue.")
+    with right:
+        counts, others = dashboard_data.judged_label_counts(view)
+        st.markdown(f"#### Final labels: {int(counts['campaigns'].sum())}"
+                    f" judged campaigns")
+        st.plotly_chart(charts.label_count_bar(counts), width="stretch",
+                        key="act_counts")
+        if others:
+            names = ", ".join(
+                f"{count} {dashboard_data.LABEL_STYLE.get(label, {}).get('text', label).lower()}"
+                for label, count in sorted(others.items()))
+            st.caption(f"Not counted here: {names}. They are not judged "
+                       f"against the benchmark.")
 
-    st.subheader("Judged campaigns")
+    st.write("")
+    st.markdown("#### What should we do, most urgent first?")
+    st.caption("Pause or review first, then test, then continue; within "
+               "a label, the highest ratio to the benchmark first. "
+               "Select a row to open its detail.")
     show_hidden = st.checkbox(
-        "Show not_judged / insufficient_data campaigns", value=False)
-    rows = dashboard_data.summary_rows(
-        ctx["all_recommendations"], tables["recent_trend"],
-        show_hidden=show_hidden, group=ctx["group"])
-    _table(rows, "summary_campaigns.csv", column_config={
-        "campaign": WIDE("Campaign", width="medium", pinned=True),
-        "group": WIDE("Group", width="small"),
-        "label": WIDE("Final label", width="small"),
-        "status_now": WIDE("Status now", width="small"),
-        "recent_trend": WIDE("Recent trend", width="small"),
-        "action": WIDE("Action", width="large",
-                       help="One-line action for the final label"),
-        "label_from": WIDE("Label from", width="small",
-                           help="recent_window, latest_run or fixed"),
-        "label_period": WIDE("Label period", width="medium"),
-        "trend_period": WIDE("Trend window", width="medium",
-                             help="Recent window of the trend; "
-                                  "empty for campaigns not active"),
-    })
-    with st.expander("Full reasons"):
-        for _, row in rows.iterrows():
-            detail = dashboard_data.campaign_detail(
-                ctx["all_recommendations"], tables["recent_trend"],
-                row["campaign"])
-            st.markdown(f"**{detail['campaign']}** — {detail['label']}")
-            st.write(detail["reason"])
-            if detail["trend_reason"]:
-                st.write(f"Trend: {detail['trend_reason']}")
+        "Also show insufficient data / not judged campaigns",
+        value=False, key="act_show_hidden")
+    table = dashboard_data.action_table(view, tables["recent_trend"])
+    if not show_hidden:
+        table = table.loc[table["label"].isin(
+            dashboard_data.JUDGED_LABELS)].reset_index(drop=True)
+    if table.empty:
+        st.info("No campaign matches the filters.")
+    else:
+        columns = list(ACT_COLUMNS)
+        event = st.dataframe(
+            _styled(table, ["final_label"]), hide_index=True,
+            width="stretch", column_order=columns,
+            column_config=ACT_COLUMNS, on_select="rerun",
+            selection_mode="single-row", key="act_table")
+        selected = event.selection.rows if event else []
+        buttons = st.columns([1, 1, 3])
+        if selected:
+            campaign = table.loc[selected[0], "campaign"]
+            buttons[0].button(f"Open detail: {campaign}",
+                              on_click=_open_detail, args=(campaign,),
+                              type="primary", key="act_open")
+        buttons[1].download_button(
+            "Download CSV",
+            dashboard_data.csv_bytes(table.drop(columns=["label"])),
+            file_name="actions.csv", mime="text/csv",
+            key="act_download")
 
-    not_comparable = dashboard_data.not_comparable_rows(
-        ctx["all_recommendations"])
+    not_comparable = dashboard_data.not_comparable_rows(recs)
     if not not_comparable.empty:
+        st.write("")
         with st.container(border=True):
-            st.subheader("Not comparable")
+            st.markdown(f"#### {dashboard_data.label_text('not_comparable')}"
+                        f" ({len(not_comparable)})")
             st.caption("Judged against their own history, not the "
-                       "benchmark.")
+                       "benchmark, so they are not in the chart or the "
+                       "ranking.")
             for _, row in not_comparable.iterrows():
-                st.markdown(f"**{row['campaign']}** ({row['group']}, "
-                            f"{row['status_now']})")
+                st.markdown(f"**{row['campaign']}** · {row['group']} · "
+                            f"{row['status_now']}")
                 st.write(row["reason"])
-                st.write(f"Action: {row['action_text']}")
+                st.markdown(f"*Action:* {row['action_text']}")
+
+    st.divider()
+    _footnotes(_act_definitions(ctx, kpi))
 
 
 # --- Campaign -----------------------------------------------------
@@ -594,7 +770,7 @@ def _page_journey(ctx):
 
 
 PAGES = {
-    "Summary": _page_summary,
+    "Act": _page_act,
     "Campaign": _page_campaign,
     "Weekday": _page_weekday,
     "Method and checks": _page_method,
@@ -632,7 +808,8 @@ def _load(client):
 def main():
     """Pick a client and a page, load the tables, show the page."""
     st.set_page_config(page_title="CampaignCompass", layout="wide")
-    st.title("CampaignCompass")
+    st.markdown(STYLE, unsafe_allow_html=True)
+    st.sidebar.markdown("## CampaignCompass")
     client = st.sidebar.selectbox(
         "Client", dashboard_data.list_clients(), index=0)
     try:
@@ -641,14 +818,9 @@ def main():
         st.error(f"{exc}")
         st.stop()
     recs = ctx["tables"]["recommendations_by_campaign"]
-    group = st.sidebar.selectbox(
-        "Campaign group", dashboard_data.group_options(recs))
-    ctx["group"] = group
     ctx["all_recommendations"] = recs
-    ctx["campaigns"] = dashboard_data.campaigns_in_group(recs, group)
-    ctx["recommendations"] = recs.loc[
-        recs["campaign"].isin(ctx["campaigns"])]
-    page = st.sidebar.radio("Page", list(PAGES))
+    ctx["campaigns"] = sorted(recs["campaign"])
+    page = st.sidebar.radio("Page", list(PAGES), key=PAGE_KEY)
     PAGES[page](ctx)
 
 
