@@ -4,7 +4,9 @@
 #   bash run.sh --client synthetic_b
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
-# stages that exist so far (validation, load, clean, overview, metrics, time, recommend, conversion, recent trend, lag check, journey).
+# stages that exist so far (validation, load, clean, overview, metrics,
+# time patterns, weekday decomposition, recommend, conversion, recent
+# trend, lag check, journey, what-if, break-even).
 # Outputs go under outputs/ (git-ignored) and never go to GitHub.
 #
 # Config: --config defaults to config/validation.yaml. If a file with
