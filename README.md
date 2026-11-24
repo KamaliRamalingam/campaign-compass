@@ -43,7 +43,7 @@ The pipeline runs in order, from one command. Each stage reads only the config a
 Local only. Nothing is hosted, and no account is needed to run the pipeline once the exports are in place.
 
 ```bash
-bash run.sh              # whole pipeline: validation to recent trend
+bash run.sh              # whole pipeline: validation to journey
 bash dashboard.sh        # local dashboard, after bash run.sh
 bash run.sh --client synthetic_b   # whole pipeline on the synthetic Company B test data
 ```
@@ -62,7 +62,7 @@ Overlapping exports do not double count: cleaning drops duplicate rows on date a
 
 ## 7. Reuse
 
-For another account, change the data files and one config file: copy `config/restaurant.yaml` to a new client config, set its column mapping, file paths, campaign groups, action groups, totals and `output_root`, and run the pipeline with that config. No code changes are needed for a new account with the same export layout.
+For another account, change the data files and the two config files: copy `config/restaurant.yaml` and `config/validation.yaml` to new client configs, set the column mapping, file paths, campaign groups, action groups, totals and `output_root`, and run the pipeline with that config. No code changes are needed for a new account with the same export layout.
 
 This was proved on a synthetic Company B dataset (`bash run.sh --client synthetic_b`). The data is generated at run time with a fixed seed into the ignored `outputs/synthetic_b/` folder and is never committed. Reuse needed three code changes, listed honestly in the reuse report (`outputs/synthetic_b/reports/reuse-report.md`) and in the T7 pull request: output-path handling under `output_root` (`src/paths.py`), currency handling for EUR as well as SEK in the number parsers, and the dashboard currency and client selector. The volume rule, the recommendation thresholds and the recent-trend thresholds did not need to change. See [docs/decision-log.md](docs/decision-log.md).
 
@@ -106,7 +106,7 @@ All numbers below come from the synthetic Company B test data (`bash run.sh --cl
 - `scripts/`: CI guard that blocks data files from tracked files.
 - `data/raw/`, `outputs/`, `config/local/`: git-ignored. Client data and outputs live here and never go to GitHub.
 
-Muse implemented the code through reviewed pull requests (issue first, then fix, then push, then merge after my approval and a green CI run). Claude supported planning and review. All decisions and checks are mine: I chose the problem, the groups, the thresholds and the wording, and I verified the results before merging. See [docs/ai-usage-log.md](docs/ai-usage-log.md).
+Claude Code implemented the pipeline and dashboard code through reviewed pull requests: tasks T0b–T12 and PRs #41–#45 (benchmark change, recent signals, what-if and weekday work, dashboard rebuild and restyle). For each pull request I read the diff, ran the tests and the pipeline, checked the dashboard pages by eye, and merged only after a green CI run. Claude (chat) supported planning, explanations and review. The decisions are mine: I chose the problem, the groups and the wording, and I approved the thresholds, which are provisional and not validated with the owner. See [docs/ai-usage-log.md](docs/ai-usage-log.md).
 
 ## 12. Data and privacy
 
