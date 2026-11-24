@@ -33,7 +33,7 @@ The pipeline runs in order, from one command. Each stage reads only the config a
 7. **Conversion mix** (`src/conversion_mix.py`): breaks tracked actions down by conversion action and action group (high intent, engagement, unmapped), and checks the file totals against the config. Config: `conversion_breakdown.file`, `columns`, `ui_expected`, `action_groups`.
 8. **Recommendations** (`src/recommend.py`): compares each run's cost per tracked action with the core group's overall cost per tracked action (calculated, not typed in) and labels it continue, test, pause_or_review or insufficient_data, with a plain-language reason and the caveat on every row. Config: `analysis.recommendation_rules`, `analysis.caveat_text`.
 9. **Recent trend** (`src/recent_trend.py`): for each active campaign, compares the recent 28 days with the prior 28 days and with the current run's average, and labels the trend worsening, improving, stable or insufficient_data, with a plain-language reason. Config: `analysis.recent_trend`.
-10. **Dashboard** (`dashboard/app.py`, `dashboard/data.py`): a local Streamlit dashboard with seven pages — what counts as a tracked action, overview, campaign comparison, runs, weekday, trend, recommendations. It reads only the result tables, never the raw exports. Config: `analysis.outputs`, `analysis.caveat_text`.
+10. **Dashboard** (`dashboard/app.py`, `dashboard/data.py`, `dashboard/charts.py`): a local Streamlit report with three pages. **Act** asks which campaigns to continue, test or pause. It has a filter row (group, status, minimum tracked actions as a display filter), KPI cards with definitions, a bubble chart against the benchmark and the 1.0x / 2.0x ratio lines from the config, judged-only label counts, a ranked action table and a Not comparable box. **Context** asks whether we can trust the labels: recent change with partial or lagged months marked, the lag check, weekday differences and the decomposition, the what-if range and the acquisition journey, with method details in an expander. **Campaign detail** shows one campaign and opens from the Act ranking. Colours are colour-blind safe, and every label is also named in text. The dashboard reads only the result tables, never the raw exports, and recomputes nothing. Config: `analysis.outputs`, `analysis.caveat_text`, `analysis.footnote_text`.
 
 ## 5. How to run
 
@@ -97,7 +97,7 @@ All numbers below come from the synthetic Company B test data (`bash run.sh --cl
 
 - `config/`: client-specific settings — `restaurant.yaml` (the restaurant), `synthetic_b.yaml` (the synthetic test client), `validation.yaml` and `validation_synthetic_b.yaml` (UI totals to check exports against).
 - `src/`: pipeline code — validation, load, clean, overview, groups, metrics, time patterns, recommendations, conversion mix, recent trend, synthetic data generator, skip and reuse-report stages.
-- `dashboard/`: local Streamlit dashboard — `data.py` (all data preparation, testable) and `app.py` (display only).
+- `dashboard/`: local Streamlit dashboard — `data.py` (all data preparation, testable), `charts.py` (Plotly figures, display only) and `app.py` (display only). Theme in `.streamlit/config.toml`.
 - `tests/`: checks, all with made-up data. Run them with `pytest -q`.
 - `docs/`: method, decision log, AI usage log.
 - `scripts/`: CI guard that blocks data files from tracked files.

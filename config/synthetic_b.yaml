@@ -76,6 +76,8 @@ analysis:
   # Recommendation rules: same values as the restaurant config.
   # The caveat text is written here once and used everywhere.
   caveat_text: "Tracked actions only (mainly get-directions requests and phone calls), not bookings or orders. This shows campaign performance, not proof that an offer brought extra customers."
+  # Dashboard footnote (PR 5): shown under the Act page.
+  footnote_text: "Labels are prompts for review, not proof of cause: they compare cost per tracked action with a benchmark and do not show why a campaign did better or worse."
   recommendation_rules:
     continue_max_ratio: 1.0
     test_max_ratio: 2.0

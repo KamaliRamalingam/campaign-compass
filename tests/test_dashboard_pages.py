@@ -107,12 +107,108 @@ def test_kpi_values_read_from_benchmarks():
     ])
     kpi = dd.kpi_values(benchmarks)
     assert kpi["judged_campaigns"] == 11
+    assert kpi["judged_groups"] == "core+sep"
     assert kpi["spend"] == 500.0
     assert kpi["cost_per_tracked_action"] == pytest.approx(500 / 90)
     assert kpi["benchmark"] == 5.0
     assert (kpi["loo_min"], kpi["loo_max"]) == (4.0, 6.0)
     benchmarks.loc[0, "leave_one_out"] = False
     assert dd.kpi_values(benchmarks)["loo_min"] is None
+
+
+def test_too_little_data_count_only_in_kpi_groups():
+    recs = pd.DataFrame([
+        {"campaign": "A", "group": "core", "label": "continue"},
+        {"campaign": "B", "group": "core", "label": "insufficient_data"},
+        {"campaign": "C", "group": "sep", "label": "insufficient_data"},
+        {"campaign": "D", "group": "other", "label": "insufficient_data"},
+    ])
+    assert dd.too_little_data_count(recs, "core+sep") == 2
+    assert dd.too_little_data_count(recs, "core") == 1
+    assert dd.too_little_data_count(recs, ["core", "sep"]) == 2
+
+
+def test_totals_scope_text_has_for_one():
+    assert dd.totals_scope_text(5, ["core"], 1, ["core"]) == (
+        "Totals cover 5 campaigns in the groups core (1 of them has too "
+        "little data for a label). The benchmark is built from group(s) "
+        "core only.")
+
+
+def test_totals_scope_text_have_otherwise():
+    text = dd.totals_scope_text(11, ["core", "sep"], 6, ["core"])
+    assert text == (
+        "Totals cover 11 campaigns in the groups core, sep (6 of them "
+        "have too little data for a label). The benchmark is built from "
+        "group(s) core only.")
+    assert "(0 of them have too little data" in \
+        dd.totals_scope_text(3, ["core"], 0, ["core"])
+
+
+def test_scope_groups_from_config_with_fallbacks():
+    config = {"analysis": {"recommendation_rules": {
+        "judged_groups": ["core", "sep"],
+        "benchmark": {"groups": ["core"]}}}}
+    assert dd.scope_groups(config) == (["core", "sep"], ["core"])
+    benchmarks = pd.DataFrame([{"variant": "judged_campaigns",
+                                "groups": "core+late"}])
+    assert dd.scope_groups({}, benchmarks) == (["core", "late"], ["core"])
+    assert dd.scope_groups({}) == ([], ["core"])
+
+
+def _recs_with_ended_pauses():
+    """_recs plus two ended pause_or_review campaigns."""
+    recs = _recs()
+    extra = recs.iloc[[1, 1]].copy()
+    extra["campaign"] = ["Epsilon", "Zeta"]
+    extra["label"] = "pause_or_review"
+    extra["action_text"] = "do not restart without changes"
+    recs = pd.concat([recs, extra], ignore_index=True)
+    recs["label_ratio"] = [1.5, 0.8, None, None, None, 3.0, 9.0]
+    return recs
+
+
+def test_act_summary_running_ended_and_counts():
+    summary = dd.act_summary(_recs_with_ended_pauses())
+    assert summary["running"] == [
+        {"campaign": "Alpha", "label": "test",
+         "action": "keep running, but test changes"},
+        {"campaign": "Pmax", "label": "not_comparable",
+         "action": "judge against its own history, not the benchmark"}]
+    # Ended and pause_or_review only, highest ratio first.
+    assert summary["ended"] == [
+        {"campaign": "Zeta", "label": "pause_or_review",
+         "action": "do not restart without changes"},
+        {"campaign": "Epsilon", "label": "pause_or_review",
+         "action": "do not restart without changes"}]
+    assert summary["restart"] == [
+        {"campaign": "Beta", "label": "continue",
+         "action": "worked well when it ran; candidate to restart"}]
+    assert summary["counts"] == [
+        ("pause_or_review", 2), ("test", 1), ("continue", 1),
+        ("not_comparable", 1), ("insufficient_data", 1),
+        ("not_judged", 1)]
+
+
+def test_act_summary_restart_best_ratio_first():
+    recs = _recs()
+    extra = recs.iloc[[1, 1]].copy()
+    extra["campaign"] = ["Eta", "Theta"]
+    recs = pd.concat([recs, extra], ignore_index=True)
+    recs["label_ratio"] = [1.5, 0.8, None, None, None, 0.4, 0.95]
+    restart = dd.act_summary(recs)["restart"]
+    assert [entry["campaign"] for entry in restart] == [
+        "Eta", "Beta", "Theta"]
+
+
+def test_act_summary_none_running_none_ended():
+    recs = _recs()
+    recs["status_now"] = "ended"
+    recs.loc[recs["label"] == "continue", "label"] = "test"
+    summary = dd.act_summary(recs)
+    assert summary["running"] == []
+    assert summary["ended"] == []
+    assert summary["restart"] == []
 
 
 def test_campaign_detail_has_both_periods():
@@ -247,3 +343,49 @@ def test_optional_tables_are_none_when_missing(tmp_path):
     assert list(tables["lag_check"]["lag"]) == [3]
     assert tables["weekday_top_days"] is None
     assert set(tables) == set(dd.OPTIONAL_PATHS)
+
+
+def test_trend_takeaway_counts_trends():
+    rows = pd.DataFrame({"campaign": ["A", "B", "C"],
+                         "recent_trend": ["worsening", "stable",
+                                          "worsening"]})
+    assert dd.trend_takeaway(rows) == (
+        "3 active campaigns with a recent trend: 2 worsening, 1 stable.")
+    assert dd.trend_takeaway(rows.iloc[:1]) == (
+        "1 active campaign with a recent trend: 1 worsening.")
+    assert dd.trend_takeaway(rows.iloc[:0]) == (
+        "No active campaign has a recent trend.")
+
+
+def test_weekday_takeaway_low_high_and_what_if():
+    pooled = pd.DataFrame({"weekday": ["Mon", "Tue", "Sat"],
+                           "cost_per_tracked_action": [5.0, 6.5, 3.25]})
+    text = dd.weekday_takeaway(pooled, "SEK", "+10 tracked actions",
+                               "Move spend")
+    assert text == ("Cost per tracked action is lowest on Sat (3.25 SEK) "
+                    "and highest on Tue (6.50 SEK). Move spend: "
+                    "+10 tracked actions, a linear estimate.")
+    assert "linear" not in dd.weekday_takeaway(pooled, "SEK")
+
+
+def test_lag_takeaway_zero_and_some_changes():
+    summary = pd.DataFrame({"lag": [3, 5], "trend_changes": [0, 0],
+                            "label_changes": [0, 0]})
+    assert dd.lag_takeaway(summary, 3) == (
+        "Configured lag: 3 days. No trend or label changes with any "
+        "other lag.")
+    summary.loc[1, "label_changes"] = 1
+    assert "treat the most recent weeks with care" in \
+        dd.lag_takeaway(summary, 3)
+
+
+def test_journey_takeaway_weights_by_tracked_actions():
+    journey = pd.DataFrame({"campaign": ["A", "B"],
+                            "tracked_actions": [300.0, 100.0],
+                            "directions_share": [1.0, 0.0],
+                            "calls_share": [0.0, 1.0]})
+    assert dd.journey_takeaway(journey) == (
+        "Across 2 campaigns, 75% of tracked actions are directions "
+        "requests and 25% are calls.")
+    assert dd.journey_takeaway(journey.iloc[:0]) == (
+        "No tracked actions to split by type.")
