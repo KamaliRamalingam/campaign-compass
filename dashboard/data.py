@@ -605,14 +605,17 @@ def act_summary(recommendations):
     Uses all recommendations (never a filtered view). Returns a dict:
     running, every campaign whose status_now is active; ended, ended
     campaigns labelled pause_or_review (do not restart them as they
-    were); both lists of dicts with campaign, label and action, in
-    the order of the ranked action table (not_comparable last).
+    were); restart, ended campaigns labelled continue, best (lowest)
+    ratio first. All lists of dicts with campaign, label and action;
+    running and ended in the order of the ranked action table
+    (not_comparable last).
     counts, a list of (label, count) in urgency order, zeros left out.
     """
     counts = recommendations["label"].value_counts()
     order = sorted(counts.index, key=lambda label: LABEL_RANK.get(label, 9))
     ranked = action_table(recommendations)[
-        ["campaign", "label", "status_now", "action"]]
+        ["campaign", "label", "status_now", "action",
+         "ratio_to_benchmark"]]
     others = recommendations.loc[
         recommendations["label"] == NOT_COMPARABLE,
         ["campaign", "label", "status_now", "action_text"]].rename(
@@ -626,11 +629,18 @@ def act_summary(recommendations):
                 for _, row in rows.iterrows()]
 
     status = ranked["status_now"].astype(str)
+    restart = ranked.loc[(status == "ended")
+                         & (ranked["label"] == "continue")].copy()
+    restart["_ratio"] = pd.to_numeric(restart["ratio_to_benchmark"],
+                                      errors="coerce")
+    restart = restart.sort_values(["_ratio", "campaign"],
+                                  na_position="last", kind="stable")
     return {
         "running": entries(ranked.loc[status == "active"]),
         "ended": entries(ranked.loc[(status == "ended")
                                     & (ranked["label"]
                                        == "pause_or_review")]),
+        "restart": entries(restart),
         "counts": [(label, int(counts[label])) for label in order
                    if counts[label] > 0],
     }

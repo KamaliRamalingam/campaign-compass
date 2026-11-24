@@ -261,6 +261,9 @@ def _todo_html(summary):
     if summary["ended"]:
         lines.append("<div>Ended: " + "; ".join(
             item(e) for e in summary["ended"]) + "</div>")
+    if summary["restart"]:
+        lines.append("<div>Worth restarting: " + "; ".join(
+            item(e) for e in summary["restart"]) + "</div>")
     counts = " · ".join(
         f"{html.escape(dashboard_data.label_text(label))} {count}"
         for label, count in summary["counts"])

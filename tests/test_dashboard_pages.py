@@ -164,18 +164,34 @@ def test_act_summary_running_ended_and_counts():
          "action": "do not restart without changes"},
         {"campaign": "Epsilon", "label": "pause_or_review",
          "action": "do not restart without changes"}]
+    assert summary["restart"] == [
+        {"campaign": "Beta", "label": "continue",
+         "action": "worked well when it ran; candidate to restart"}]
     assert summary["counts"] == [
         ("pause_or_review", 2), ("test", 1), ("continue", 1),
         ("not_comparable", 1), ("insufficient_data", 1),
         ("not_judged", 1)]
 
 
+def test_act_summary_restart_best_ratio_first():
+    recs = _recs()
+    extra = recs.iloc[[1, 1]].copy()
+    extra["campaign"] = ["Eta", "Theta"]
+    recs = pd.concat([recs, extra], ignore_index=True)
+    recs["label_ratio"] = [1.5, 0.8, None, None, None, 0.4, 0.95]
+    restart = dd.act_summary(recs)["restart"]
+    assert [entry["campaign"] for entry in restart] == [
+        "Eta", "Beta", "Theta"]
+
+
 def test_act_summary_none_running_none_ended():
     recs = _recs()
     recs["status_now"] = "ended"
+    recs.loc[recs["label"] == "continue", "label"] = "test"
     summary = dd.act_summary(recs)
     assert summary["running"] == []
     assert summary["ended"] == []
+    assert summary["restart"] == []
 
 
 def test_campaign_detail_has_both_periods():
