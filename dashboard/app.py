@@ -262,9 +262,14 @@ def _page_act(ctx):
     view = dashboard_data.filter_view(recs, group, status, min_actions)
 
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
+    too_little = dashboard_data.too_little_data_count(
+        recs, kpi["judged_groups"])
+    coverage = (f"{kpi['judged_campaigns']} core-group campaigns "
+                f"({too_little} of them have too little data for a "
+                f"label)")
     cards = st.columns(4)
     _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
-          "Total spend of the judged campaigns.")
+          f"Total spend of the {coverage}.")
     _card(cards[1], "Tracked actions", f"{kpi['tracked_actions']:,.0f}",
           "Directions requests and calls the account counts.")
     _card(cards[2], "Cost per tracked action",
@@ -275,8 +280,7 @@ def _page_act(ctx):
                   else "Pooled over the benchmark group(s).")
     _card(cards[3], "Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
           f"What a campaign is compared with. {bench_note}")
-    st.caption(f"Cards cover all {kpi['judged_campaigns']} judged "
-               f"campaigns over the whole daily range "
+    st.caption(f"Cards cover all {coverage} over the whole daily range "
                f"(benchmarks.csv). The filters do not change them.")
 
     st.write("")
@@ -299,7 +303,7 @@ def _page_act(ctx):
     with right:
         counts, others = dashboard_data.judged_label_counts(view)
         st.markdown(f"#### Final labels: {int(counts['campaigns'].sum())}"
-                    f" judged campaigns")
+                    f" campaigns with enough volume")
         st.plotly_chart(charts.label_count_bar(counts), width="stretch",
                         key="act_counts")
         if others:
@@ -777,22 +781,27 @@ def _page_detail(ctx):
             "spend", "conversions", "cost_per_conversion",
             "ratio_to_benchmark") if column in runs.columns]
         runs = runs[order]
-        st.dataframe(_styled(runs, ["run_label"]), hide_index=True,
+        # Number formats live in the Styler, not column_config, so
+        # missing values show as "—" (column_config formats would win
+        # over na_rep and show "None"). Values stay numeric for sorting.
+        styled = _styled(runs, ["run_label"]).format({
+            "run_number": "{:d}", "active_days": "{:.0f}",
+            "spend": "{:,.0f}", "conversions": "{:,.0f}",
+            "cost_per_conversion": "{:,.2f}",
+            "ratio_to_benchmark": "{:.2f}x",
+        }, na_rep="—", subset=list(runs.columns))
+        st.dataframe(styled, hide_index=True,
                      width="stretch", key="detail_runs", column_config={
-                         "run_number": NUM("Run", format="%d"),
+                         "run_number": NUM("Run"),
                          "run_label": WIDE("Run label"),
                          "start": WIDE("Start"),
                          "end": WIDE("End"),
-                         "active_days": NUM("Days", format="%d"),
-                         "spend": NUM(f"Spend ({currency})",
-                                      format="%.0f"),
-                         "conversions": NUM("Tracked actions",
-                                            format="%.0f"),
+                         "active_days": NUM("Days"),
+                         "spend": NUM(f"Spend ({currency})"),
+                         "conversions": NUM("Tracked actions"),
                          "cost_per_conversion": NUM(
-                             f"Cost per action ({currency})",
-                             format="%.2f"),
-                         "ratio_to_benchmark": NUM("Ratio",
-                                                   format="%.2fx")})
+                             f"Cost per action ({currency})"),
+                         "ratio_to_benchmark": NUM("Ratio")})
         st.download_button("Download CSV",
                            dashboard_data.csv_bytes(
                                dashboard_data.display_table(runs)),

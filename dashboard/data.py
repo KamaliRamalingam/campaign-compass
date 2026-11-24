@@ -551,6 +551,7 @@ def kpi_values(benchmarks):
     loo = bool(loo) if loo is not None and not pd.isna(loo) else False
     return {
         "judged_campaigns": int(judged["campaigns"]),
+        "judged_groups": str(judged["groups"]),
         "spend": float(judged["spend"]),
         "tracked_actions": float(judged["tracked_actions"]),
         "cost_per_tracked_action": float(
@@ -561,6 +562,18 @@ def kpi_values(benchmarks):
         "loo_min": (float(bench["loo_min"]) if loo else None),
         "loo_max": (float(bench["loo_max"]) if loo else None),
     }
+
+
+def too_little_data_count(recommendations, groups):
+    """How many campaigns in the given groups are insufficient_data.
+
+    groups is the "+"-joined text from benchmarks.csv (for example
+    "core+sep_2026_group"). Uses all recommendations, never a
+    filtered view, so it matches the KPI cards.
+    """
+    names = [name for name in str(groups).split("+") if name]
+    part = recommendations.loc[recommendations["group"].isin(names)]
+    return int((part["label"] == "insufficient_data").sum())
 
 
 def campaign_detail(recommendations, recent_trend, campaign):

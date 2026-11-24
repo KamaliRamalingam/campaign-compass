@@ -107,12 +107,24 @@ def test_kpi_values_read_from_benchmarks():
     ])
     kpi = dd.kpi_values(benchmarks)
     assert kpi["judged_campaigns"] == 11
+    assert kpi["judged_groups"] == "core+sep"
     assert kpi["spend"] == 500.0
     assert kpi["cost_per_tracked_action"] == pytest.approx(500 / 90)
     assert kpi["benchmark"] == 5.0
     assert (kpi["loo_min"], kpi["loo_max"]) == (4.0, 6.0)
     benchmarks.loc[0, "leave_one_out"] = False
     assert dd.kpi_values(benchmarks)["loo_min"] is None
+
+
+def test_too_little_data_count_only_in_kpi_groups():
+    recs = pd.DataFrame([
+        {"campaign": "A", "group": "core", "label": "continue"},
+        {"campaign": "B", "group": "core", "label": "insufficient_data"},
+        {"campaign": "C", "group": "sep", "label": "insufficient_data"},
+        {"campaign": "D", "group": "other", "label": "insufficient_data"},
+    ])
+    assert dd.too_little_data_count(recs, "core+sep") == 2
+    assert dd.too_little_data_count(recs, "core") == 1
 
 
 def test_campaign_detail_has_both_periods():
