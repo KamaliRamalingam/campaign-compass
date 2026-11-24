@@ -125,6 +125,36 @@ def test_too_little_data_count_only_in_kpi_groups():
     ])
     assert dd.too_little_data_count(recs, "core+sep") == 2
     assert dd.too_little_data_count(recs, "core") == 1
+    assert dd.too_little_data_count(recs, ["core", "sep"]) == 2
+
+
+def test_scope_groups_from_config_with_fallbacks():
+    config = {"analysis": {"recommendation_rules": {
+        "judged_groups": ["core", "sep"],
+        "benchmark": {"groups": ["core"]}}}}
+    assert dd.scope_groups(config) == (["core", "sep"], ["core"])
+    benchmarks = pd.DataFrame([{"variant": "judged_campaigns",
+                                "groups": "core+late"}])
+    assert dd.scope_groups({}, benchmarks) == (["core", "late"], ["core"])
+    assert dd.scope_groups({}) == ([], ["core"])
+
+
+def test_act_summary_counts_and_most_urgent():
+    recs = _recs()
+    recs["label_ratio"] = [1.5, 0.8, None, None, None]
+    summary = dd.act_summary(recs)
+    assert summary["counts"] == [
+        ("test", 1), ("continue", 1), ("not_comparable", 1),
+        ("insufficient_data", 1), ("not_judged", 1)]
+    assert summary["first"] == {
+        "campaign": "Alpha", "label": "test",
+        "action": "keep running, but test changes"}
+
+
+def test_act_summary_without_judged_campaigns():
+    recs = _recs()
+    recs = recs.loc[~recs["label"].isin(dd.JUDGED_LABELS)]
+    assert dd.act_summary(recs)["first"] is None
 
 
 def test_campaign_detail_has_both_periods():

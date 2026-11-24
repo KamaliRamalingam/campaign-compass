@@ -132,18 +132,6 @@ def bubble_chart(rows, lines, currency):
     return _layout(fig, height=520)
 
 
-def label_count_bar(counts):
-    """Horizontal bar of judged label counts (data.judged_label_counts)."""
-    fig = go.Figure(go.Bar(
-        x=counts["campaigns"], y=counts["label_text"], orientation="h",
-        marker_color=counts["colour"], text=counts["campaigns"],
-        textposition="outside", cliponaxis=False,
-        hovertemplate="%{y}: %{x} campaigns<extra></extra>"))
-    fig.update_xaxes(title="Campaigns", dtick=1, rangemode="tozero")
-    fig.update_yaxes(title=None, autorange="reversed")
-    return _layout(fig, height=260, legend=False)
-
-
 def trend_line(table, x_field, x_title, currency):
     """Cost per tracked action over time.
 

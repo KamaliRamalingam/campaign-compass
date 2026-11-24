@@ -59,6 +59,12 @@ h1, h2, h3, h4 {color: #1F3A5F !important;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-table .nw {white-space: nowrap;}
 .cc-table .lab {font-weight: 600; white-space: nowrap; color: #1C2430;}
+.cc-todo {border: 2px solid #1F3A5F; border-radius: 0.6rem;
+          padding: 0.9rem 1.1rem; margin: 0.4rem 0 1.2rem;
+          background: #F4F7FB; color: #1C2430; font-size: 1.05rem;
+          line-height: 1.6;}
+.cc-todo .cc-counts {color: #5B6573; font-size: 0.95rem;}
+.cc-todo .cc-first {font-size: 1.15rem;}
 </style>
 """
 
@@ -236,6 +242,38 @@ def _act_definitions(ctx, kpi):
     return lines
 
 
+def _todo_html(summary):
+    """The "What to do" box: label counts, then the most urgent
+    campaign and its action. Every data value is escaped."""
+    counts = " · ".join(
+        f"{html.escape(dashboard_data.label_text(label))} {count}"
+        for label, count in summary["counts"])
+    first = summary["first"]
+    if first is None:
+        lead = ("No campaign has a continue, test or pause label yet: "
+                "there is nothing to act on from the benchmark.")
+    else:
+        action = (f": {html.escape(first['action'])}"
+                  if first["action"] else ".")
+        lead = (f"Start with <b>{html.escape(first['campaign'])}</b> "
+                f"({html.escape(dashboard_data.label_text(first['label']))})"
+                f"{action}")
+    return (f"<div class='cc-todo'><div class='cc-first'>{lead}</div>"
+            f"<div class='cc-counts'>{counts}</div></div>")
+
+
+def _totals_scope(ctx, kpi):
+    """The two scopes: what the totals cover, what the benchmark uses."""
+    judged, bench = dashboard_data.scope_groups(
+        ctx["config"], ctx["tables"]["benchmarks"])
+    too_little = dashboard_data.too_little_data_count(
+        ctx["all_recommendations"], judged)
+    return (f"Totals cover {kpi['judged_campaigns']} campaigns in the "
+            f"groups {', '.join(judged)} ({too_little} of them have too "
+            f"little data for a label). The benchmark is built from "
+            f"group(s) {', '.join(bench)} only.")
+
+
 def _page_act(ctx):
     """Which campaigns should we continue, test or pause?"""
     _title("Act: which campaigns should we continue, test or pause?",
@@ -247,6 +285,13 @@ def _page_act(ctx):
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
 
+    # 1. What to do: all campaigns, never filtered.
+    st.markdown("#### What to do")
+    st.markdown(_todo_html(dashboard_data.act_summary(recs)),
+                unsafe_allow_html=True)
+
+    # 2. The ranked table (the filters only hide rows and bubbles).
+    st.markdown("#### What should we do, most urgent first?")
     filters = st.columns(3)
     group = filters[0].selectbox(
         "Campaign group", dashboard_data.group_options(recs),
@@ -260,61 +305,6 @@ def _page_act(ctx):
         help="Display filter only: hides campaigns with fewer tracked "
              "actions in their label period. Labels do not change.")
     view = dashboard_data.filter_view(recs, group, status, min_actions)
-
-    kpi = dashboard_data.kpi_values(tables["benchmarks"])
-    too_little = dashboard_data.too_little_data_count(
-        recs, kpi["judged_groups"])
-    coverage = (f"{kpi['judged_campaigns']} core-group campaigns "
-                f"({too_little} of them have too little data for a "
-                f"label)")
-    cards = st.columns(4)
-    _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
-          f"Total spend of the {coverage}.")
-    _card(cards[1], "Tracked actions", f"{kpi['tracked_actions']:,.0f}",
-          "Directions requests and calls the account counts.")
-    _card(cards[2], "Cost per tracked action",
-          f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
-          "Spend divided by tracked actions.")
-    bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
-                  f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
-                  else "Pooled over the benchmark group(s).")
-    _card(cards[3], "Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
-          f"What a campaign is compared with. {bench_note}")
-    st.caption(f"Cards cover all {coverage} over the whole daily range "
-               f"(benchmarks.csv). The filters do not change them.")
-
-    st.write("")
-    left, right = st.columns([2.2, 1], gap="large")
-    with left:
-        st.markdown("#### Where does each campaign sit against the "
-                    "benchmark?")
-        bubbles = dashboard_data.bubble_rows(view)
-        if bubbles.empty:
-            st.info("No judged campaign with label-period figures "
-                    "matches the filters.")
-        else:
-            lines = dashboard_data.reference_lines(
-                ctx["config"], kpi["benchmark"])
-            st.plotly_chart(charts.bubble_chart(bubbles, lines, currency),
-                            width="stretch", key="act_bubble")
-            st.caption("Bubble size = spend in the label period. Marker "
-                       "shape and legend text name the label, so colour "
-                       "is never the only cue.")
-    with right:
-        counts, others = dashboard_data.judged_label_counts(view)
-        st.markdown(f"#### Final labels: {int(counts['campaigns'].sum())}"
-                    f" campaigns with enough volume")
-        st.plotly_chart(charts.label_count_bar(counts), width="stretch",
-                        key="act_counts")
-        if others:
-            names = ", ".join(
-                f"{count} {dashboard_data.LABEL_STYLE.get(label, {}).get('text', label).lower()}"
-                for label, count in sorted(others.items()))
-            st.caption(f"Not counted here: {names}. They are not judged "
-                       f"against the benchmark.")
-
-    st.write("")
-    st.markdown("#### What should we do, most urgent first?")
     st.caption("Pause or review first, then test, then continue; within "
                "a label, the highest ratio to the benchmark first. "
                "Ratio = cost per tracked action in the label period / "
@@ -343,6 +333,25 @@ def _page_act(ctx):
             file_name="actions.csv", mime="text/csv",
             key="act_download")
 
+    # 3. The bubble chart.
+    kpi = dashboard_data.kpi_values(tables["benchmarks"])
+    st.write("")
+    st.markdown("#### Where does each campaign sit against the "
+                "benchmark?")
+    bubbles = dashboard_data.bubble_rows(view)
+    if bubbles.empty:
+        st.info("No judged campaign with label-period figures "
+                "matches the filters.")
+    else:
+        lines = dashboard_data.reference_lines(
+            ctx["config"], kpi["benchmark"])
+        st.plotly_chart(charts.bubble_chart(bubbles, lines, currency),
+                        width="stretch", key="act_bubble")
+        st.caption("Bubble size = spend in the label period. Marker "
+                   "shape and legend text name the label, so colour "
+                   "is never the only cue.")
+
+    # 4. Not comparable.
     not_comparable = dashboard_data.not_comparable_rows(recs)
     if not not_comparable.empty:
         st.write("")
@@ -358,8 +367,29 @@ def _page_act(ctx):
                 st.write(row["reason"])
                 st.markdown(f"*Action:* {row['action_text']}")
 
-    st.divider()
-    _footnotes(_act_definitions(ctx, kpi))
+    # 5. Totals and benchmark.
+    st.write("")
+    with st.expander("Totals and benchmark"):
+        scope = _totals_scope(ctx, kpi)
+        cards = st.columns(4)
+        _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
+              "Total spend of the campaigns in the totals.")
+        _card(cards[1], "Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+              "Directions requests and calls the account counts.")
+        _card(cards[2], "Cost per tracked action",
+              f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+              "Spend divided by tracked actions.")
+        bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
+                      f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
+                      else "Pooled over the benchmark group(s).")
+        _card(cards[3], "Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
+              f"What a campaign is compared with. {bench_note}")
+        st.caption(f"{scope} Totals use the whole daily range "
+                   f"(benchmarks.csv); the filters do not change them.")
+
+    # 6. How to read this.
+    with st.expander("How to read this"):
+        _footnotes(_act_definitions(ctx, kpi))
 
 
 # --- Context ------------------------------------------------------

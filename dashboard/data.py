@@ -571,9 +571,55 @@ def too_little_data_count(recommendations, groups):
     "core+sep_2026_group"). Uses all recommendations, never a
     filtered view, so it matches the KPI cards.
     """
-    names = [name for name in str(groups).split("+") if name]
+    if isinstance(groups, str):
+        names = [name for name in groups.split("+") if name]
+    else:
+        names = list(groups)
     part = recommendations.loc[recommendations["group"].isin(names)]
     return int((part["label"] == "insufficient_data").sum())
+
+
+def scope_groups(config, benchmarks=None):
+    """(judged groups, benchmark groups), as lists, from the config.
+
+    Judged groups: analysis.recommendation_rules.judged_groups; if
+    unset, the groups of the judged_campaigns row of benchmarks.csv.
+    Benchmark groups: recommendation_rules.benchmark.groups, default
+    ["core"] as in src/recommend.py.
+    """
+    rules = ((config or {}).get("analysis") or {}).get(
+        "recommendation_rules") or {}
+    judged = rules.get("judged_groups")
+    if not judged and benchmarks is not None:
+        row = benchmarks.loc[benchmarks["variant"] == "judged_campaigns"]
+        if not row.empty:
+            judged = [name for name in str(row["groups"].iloc[0])
+                      .split("+") if name]
+    bench = (rules.get("benchmark") or {}).get("groups") or ["core"]
+    return [str(name) for name in judged or []], [str(n) for n in bench]
+
+
+def act_summary(recommendations):
+    """What to do first: label counts and the most urgent campaign.
+
+    Uses all recommendations (never a filtered view). Returns a dict:
+    counts, a list of (label, count) in urgency order with zero
+    counts left out; first, None or a dict with campaign, label and
+    action of the top judged row of action_table.
+    """
+    counts = recommendations["label"].value_counts()
+    order = sorted(counts.index, key=lambda label: LABEL_RANK.get(label, 9))
+    ranked = action_table(recommendations)
+    judged = ranked.loc[ranked["label"].isin(JUDGED_LABELS)]
+    first = None
+    if not judged.empty:
+        row = judged.iloc[0]
+        first = {"campaign": str(row["campaign"]), "label": row["label"],
+                 "action": "" if row["action"] is None
+                 or pd.isna(row["action"]) else str(row["action"])}
+    return {"counts": [(label, int(counts[label])) for label in order
+                       if counts[label] > 0],
+            "first": first}
 
 
 def campaign_detail(recommendations, recent_trend, campaign):
