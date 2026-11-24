@@ -600,26 +600,40 @@ def scope_groups(config, benchmarks=None):
 
 
 def act_summary(recommendations):
-    """What to do first: label counts and the most urgent campaign.
+    """What to do: running campaigns, ended ones to know, label counts.
 
     Uses all recommendations (never a filtered view). Returns a dict:
-    counts, a list of (label, count) in urgency order with zero
-    counts left out; first, None or a dict with campaign, label and
-    action of the top judged row of action_table.
+    running, every campaign whose status_now is active; ended, ended
+    campaigns labelled pause_or_review (do not restart them as they
+    were); both lists of dicts with campaign, label and action, in
+    the order of the ranked action table (not_comparable last).
+    counts, a list of (label, count) in urgency order, zeros left out.
     """
     counts = recommendations["label"].value_counts()
     order = sorted(counts.index, key=lambda label: LABEL_RANK.get(label, 9))
-    ranked = action_table(recommendations)
-    judged = ranked.loc[ranked["label"].isin(JUDGED_LABELS)]
-    first = None
-    if not judged.empty:
-        row = judged.iloc[0]
-        first = {"campaign": str(row["campaign"]), "label": row["label"],
+    ranked = action_table(recommendations)[
+        ["campaign", "label", "status_now", "action"]]
+    others = recommendations.loc[
+        recommendations["label"] == NOT_COMPARABLE,
+        ["campaign", "label", "status_now", "action_text"]].rename(
+        columns={"action_text": "action"})
+    ranked = pd.concat([ranked, others], ignore_index=True)
+
+    def entries(rows):
+        return [{"campaign": str(row["campaign"]), "label": row["label"],
                  "action": "" if row["action"] is None
                  or pd.isna(row["action"]) else str(row["action"])}
-    return {"counts": [(label, int(counts[label])) for label in order
-                       if counts[label] > 0],
-            "first": first}
+                for _, row in rows.iterrows()]
+
+    status = ranked["status_now"].astype(str)
+    return {
+        "running": entries(ranked.loc[status == "active"]),
+        "ended": entries(ranked.loc[(status == "ended")
+                                    & (ranked["label"]
+                                       == "pause_or_review")]),
+        "counts": [(label, int(counts[label])) for label in order
+                   if counts[label] > 0],
+    }
 
 
 def campaign_detail(recommendations, recent_trend, campaign):

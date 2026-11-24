@@ -244,23 +244,28 @@ def _act_definitions(ctx, kpi):
 
 
 def _todo_html(summary):
-    """The "What to do" box: label counts, then the most urgent
-    campaign and its action. Every data value is escaped."""
+    """The "What to do" box: running campaigns, ended campaigns not to
+    restart as they were, then the label counts. Every data value is
+    escaped."""
+    def item(entry):
+        label = html.escape(dashboard_data.label_text(entry["label"]))
+        action = (f": {html.escape(entry['action'])}"
+                  if entry["action"] else "")
+        return (f"<b>{html.escape(entry['campaign'])}</b> "
+                f"({label}){action}")
+
+    running = summary["running"]
+    lead = ("Running now: " + "; ".join(item(e) for e in running)
+            if running else "Running now: no campaign is active.")
+    lines = [f"<div class='cc-first'>{lead}</div>"]
+    if summary["ended"]:
+        lines.append("<div>Ended: " + "; ".join(
+            item(e) for e in summary["ended"]) + "</div>")
     counts = " · ".join(
         f"{html.escape(dashboard_data.label_text(label))} {count}"
         for label, count in summary["counts"])
-    first = summary["first"]
-    if first is None:
-        lead = ("No campaign has a continue, test or pause label yet: "
-                "there is nothing to act on from the benchmark.")
-    else:
-        action = (f": {html.escape(first['action'])}"
-                  if first["action"] else ".")
-        lead = (f"Start with <b>{html.escape(first['campaign'])}</b> "
-                f"({html.escape(dashboard_data.label_text(first['label']))})"
-                f"{action}")
-    return (f"<div class='cc-todo'><div class='cc-first'>{lead}</div>"
-            f"<div class='cc-counts'>{counts}</div></div>")
+    lines.append(f"<div class='cc-counts'>{counts}</div>")
+    return f"<div class='cc-todo'>{''.join(lines)}</div>"
 
 
 def _totals_scope(ctx, kpi):

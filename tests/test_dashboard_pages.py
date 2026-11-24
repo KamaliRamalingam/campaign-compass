@@ -139,22 +139,43 @@ def test_scope_groups_from_config_with_fallbacks():
     assert dd.scope_groups({}) == ([], ["core"])
 
 
-def test_act_summary_counts_and_most_urgent():
+def _recs_with_ended_pauses():
+    """_recs plus two ended pause_or_review campaigns."""
     recs = _recs()
-    recs["label_ratio"] = [1.5, 0.8, None, None, None]
-    summary = dd.act_summary(recs)
+    extra = recs.iloc[[1, 1]].copy()
+    extra["campaign"] = ["Epsilon", "Zeta"]
+    extra["label"] = "pause_or_review"
+    extra["action_text"] = "do not restart without changes"
+    recs = pd.concat([recs, extra], ignore_index=True)
+    recs["label_ratio"] = [1.5, 0.8, None, None, None, 3.0, 9.0]
+    return recs
+
+
+def test_act_summary_running_ended_and_counts():
+    summary = dd.act_summary(_recs_with_ended_pauses())
+    assert summary["running"] == [
+        {"campaign": "Alpha", "label": "test",
+         "action": "keep running, but test changes"},
+        {"campaign": "Pmax", "label": "not_comparable",
+         "action": "judge against its own history, not the benchmark"}]
+    # Ended and pause_or_review only, highest ratio first.
+    assert summary["ended"] == [
+        {"campaign": "Zeta", "label": "pause_or_review",
+         "action": "do not restart without changes"},
+        {"campaign": "Epsilon", "label": "pause_or_review",
+         "action": "do not restart without changes"}]
     assert summary["counts"] == [
-        ("test", 1), ("continue", 1), ("not_comparable", 1),
-        ("insufficient_data", 1), ("not_judged", 1)]
-    assert summary["first"] == {
-        "campaign": "Alpha", "label": "test",
-        "action": "keep running, but test changes"}
+        ("pause_or_review", 2), ("test", 1), ("continue", 1),
+        ("not_comparable", 1), ("insufficient_data", 1),
+        ("not_judged", 1)]
 
 
-def test_act_summary_without_judged_campaigns():
+def test_act_summary_none_running_none_ended():
     recs = _recs()
-    recs = recs.loc[~recs["label"].isin(dd.JUDGED_LABELS)]
-    assert dd.act_summary(recs)["first"] is None
+    recs["status_now"] = "ended"
+    summary = dd.act_summary(recs)
+    assert summary["running"] == []
+    assert summary["ended"] == []
 
 
 def test_campaign_detail_has_both_periods():
