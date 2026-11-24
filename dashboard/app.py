@@ -57,7 +57,8 @@ html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 .stApp {background: #FBF6EE; color: #3B2F2A;}
 /* Page width: 32px side padding, at most 2200px of content; the
    header row uses the same box so both share one left/right edge. */
-.block-container {padding: 96px 32px 3rem; max-width: 2200px;}
+.block-container {padding: 8px 32px 3rem; max-width: 2200px;}
+/* (8px + the 16px gap after the style element = 24px above the row) */
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
   {display: none;}
 [data-testid="stVerticalBlock"] {gap: 16px;}
@@ -65,52 +66,59 @@ html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 h1, h2, h3, h4 {color: #3B2F2A !important;}
 p, li, td, th {font-size: 14px;}
 
-/* Header: white, 3px green line. */
+/* No header bar: Streamlit's header is transparent and empty except
+   for its menu (⋮), which is lined up with our top row. The top row
+   (logo, page tabs, client picker) is part of the page. */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
-  {background: #FFFFFF; border-bottom: 3px solid #254C31;}
-/* Our header row sits over Streamlit's header bar: brand at the
-   left, client picker at the far right; the page links (in the bar)
-   are pushed right, next to the picker. */
-.st-key-cc_header {position: fixed; top: 0; left: 0; right: 0;
-  margin: 0 auto; max-width: 2200px; box-sizing: border-box;
-  height: 72px; z-index: 1000000; padding: 0 32px;
-  background: transparent; pointer-events: none;}
-.st-key-cc_header > div {pointer-events: none;}
-.st-key-cc_header [data-testid="stHorizontalBlock"] {height: 69px;
-  align-items: center; margin: 0; flex-wrap: nowrap;}
-.st-key-cc_header [data-testid="stColumn"]:last-child {flex: 0 0 220px;
-  width: 220px; min-width: 220px; margin-right: 40px;}
-.st-key-cc_header [data-testid="stMarkdownContainer"],
-.st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
-.st-key-cc_header .cc-brand {height: 69px;}
-.st-key-cc_header img, .st-key-cc_header [data-testid="stSelectbox"],
-.st-key-cc_header [data-baseweb] {pointer-events: auto;}
-[data-testid="stHeader"] {height: 72px;}
-/* The bar's own contents (page links, menu) in the same box. */
-[data-testid="stToolbar"] {height: 69px; align-items: center;
+  {background: transparent; border: 0; height: 104px;
+   pointer-events: none;}
+[data-testid="stDecoration"] {display: none;}
+[data-testid="stToolbar"] {height: 104px; align-items: center;
   max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
   box-sizing: border-box; left: 0; right: 0;}
-[data-testid="stTopNav"] {justify-content: flex-end; padding-right: 72px;}
-.cc-brand {display: flex; align-items: center; gap: 16px;}
-.cc-logo {height: 52px; width: auto; display: block;}
-.cc-wordmark {font-size: 14px; font-weight: 600; letter-spacing: 0.25em;
+/* The empty header must not catch clicks meant for the top row;
+   only its menu (⋮) stays clickable. */
+[data-testid="stHeader"] * {pointer-events: none;}
+[data-testid="stHeader"] [data-testid="stMainMenu"],
+[data-testid="stHeader"] [data-testid="stMainMenu"] *
+  {pointer-events: auto;}
+[data-testid="stMainMenu"] {background: #FBF6EE; border-radius: 50%;}
+.st-key-cc_header {padding: 0; margin: 0 0 8px;}  /* + 16px gap = 24px */
+.st-key-cc_header [data-testid="stHorizontalBlock"] {min-height: 56px;
+  align-items: center; flex-wrap: nowrap; gap: 24px;}
+.st-key-cc_header [data-testid="stColumn"]:last-child {flex: 0 0 180px;
+  width: 180px; min-width: 180px; margin-right: 40px;}
+.st-key-cc_header [data-testid="stMarkdownContainer"],
+.st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
+.cc-brand {display: flex; align-items: center; height: 56px;}
+.cc-logo {height: 56px; width: auto; display: block;}
+.cc-wordmark {font-size: 16px; font-weight: 600; letter-spacing: 0.25em;
   text-transform: uppercase; color: #7A6B5F;}
-[data-testid="stTopNavLink"] {font-size: 13px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em; color: #3B2F2A;
-  border-radius: 4px; padding: 4px 14px;}
-[data-testid="stTopNavLink"] p {font-size: 13px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em; color: inherit;}
-[data-testid="stTopNavLink"][aria-current="page"]
-  {background: #254C31; color: #FFFFFF;}
-[data-testid="stTopNavLink"][aria-current="page"] *
-  {color: #FFFFFF;}
+/* Page tabs: plain text; the active one has a 3px green underline. */
+.st-key-cc_nav {justify-content: flex-end; gap: 4px;}
+.st-key-cc_nav [data-testid="stPageLink"] a {background: transparent;
+  border-radius: 0; padding: 8px 12px 6px; border-bottom: 3px solid
+  transparent;}
+.st-key-cc_nav [data-testid="stPageLink"] a:hover
+  {background: transparent; border-bottom-color: #D9CFC0;}
+.st-key-cc_nav [data-testid="stPageLink"] p {font-size: 13px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #3B2F2A;}
+.st-key-cc_nav_on [data-testid="stPageLink"] a
+  {border-bottom-color: #254C31;}
+.st-key-cc_nav_on [data-testid="stPageLink"] a:hover
+  {border-bottom-color: #254C31;}
+.st-key-cc_nav_on [data-testid="stPageLink"] p {color: #254C31;}
+.st-key-cc_picker [data-baseweb="select"] > div {min-height: 34px;
+  font-size: 13px;}
 
 /* Heading block. */
 .stApp .cc-page {font-size: 12px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.08em; color: #254C31; margin: 0;}
-.stApp .cc-q {font-size: 26px; font-weight: 600; color: #3B2F2A; margin: 2px 0;
-  line-height: 1.25;}
-.stApp .cc-data {font-size: 13px; font-weight: 400; color: #7A6B5F; margin: 0;}
+.stApp .cc-q {font-size: 32px; font-weight: 600; color: #254C31;
+  margin: 4px 0; line-height: 1.2;}
+.stApp .cc-data {font-size: 14px; font-weight: 400; color: #7A6B5F; margin: 0;}
+.stApp .cc-head {margin-bottom: 24px;}
 
 /* Caveat banner: white, warm border, charcoal text. */
 [data-testid="stAlert"] > div {background: #FFFFFF; color: #3B2F2A;
@@ -229,9 +237,10 @@ def _heading(page, question, ctx):
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
     st.markdown(
-        f"<div class='cc-page'>CampaignCompass · {html.escape(page)}</div>"
+        f"<div class='cc-head'><div class='cc-page'>CampaignCompass · "
+        f"{html.escape(page)}</div>"
         f"<div class='cc-q'>{html.escape(question)}</div>"
-        f"<div class='cc-data'>{html.escape(line)}</div>",
+        f"<div class='cc-data'>{html.escape(line)}</div></div>",
         unsafe_allow_html=True)
 
 
@@ -554,7 +563,8 @@ def _page_act(ctx):
             lines = dashboard_data.reference_lines(
                 ctx["config"], kpi["benchmark"])
             st.plotly_chart(charts.ratio_bar(bars, lines, currency),
-                            width="stretch", key="act_ratio")
+                            width="stretch", key="act_ratio",
+                            config={"displayModeBar": False})
             st.caption("Same order as the table. Dashed lines: the "
                        "continue and test limits from the config. A bar "
                        "past the edge (▶) has its value written. "
@@ -1347,7 +1357,7 @@ LOGO_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
               ".webp": "image/webp"}
 
 
-LOGO_HEIGHT = 156  # pixels kept in memory: sharp at 52px on 2x-3x screens
+LOGO_HEIGHT = 168  # pixels kept in memory: sharp at 56px on 2x-3x screens
 
 
 @st.cache_data(show_spinner=False)
@@ -1385,17 +1395,21 @@ def _logo_img(path):
             f"src='data:{kind};base64,{data}'>")
 
 
-def _header(clients):
-    """White header: the client's logo (or the wordmark), client picker.
+def _header(clients, pages=None, current=None):
+    """The top row, on the page background: the client's logo (or the
+    CAMPAIGNCOMPASS wordmark) at the left; page tabs and the client
+    picker at the right.
 
     The logo comes from branding.logo_path in the client config; when
-    the key or the file is missing, the CAMPAIGNCOMPASS wordmark shows
-    instead.
+    the key or the file is missing, the wordmark shows in its place.
+    pages: the st.Page objects for the tabs (none in tests that run
+    one page); current: the page being shown, whose tab is underlined.
     """
     with st.container(key="cc_header"):
-        brand, picker = st.columns([6, 1], vertical_alignment="center")
-        client = picker.selectbox("Client", clients, index=0,
-                                  key="client",
+        brand, nav, picker = st.columns([2, 3, 1],
+                                        vertical_alignment="center")
+        with picker.container(key="cc_picker"):
+            client = st.selectbox("Client", clients, index=0, key="client",
                                   label_visibility="collapsed")
         try:
             config = dashboard_data.load_config(
@@ -1403,20 +1417,26 @@ def _header(clients):
         except FileNotFoundError:
             config = {}
         logo = dashboard_data.logo_path(config)
-        wordmark = "<span class='cc-wordmark'>CampaignCompass</span>"
         if logo is not None:
-            # The tool name moves to each page label ("CAMPAIGNCOMPASS ·
-            # ACT"), so the header shows the client's logo alone.
             brand.markdown(f"<div class='cc-brand'>{_logo_img(logo)}</div>",
                            unsafe_allow_html=True)
         else:
-            brand.markdown(f"<div class='cc-brand'>{wordmark}</div>",
+            brand.markdown("<div class='cc-brand'><span class='cc-wordmark'>"
+                           "CampaignCompass</span></div>",
                            unsafe_allow_html=True)
+        if pages:
+            with nav.container(key="cc_nav", horizontal=True):
+                for number, page in enumerate(pages):
+                    active = current is not None and \
+                        page.url_path == current.url_path
+                    state = "on" if active else f"off_{number}"
+                    with st.container(key=f"cc_nav_{state}", width="content"):
+                        st.page_link(page, label=page.title)
     return client
 
 
 def main():
-    """Top navigation, header and client, load the tables, run a page."""
+    """Top row (logo, page tabs, client), load the tables, run a page."""
     st.set_page_config(page_title="CampaignCompass", layout="wide",
                        initial_sidebar_state="collapsed")
     st.markdown(STYLE, unsafe_allow_html=True)
@@ -1424,8 +1444,8 @@ def main():
              st.Page(context, title="Context"),
              st.Page(campaign_detail, title="Campaign detail")]
     PAGE_OBJECTS.update(zip(PAGE_TITLES, pages))
-    page = st.navigation(pages, position="top")
-    client = _header(dashboard_data.list_clients())
+    page = st.navigation(pages, position="hidden")
+    client = _header(dashboard_data.list_clients(), pages, page)
     if st.session_state.get("_client") != client:
         for key in CLIENT_WIDGETS:
             st.session_state.pop(key, None)
