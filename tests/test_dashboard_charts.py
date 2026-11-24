@@ -59,8 +59,8 @@ def test_ratio_bar_dashed_lines_at_config_ratios_with_costs():
               if shape.line.dash == "dash"]
     assert sorted(shape.x0 for shape in dashed) == [1.0, 2.0]
     texts = [note.text for note in fig.layout.annotations]
-    assert any("4.88 SEK" in text for text in texts)
-    assert any("9.76 SEK" in text for text in texts)
+    assert any("4.88<br>SEK" in text for text in texts)
+    assert any("9.76<br>SEK" in text for text in texts)
 
 
 def test_trend_line_flagged_months_are_hollow():
@@ -114,7 +114,9 @@ def test_chart_text_from_the_data_is_escaped():
         "trend_override": None}])
     fig = charts.ratio_bar(dd.ratio_bar_rows(dd.action_table(recs), recs),
                            _lines(), "SEK")
-    assert list(fig.data[0].y) == ["&lt;a href=&#x27;x&#x27;&gt;Evil&lt;/a&gt;"]
+    # Escaped; a long name may be split over two lines with <br>.
+    assert [name.replace("<br>", " ") for name in fig.data[0].y] == [
+        "&lt;a href=&#x27;x&#x27;&gt;Evil&lt;/a&gt;"]
     long = pd.DataFrame({"campaign": ["<b>x</b>"], "intent": ["Calls"],
                          "share": [1.0]})
     assert list(charts.intent_stack(long).data[0].y) == [

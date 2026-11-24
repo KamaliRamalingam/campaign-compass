@@ -55,7 +55,9 @@ html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 [data-testid="stIconMaterial"], .material-symbols-rounded {
   font-family: 'Material Symbols Rounded' !important;}
 .stApp {background: #FBF6EE; color: #3B2F2A;}
-.block-container {padding: 80px 24px 3rem; max-width: 1600px;}
+/* Page width: 32px side padding, at most 2200px of content; the
+   header row uses the same box so both share one left/right edge. */
+.block-container {padding: 96px 32px 3rem; max-width: 2200px;}
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
   {display: none;}
 [data-testid="stVerticalBlock"] {gap: 16px;}
@@ -70,22 +72,27 @@ p, li, td, th {font-size: 14px;}
    left, client picker at the far right; the page links (in the bar)
    are pushed right, next to the picker. */
 .st-key-cc_header {position: fixed; top: 0; left: 0; right: 0;
-  height: 60px; z-index: 1000000; padding: 0 24px; background: transparent;
-  pointer-events: none; display: flex; justify-content: center;}
+  margin: 0 auto; max-width: 2200px; box-sizing: border-box;
+  height: 72px; z-index: 1000000; padding: 0 32px;
+  background: transparent; pointer-events: none;}
 .st-key-cc_header > div {pointer-events: none;}
-.st-key-cc_header [data-testid="stHorizontalBlock"] {height: 57px;
-  align-items: center; margin: 0;}
+.st-key-cc_header [data-testid="stHorizontalBlock"] {height: 69px;
+  align-items: center; margin: 0; flex-wrap: nowrap;}
+.st-key-cc_header [data-testid="stColumn"]:last-child {flex: 0 0 220px;
+  width: 220px; min-width: 220px; margin-right: 40px;}
 .st-key-cc_header [data-testid="stMarkdownContainer"],
 .st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
-.st-key-cc_header .cc-brand {height: 57px;}
+.st-key-cc_header .cc-brand {height: 69px;}
 .st-key-cc_header img, .st-key-cc_header [data-testid="stSelectbox"],
 .st-key-cc_header [data-baseweb] {pointer-events: auto;}
-[data-testid="stHeader"] {height: 60px;}
-[data-testid="stToolbar"] {height: 60px; align-items: center;}
-[data-testid="stTopNav"] {justify-content: flex-end; padding-right: 230px;}
+[data-testid="stHeader"] {height: 72px;}
+/* The bar's own contents (page links, menu) in the same box. */
+[data-testid="stToolbar"] {height: 69px; align-items: center;
+  max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
+  box-sizing: border-box; left: 0; right: 0;}
+[data-testid="stTopNav"] {justify-content: flex-end; padding-right: 72px;}
 .cc-brand {display: flex; align-items: center; gap: 16px;}
-.cc-logo {height: 40px; width: auto; display: block;}
-.cc-divider {width: 1px; height: 36px; background: #D9CFC0;}
+.cc-logo {height: 52px; width: auto; display: block;}
 .cc-wordmark {font-size: 14px; font-weight: 600; letter-spacing: 0.25em;
   text-transform: uppercase; color: #7A6B5F;}
 [data-testid="stTopNavLink"] {font-size: 13px; font-weight: 600;
@@ -162,7 +169,15 @@ p, li, td, th {font-size: 14px;}
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
 .cc-table .per {font-size: 13px;}
-.cc-table .cmp {min-width: 9em;}
+.cc-table .cmp {min-width: 7.5em;}
+/* Narrower windows: the ranked table gets compact so it fits its
+   card (the 2-column layout stays). */
+@media (max-width: 1500px) {
+  .stApp .cc-act th, .stApp .cc-act td {padding: 6px 5px;
+    font-size: 12.5px;}
+  .stApp .cc-act th {letter-spacing: 0; font-size: 11px;}
+  .stApp .cc-act .cc-pill {font-size: 12px; padding: 2px 6px;}
+}
 .cc-table .act {width: 100%;}
 .cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;}
@@ -209,11 +224,12 @@ def _ckey(name):
 
 
 def _heading(page, question, ctx):
-    """The heading block: page label, question, data line."""
+    """The heading block: page label (with the tool name), question,
+    data line."""
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
     st.markdown(
-        f"<div class='cc-page'>{html.escape(page)}</div>"
+        f"<div class='cc-page'>CampaignCompass · {html.escape(page)}</div>"
         f"<div class='cc-q'>{html.escape(question)}</div>"
         f"<div class='cc-data'>{html.escape(line)}</div>",
         unsafe_allow_html=True)
@@ -303,15 +319,20 @@ def _html_table(table, column_config=None):
 
 
 def _table(table, file_name=None, column_config=None, key=None,
-           height="auto"):
+           height="auto", hide=()):
     """A table as escaped HTML, with a CSV download of the raw table.
 
-    The download is the table's raw values (no display rounding).
+    The download is the table's raw values (no display rounding) and
+    all its columns; hide only leaves columns out of the display (for
+    example a campaign name already shown on the page).
     """
-    if table is None or table.empty:
+    shown = table.drop(columns=[column for column in hide
+                                if column in table.columns]) \
+        if table is not None else table
+    if shown is None or shown.empty:
         st.caption("No rows.")
     else:
-        st.markdown(_html_table(table, column_config),
+        st.markdown(_html_table(shown, column_config),
                     unsafe_allow_html=True)
     if file_name:
         st.download_button(
@@ -357,8 +378,9 @@ def _action_html(table):
             f"{action}</span></td>"
             f"<td class='per'>{_period_html(row['label_period'])}</td>"
             "</tr>")
-    return (f"<table class='cc-table'><thead>{head}</thead>"
-            f"<tbody>{''.join(body)}</tbody></table>")
+    return (f"<div class='cc-scroll'><table class='cc-table cc-act'>"
+            f"<thead>{head}</thead><tbody>{''.join(body)}</tbody>"
+            "</table></div>")
 
 
 def _period_html(period):
@@ -1237,7 +1259,7 @@ def _page_detail(ctx):
                                 config={"displayModeBar": False})
                 _table(dashboard_data.display_table(weekday),
                        f"weekday_{campaign}.csv",
-                       key="detail_weekday_table")
+                       key="detail_weekday_table", hide=("campaign",))
     with journey_col:
         with st.expander("Acquisition journey"):
             journey = dashboard_data.journey_row(
@@ -1325,7 +1347,7 @@ LOGO_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
               ".webp": "image/webp"}
 
 
-LOGO_HEIGHT = 120  # pixels kept in memory: sharp at 40px on 2x screens
+LOGO_HEIGHT = 156  # pixels kept in memory: sharp at 52px on 2x-3x screens
 
 
 @st.cache_data(show_spinner=False)
@@ -1364,10 +1386,11 @@ def _logo_img(path):
 
 
 def _header(clients):
-    """White header: optional logo, divider, wordmark, client picker.
+    """White header: the client's logo (or the wordmark), client picker.
 
     The logo comes from branding.logo_path in the client config; when
-    the key or the file is missing, only the wordmark shows.
+    the key or the file is missing, the CAMPAIGNCOMPASS wordmark shows
+    instead.
     """
     with st.container(key="cc_header"):
         brand, picker = st.columns([6, 1], vertical_alignment="center")
@@ -1382,10 +1405,10 @@ def _header(clients):
         logo = dashboard_data.logo_path(config)
         wordmark = "<span class='cc-wordmark'>CampaignCompass</span>"
         if logo is not None:
-            brand.markdown(
-                f"<div class='cc-brand'>{_logo_img(logo)}"
-                f"<span class='cc-divider'></span>{wordmark}</div>",
-                unsafe_allow_html=True)
+            # The tool name moves to each page label ("CAMPAIGNCOMPASS ·
+            # ACT"), so the header shows the client's logo alone.
+            brand.markdown(f"<div class='cc-brand'>{_logo_img(logo)}</div>",
+                           unsafe_allow_html=True)
         else:
             brand.markdown(f"<div class='cc-brand'>{wordmark}</div>",
                            unsafe_allow_html=True)

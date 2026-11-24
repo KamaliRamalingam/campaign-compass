@@ -30,6 +30,20 @@ def _safe(values):
     return [html.escape(str(value)) for value in values]
 
 
+def _wrapped(values, width=16):
+    """Escaped names, long ones split over two lines at a space, so
+    the axis labels leave room for the bars on narrow screens."""
+    out = []
+    for value in _safe(values):
+        if len(value) > width and " " in value:
+            middle = len(value) // 2
+            spaces = [i for i, char in enumerate(value) if char == " "]
+            cut = min(spaces, key=lambda i: abs(i - middle))
+            value = value[:cut] + "<br>" + value[cut + 1:]
+        out.append(value)
+    return out
+
+
 def _layout(fig, height=420, legend=True):
     """Shared look: white background, charcoal text, room for labels."""
     fig.update_layout(
@@ -69,7 +83,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
     comes from the trend override. Linear axis, no log scale.
     """
     fig = go.Figure()
-    names = _safe(rows["campaign"])
+    names = _wrapped(rows["campaign"])
     texts = []
     for _, row in rows.iterrows():
         text = f"{row['ratio']:.2f}x · {html.escape(row['label_text'])}"
@@ -83,7 +97,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
         marker={"color": list(rows["colour"]),
                 "line": {"width": 0}},
         text=texts, textposition="outside", cliponaxis=False,
-        textfont={"color": TEXT, "size": 12},
+        textfont={"color": TEXT, "size": 11},
         customdata=list(zip(
             _safe(rows["label_text"]), rows["ratio"],
             _safe(rows["label_period"]), rows["cost_per_tracked_action"],
@@ -108,15 +122,16 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
                       line={"color": TEXT, "width": 1.2, "dash": "dash"})
         fig.add_annotation(
             x=ratio, xref="x", y=1, yref="paper", yanchor="bottom",
-            text=f"{ratio:.1f}x<br>({value:,.2f} {currency})",
+            text=f"{ratio:.1f}x<br>{value:,.2f}<br>{currency}",
             showarrow=False, font={"color": GREY, "size": 11})
     fig.update_xaxes(title="Ratio to benchmark (1.0x = benchmark)",
                      range=[0, cap], dtick=0.5, ticksuffix="x",
                      tickformat=".1f", type="linear")
     fig.update_yaxes(title=None, type="category", autorange="reversed")
     _layout(fig, height=max(240, 46 * len(rows) + 110), legend=False)
-    fig.update_layout(margin={"l": 10, "r": 200, "t": 50, "b": 10},
+    fig.update_layout(margin={"l": 10, "r": 170, "t": 50, "b": 10},
                       bargap=0.35)
+    fig.update_xaxes(tickangle=0)
     return fig
 
 
