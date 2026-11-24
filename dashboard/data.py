@@ -579,6 +579,19 @@ def too_little_data_count(recommendations, groups):
     return int((part["label"] == "insufficient_data").sum())
 
 
+def totals_scope_text(campaigns, judged_groups, too_little,
+                      benchmark_groups):
+    """The "Totals and benchmark" sentence: both scopes.
+
+    "has" when one campaign has too little data, "have" otherwise.
+    """
+    verb = "has" if too_little == 1 else "have"
+    return (f"Totals cover {campaigns} campaigns in the groups "
+            f"{', '.join(judged_groups)} ({too_little} of them {verb} "
+            f"too little data for a label). The benchmark is built from "
+            f"group(s) {', '.join(benchmark_groups)} only.")
+
+
 def scope_groups(config, benchmarks=None):
     """(judged groups, benchmark groups), as lists, from the config.
 

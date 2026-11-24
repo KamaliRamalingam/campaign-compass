@@ -277,10 +277,8 @@ def _totals_scope(ctx, kpi):
         ctx["config"], ctx["tables"]["benchmarks"])
     too_little = dashboard_data.too_little_data_count(
         ctx["all_recommendations"], judged)
-    return (f"Totals cover {kpi['judged_campaigns']} campaigns in the "
-            f"groups {', '.join(judged)} ({too_little} of them have too "
-            f"little data for a label). The benchmark is built from "
-            f"group(s) {', '.join(bench)} only.")
+    return dashboard_data.totals_scope_text(
+        kpi["judged_campaigns"], judged, too_little, bench)
 
 
 def _page_act(ctx):

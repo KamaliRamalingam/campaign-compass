@@ -128,6 +128,23 @@ def test_too_little_data_count_only_in_kpi_groups():
     assert dd.too_little_data_count(recs, ["core", "sep"]) == 2
 
 
+def test_totals_scope_text_has_for_one():
+    assert dd.totals_scope_text(5, ["core"], 1, ["core"]) == (
+        "Totals cover 5 campaigns in the groups core (1 of them has too "
+        "little data for a label). The benchmark is built from group(s) "
+        "core only.")
+
+
+def test_totals_scope_text_have_otherwise():
+    text = dd.totals_scope_text(11, ["core", "sep"], 6, ["core"])
+    assert text == (
+        "Totals cover 11 campaigns in the groups core, sep (6 of them "
+        "have too little data for a label). The benchmark is built from "
+        "group(s) core only.")
+    assert "(0 of them have too little data" in \
+        dd.totals_scope_text(3, ["core"], 0, ["core"])
+
+
 def test_scope_groups_from_config_with_fallbacks():
     config = {"analysis": {"recommendation_rules": {
         "judged_groups": ["core", "sep"],
