@@ -50,7 +50,7 @@ bash run.sh --client synthetic_b   # whole pipeline on the synthetic Company B t
 
 `bash run.sh` creates `.venv` if needed, installs `requirements.txt`, and runs every stage. Outputs go to the ignored `outputs/` folder (`outputs/synthetic_b/` for the synthetic client) and never go to GitHub. The dashboard has a sidebar Client selector; the default is the restaurant.
 
-Muse builds on branches, and CI checks every pull request. I merge in the GitHub web UI.
+Changes are made on branches, and CI checks every pull request. Merges happen in the GitHub web UI.
 
 ## 6. How to refresh
 
@@ -102,11 +102,11 @@ All numbers below come from the synthetic Company B test data (`bash run.sh --cl
 - `src/`: pipeline code — validation, load, clean, overview, groups, metrics, time patterns, recommendations, conversion mix, recent trend, synthetic data generator, skip and reuse-report stages.
 - `dashboard/`: local Streamlit dashboard — `data.py` (all data preparation, testable), `charts.py` (Plotly figures, display only) and `app.py` (display only). Theme in `.streamlit/config.toml`.
 - `tests/`: checks, all with made-up data. Run them with `pytest -q`.
-- `docs/`: method, decision log, AI usage log.
+- `docs/`: method and decision log.
 - `scripts/`: CI guard that blocks data files from tracked files.
 - `data/raw/`, `outputs/`, `config/local/`: git-ignored. Client data and outputs live here and never go to GitHub.
 
-Claude Code implemented the pipeline and dashboard code through reviewed pull requests: tasks T0b–T12 and PRs #41–#45 (benchmark change, recent signals, what-if and weekday work, dashboard rebuild and restyle). For each pull request I read the diff, ran the tests and the pipeline, checked the dashboard pages by eye, and merged only after a green CI run. Claude (chat) supported planning, explanations and review. The decisions are mine: I chose the problem, the groups and the wording, and I approved the thresholds, which are provisional and not validated with the owner. See [docs/ai-usage-log.md](docs/ai-usage-log.md).
+The pipeline and dashboard code went through reviewed pull requests: tasks T0b–T12 and PRs #41–#45 (benchmark change, recent signals, what-if and weekday work, dashboard rebuild and restyle). For each pull request the diff was read, the tests and the pipeline were run, the dashboard pages were checked by eye, and merging happened only after a green CI run. The problem, the groups and the wording are the author's decisions; the thresholds are provisional and not validated with the owner. AI-assisted development (Claude Code).
 
 ## 12. Data and privacy
 
