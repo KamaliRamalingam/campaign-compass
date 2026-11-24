@@ -119,3 +119,19 @@ def test_chart_text_from_the_data_is_escaped():
                          "share": [1.0]})
     assert list(charts.intent_stack(long).data[0].y) == [
         "&lt;b&gt;x&lt;/b&gt;"]
+
+
+def test_trend_line_uses_a_date_axis_with_gaps():
+    table = pd.DataFrame({
+        "month": ["2026-01", "2026-02", "2026-05"],
+        "cost_per_tracked_action": [1.0, 2.0, 3.0],
+        "spend": [1.0, 1.0, 1.0], "tracked_actions": [1.0, 1.0, 1.0],
+        "month_note": ["", "", "partial"]})
+    fig = charts.trend_line(table, "month", "Month", "SEK")
+    assert fig.layout.xaxis.type == "date"
+    line = fig.data[0]
+    assert line.connectgaps is False
+    # Five months on the axis, two of them empty (a gap in the line).
+    assert len(line.x) == 5
+    assert sum(1 for value in line.y if value != value) == 2
+    assert fig.data[1].marker.symbol == "circle-open"

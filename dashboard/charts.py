@@ -11,6 +11,8 @@ import html
 
 import plotly.graph_objects as go
 
+import data as dashboard_data
+
 
 # Warm spice palette (redesign). Label colours come only from
 # data.LABEL_STYLE; the brand green is never used in charts.
@@ -118,40 +120,56 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
     return fig
 
 
-def trend_line(table, x_field, x_title, currency, height=360):
-    """Cost per tracked action over time.
+def trend_line(table, x_field, x_title, currency, height=360,
+               freq="MS"):
+    """Cost per tracked action over time, on a date axis.
 
-    Months with a month_note (partial or lagged) are drawn as
-    hollow markers and named on the chart, so they read as
-    incomplete without relying on colour.
+    The table gets a real date per period and an empty row for each
+    missing month (freq "MS") or week (freq "W-MON"), so the line
+    breaks across gaps. Months with a month_note (partial or lagged)
+    are drawn as hollow rings and named on the chart, so they read
+    as incomplete without relying on colour.
     """
-    notes = (table["month_note"] if "month_note" in table.columns
-             else [""] * len(table))
+    table = dashboard_data.with_period_gaps(table, x_field, freq)
+    notes = (table["month_note"].fillna("")
+             if "month_note" in table.columns else [""] * len(table))
     # A flagged month has no filled dot: only the hollow ring below.
     fill = ["rgba(0,0,0,0)" if note else NEUTRAL for note in notes]
+    extra = [column for column in ("spend", "tracked_actions")
+             if column in table.columns]
     fig = go.Figure(go.Scatter(
-        x=table[x_field].astype(str), y=table["cost_per_tracked_action"],
+        x=table["period_date"], y=table["cost_per_tracked_action"],
         mode="lines+markers", name="Cost per tracked action",
+        connectgaps=False,
         line={"color": NEUTRAL, "width": 2},
         marker={"size": 9, "color": fill, "line": {"width": 0}},
-        customdata=table[["spend", "tracked_actions"]].values,
-        hovertemplate=(f"%{{x}}<br>Cost per tracked action: "
-                       f"%{{y:,.2f}} {currency}<br>Spend: "
-                       f"%{{customdata[0]:,.0f}}<br>Tracked actions: "
-                       "%{customdata[1]:,.0f}<extra></extra>")))
+        customdata=table[extra].values if len(extra) == 2 else None,
+        hovertemplate=(f"%{{x|{'%b %Y' if freq == 'MS' else '%d %b %Y'}}}"
+                       f"<br>Cost per tracked action: %{{y:,.2f}} "
+                       f"{currency}<br>Spend: %{{customdata[0]:,.0f}}"
+                       "<br>Tracked actions: %{customdata[1]:,.0f}"
+                       "<extra></extra>")))
     if "month_note" in table.columns:
-        flagged = table.loc[table["month_note"] != ""]
+        flagged = table.loc[table["month_note"].fillna("") != ""]
         if not flagged.empty:
             fig.add_trace(go.Scatter(
-                x=flagged[x_field].astype(str),
+                x=flagged["period_date"],
                 y=flagged["cost_per_tracked_action"],
                 mode="markers+text", name="Partial or lagged month",
                 text=flagged["month_note"], textposition="top center",
                 textfont={"color": GREY, "size": 11}, cliponaxis=False,
                 marker={"size": 12, "symbol": "circle-open",
                         "color": TEXT, "line": {"width": 2}},
-                hovertemplate="%{x}: %{text}<extra></extra>"))
-    fig.update_xaxes(title=x_title, type="category")
+                hovertemplate="%{x|%b %Y}: %{text}<extra></extra>"))
+    # One tick per month (or per 3, 6, 12 months on long ranges), so
+    # a month label is never repeated.
+    dtick = None
+    if freq == "MS" and table["period_date"].notna().any():
+        months = len(table)
+        dtick = ("M1" if months <= 12 else "M3" if months <= 36
+                 else "M6" if months <= 72 else "M12")
+    fig.update_xaxes(title=x_title, type="date", dtick=dtick,
+                     tickformat="%b %Y" if freq == "MS" else "%d %b %Y")
     values = table["cost_per_tracked_action"].dropna()
     top = float(values.max()) * 1.2 if len(values) else None
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",

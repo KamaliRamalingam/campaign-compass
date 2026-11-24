@@ -73,6 +73,11 @@ p, li, td, th {font-size: 14px;}
   height: 60px; z-index: 1000000; padding: 0 24px; background: transparent;
   pointer-events: none; display: flex; justify-content: center;}
 .st-key-cc_header > div {pointer-events: none;}
+.st-key-cc_header [data-testid="stHorizontalBlock"] {height: 57px;
+  align-items: center; margin: 0;}
+.st-key-cc_header [data-testid="stMarkdownContainer"],
+.st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
+.st-key-cc_header .cc-brand {height: 57px;}
 .st-key-cc_header img, .st-key-cc_header [data-testid="stSelectbox"],
 .st-key-cc_header [data-baseweb] {pointer-events: auto;}
 [data-testid="stHeader"] {height: 60px;}
@@ -116,6 +121,11 @@ p, li, td, th {font-size: 14px;}
 .cc-stat-title {font-size: 15px; font-weight: 600;}
 .cc-stat-v {font-size: 36px; font-weight: 300; line-height: 1.2;
   margin-top: 4px;}
+.cc-kpi {background: #FFFFFF; border: 1px solid #EADFCF;
+  border-radius: 8px; padding: 10px 12px; height: 100%;}
+.cc-kpi-l {font-size: 13px; font-weight: 600; color: #3B2F2A;}
+.cc-kpi-v {font-size: 22px; font-weight: 600; line-height: 1.25;
+  margin: 4px 0; overflow-wrap: anywhere; color: #3B2F2A;}
 .cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
   color: #3B2F2A;}
 
@@ -146,7 +156,8 @@ p, li, td, th {font-size: 14px;}
   vertical-align: top;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-scroll {overflow-x: auto; max-width: 100%;}
-.cc-tight th, .cc-tight td {padding: 6px 6px; font-size: 13px;}
+.stApp .cc-tight th, .stApp .cc-tight td {padding: 5px 5px;
+  font-size: 12px;}
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
@@ -186,6 +197,17 @@ p, li, td, th {font-size: 14px;}
 """
 
 
+def _ckey(name):
+    """A widget key per client.
+
+    Streamlit keeps a keyed widget's value in the browser even when
+    its options change, so after a client switch a picker could
+    still show the other client's campaign. A key per client gives
+    each client its own widget.
+    """
+    return f"{name}__{st.session_state.get('_client', '')}"
+
+
 def _heading(page, question, ctx):
     """The heading block: page label, question, data line."""
     first, last = ctx["date_range"]
@@ -217,10 +239,12 @@ def _pill(label):
 
 
 def _card(column, label, value, definition):
-    """A bordered KPI card with a one-line definition."""
-    with column.container(border=True):
-        st.metric(label, value)
-        st.caption(definition)
+    """A KPI card: label, value (wraps, never cut) and definition."""
+    column.markdown(
+        f"<div class='cc-kpi'><div class='cc-kpi-l'>{html.escape(label)}"
+        f"</div><div class='cc-kpi-v'>{html.escape(value)}</div>"
+        f"<div class='cc-muted'>{html.escape(definition)}</div></div>",
+        unsafe_allow_html=True)
 
 
 def _badge(label):
@@ -240,18 +264,55 @@ def _footnotes(lines):
 
 def _open_detail(campaign):
     """Drill-through: open the Campaign detail page on a campaign."""
-    st.session_state[DETAIL_KEY] = campaign
+    st.session_state[_ckey(DETAIL_KEY)] = campaign
     st.switch_page(PAGE_OBJECTS["Campaign detail"])
+
+
+def _html_table(table, column_config=None):
+    """A table as escaped HTML that fits its card.
+
+    Headers wrap, every column stays visible (a horizontal scroll
+    only as a last resort), missing values show as "—" and numbers
+    are rounded for display only (data.display_value). Labels and
+    formats come from column_config when given.
+    """
+    config = column_config or {}
+    columns = list(table.columns)
+    labels, patterns, numeric = [], [], []
+    for column in columns:
+        cfg = config.get(column) or {}
+        labels.append(cfg.get("label") or str(column).replace("_", " "))
+        patterns.append((cfg.get("type_config") or {}).get("format"))
+        numeric.append(pd.api.types.is_numeric_dtype(table[column])
+                       and not pd.api.types.is_bool_dtype(table[column]))
+    head = "".join(
+        f"<th{' class=n' if is_number else ''}>{html.escape(label)}</th>"
+        for label, is_number in zip(labels, numeric))
+    body = []
+    for row in table.itertuples(index=False, name=None):
+        cells = "".join(
+            f"<td{' class=n' if is_number else ''}>"
+            f"{html.escape(dashboard_data.display_value(column, value, pattern))}"
+            "</td>"
+            for column, value, pattern, is_number in zip(
+                columns, row, patterns, numeric))
+        body.append(f"<tr>{cells}</tr>")
+    return (f"<div class='cc-scroll'><table class='cc-table cc-tight'>"
+            f"<thead><tr>{head}</tr></thead>"
+            f"<tbody>{''.join(body)}</tbody></table></div>")
 
 
 def _table(table, file_name=None, column_config=None, key=None,
            height="auto"):
-    """A sortable table (click a header), with a CSV download.
+    """A table as escaped HTML, with a CSV download of the raw table.
 
-    The download is the table exactly as shown.
+    The download is the table's raw values (no display rounding).
     """
-    st.dataframe(table, hide_index=True, width="stretch",
-                 height=height, column_config=column_config or {})
+    if table is None or table.empty:
+        st.caption("No rows.")
+    else:
+        st.markdown(_html_table(table, column_config),
+                    unsafe_allow_html=True)
     if file_name:
         st.download_button(
             "Download CSV", dashboard_data.csv_bytes(table),
@@ -417,10 +478,10 @@ def _page_act(ctx):
     filters = st.columns(3)
     group = filters[0].selectbox(
         "Campaign group", dashboard_data.group_options(recs),
-        key="act_group")
+        key=_ckey("act_group"))
     status = filters[1].selectbox(
         "Status now", dashboard_data.status_options(recs),
-        key="act_status")
+        key=_ckey("act_status"))
     min_actions = filters[2].number_input(
         "Minimum tracked actions", min_value=0, value=0, step=10,
         key="act_min_actions",
@@ -451,7 +512,7 @@ def _page_act(ctx):
                        "benchmark first.")
             picks = st.columns([3, 1, 1], vertical_alignment="bottom")
             campaign = picks[0].selectbox(
-                "Campaign", list(table["campaign"]), key="act_pick")
+                "Campaign", list(table["campaign"]), key=_ckey("act_pick"))
             if picks[1].button("Open detail", type="primary",
                                key="act_open", width="stretch"):
                 _open_detail(campaign)
@@ -544,9 +605,9 @@ def _money(value, currency):
 def _recent_html(rows, currency):
     """Prior vs recent window per active campaign, as small bars.
 
-    Bar lengths are relative to the largest value shown. A rise
-    (recent / prior above 1) gets a warning tag with the trend as
-    named in the data; label colours are never used here.
+    Bar lengths are relative to the largest value shown. A rise, as
+    judged by the pipeline (recent_trend "worsening"), gets a warning
+    tag; label colours are never used here.
     """
     values = pd.concat([rows["prior_cost_per_tracked_action"],
                         rows["recent_cost_per_tracked_action"]])
@@ -561,7 +622,7 @@ def _recent_html(rows, currency):
                     f"background:{colour}'></span>")
         ratio = row["recent_vs_prior_ratio"]
         trend = _readable(row["recent_trend"])
-        if ratio is not None and not pd.isna(ratio) and ratio > 1:
+        if str(row["recent_trend"]) == "worsening":
             flag = f"<span class='cc-tag'>⚠ {html.escape(trend)}</span>"
         else:
             flag = f"<span class='cc-muted'>{html.escape(trend)}</span>"
@@ -598,7 +659,7 @@ def _trend_campaign(ctx):
     default = active[0] if active else campaigns[0]
     return st.selectbox("Campaign for the monthly trend", campaigns,
                         index=campaigns.index(default),
-                        key="ctx_trend_campaign")
+                        key=_ckey("ctx_trend_campaign"))
 
 
 def _card_recent(ctx):
@@ -669,7 +730,8 @@ def _card_weekday(ctx, pooled):
     st.plotly_chart(charts.weekday_bar(pooled, currency,
                                        highlight=busiest,
                                        note="most pooled clicks"),
-                    width="stretch", key="ctx_weekday_chart")
+                    width="stretch", key="ctx_weekday_chart",
+                    config={"displayModeBar": False})
     if busiest is not None:
         st.caption(f"Outlined: {busiest}, the weekday with the most "
                    "pooled clicks. Pooled over the time groups in the "
@@ -726,6 +788,13 @@ def _card_journey(ctx):
     else:
         st.plotly_chart(charts.intent_stack(long), width="stretch",
                         key="ctx_journey_chart")
+
+
+def _journey_tables(ctx):
+    """Journey table and break-even, full width (too many columns
+    for a half-width card)."""
+    tables = ctx["tables"]
+    journey_raw = tables["journey_by_campaign"]
     with st.expander("Journey table"):
         journey = dashboard_data.display_table(
             dashboard_data.journey_display(journey_raw)).rename(columns={
@@ -806,7 +875,7 @@ def _weekday_breakdown(mix, loo, top, focus):
     weekday = st.selectbox(
         "Weekday to break down", short,
         index=short.index(focus) if focus in short else 0,
-        key="ctx_weekday",
+        key=_ckey("ctx_weekday"),
         help="Default: the weekday with the most pooled clicks")
     left, right = st.columns([1, 1], gap="large")
     with left:
@@ -939,6 +1008,7 @@ def _page_context(ctx):
             _completeness(ctx, campaign)
     with below[1]:
         _distorting(ctx)
+    _journey_tables(ctx)
     _context_method(ctx)
 
 
@@ -978,8 +1048,10 @@ def _detail_trend(ctx, campaign):
     start, end = _period_slider(table[x_field], "Period",
                                 f"detail_period_{key}")
     table = dashboard_data.filter_period(table, x_field, start, end)
-    st.plotly_chart(charts.trend_line(table, x_field, x_title, currency),
-                    width="stretch", key=f"detail_trend_{key}")
+    st.plotly_chart(charts.trend_line(
+        table, x_field, x_title, currency,
+        freq="MS" if x_field == "month" else "W-MON"),
+        width="stretch", key=f"detail_trend_{key}")
     if "month_note" in table.columns:
         st.caption("Hollow ring = partial or lagged month. Monthly "
                    "source: day is the daily export, month is the "
@@ -1086,10 +1158,10 @@ def _page_detail(ctx):
     if not options:
         st.info("No campaigns.")
         return
-    if st.session_state.get(DETAIL_KEY) not in options:
-        st.session_state[DETAIL_KEY] = options[0]
+    if st.session_state.get(_ckey(DETAIL_KEY)) not in options:
+        st.session_state[_ckey(DETAIL_KEY)] = options[0]
     campaign = picker.selectbox(
-        "Campaign", options, key=DETAIL_KEY,
+        "Campaign", options, key=_ckey(DETAIL_KEY),
         help="Ordered as in the Act ranking; not-comparable last.")
     detail = dashboard_data.campaign_detail(
         recs, tables["recent_trend"], campaign)
@@ -1161,7 +1233,8 @@ def _page_detail(ctx):
                 st.caption("This campaign's cost per tracked action by "
                            "weekday.")
                 st.plotly_chart(charts.weekday_bar(weekday, currency),
-                                width="stretch", key="detail_weekday")
+                                width="stretch", key="detail_weekday",
+                                config={"displayModeBar": False})
                 _table(dashboard_data.display_table(weekday),
                        f"weekday_{campaign}.csv",
                        key="detail_weekday_table")
@@ -1252,10 +1325,40 @@ LOGO_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
               ".webp": "image/webp"}
 
 
+LOGO_HEIGHT = 120  # pixels kept in memory: sharp at 40px on 2x screens
+
+
+@st.cache_data(show_spinner=False)
+def _logo_data(path_text, mtime):
+    """(media type, base64) of the logo, downscaled in memory.
+
+    A raster logo taller than LOGO_HEIGHT is resized (aspect ratio
+    kept) so a large file is not sent in full on every rerun. The
+    file on disk is never changed. mtime is part of the cache key.
+    """
+    path = Path(path_text)
+    kind = LOGO_TYPES.get(path.suffix.lower(), "image/png")
+    raw = path.read_bytes()
+    if kind != "image/svg+xml":
+        try:
+            import io
+            from PIL import Image
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.height > LOGO_HEIGHT:
+                    width = round(image.width * LOGO_HEIGHT / image.height)
+                    small = image.resize((width, LOGO_HEIGHT),
+                                         Image.LANCZOS)
+                    out = io.BytesIO()
+                    small.save(out, format="PNG", optimize=True)
+                    raw, kind = out.getvalue(), "image/png"
+        except Exception:  # an unreadable image: send the file as is
+            pass
+    return kind, base64.b64encode(raw).decode("ascii")
+
+
 def _logo_img(path):
     """The logo as an inline <img> (read locally, never uploaded)."""
-    kind = LOGO_TYPES.get(path.suffix.lower(), "image/png")
-    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    kind, data = _logo_data(str(path), path.stat().st_mtime)
     return (f"<img class='cc-logo' alt='Logo' "
             f"src='data:{kind};base64,{data}'>")
 

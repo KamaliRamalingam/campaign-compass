@@ -261,3 +261,58 @@ def test_recent_rows_capped_and_most_clicks_weekday():
     assert empty.empty and more == 0
     assert dd.most_clicks_weekday(pd.DataFrame(
         {"weekday": ["Mon"], "tracked_actions": [1]})) is None
+
+
+def test_journey_takeaway_leaves_out_the_core_group_row():
+    journey = pd.DataFrame({
+        "campaign": ["A", "B", "core group"],
+        "tracked_actions": [90.0, 10.0, 100.0],
+        "directions_share": [1.0, 0.0, 0.9],
+        "calls_share": [0.0, 1.0, 0.1]})
+    assert dd.journey_takeaway(journey) == (
+        "Across 2 campaigns, 90% of tracked actions are directions "
+        "requests and 10% are calls.")
+
+
+def test_with_period_gaps_months_and_weeks():
+    months = pd.DataFrame({"month": ["2026-01", "2026-02", "2026-05"],
+                           "cost_per_tracked_action": [1.0, 2.0, 3.0],
+                           "month_note": ["", "partial", ""]})
+    out = dd.with_period_gaps(months, "month", "MS")
+    assert list(out["month"]) == ["2026-01", "2026-02", "2026-03",
+                                  "2026-04", "2026-05"]
+    assert out["cost_per_tracked_action"].isna().tolist() == [
+        False, False, True, True, False]
+    assert list(out["month_note"]) == ["", "partial", "", "", ""]
+    assert str(out["period_date"].dtype).startswith("datetime64")
+    weeks = pd.DataFrame({"week_start": ["2026-01-05", "2026-01-19"],
+                          "cost_per_tracked_action": [1.0, 2.0]})
+    out = dd.with_period_gaps(weeks, "week_start", "W-MON")
+    assert list(out["week_start"]) == ["2026-01-05", "2026-01-12",
+                                       "2026-01-19"]
+    # The input table is unchanged.
+    assert len(months) == 3 and "period_date" not in months.columns
+
+
+def test_display_value_rounds_by_column_and_shows_dash():
+    assert dd.display_value("spend", 177041.37) == "177,041"
+    assert dd.display_value("tracked_actions", 3632.5) == "3,632"
+    assert dd.display_value("tracked actions", 932.5) == "932"
+    assert dd.display_value("clicks", 14394.0) == "14,394"
+    assert dd.display_value("cost_per_tracked_action", 5.367721) == "5.37"
+    assert dd.display_value("loo_min", 4.8812) == "4.88"
+    assert dd.display_value("share_of_weekday_clicks", 0.18934) == "0.19"
+    assert dd.display_value("actions_per_click", 0.30469) == "0.305"
+    assert dd.display_value("loo_max", None) == "—"
+    assert dd.display_value("spend", float("nan")) == "—"
+    assert dd.display_value("display", "+728 tracked actions") == \
+        "+728 tracked actions"
+    # A column_config pattern wins, with thousands separators.
+    assert dd.display_value("x", 1.2345, "%.2fx") == "1.23x"
+    assert dd.display_value("x", 12271.2, "%.0f") == "12,271"
+    assert dd.display_value("x", 3.0, "%d") == "3"
+
+
+def test_display_value_cost_per_click_is_a_cost():
+    assert dd.display_value("cost_per_click", 0.91567) == "0.92"
+    assert dd.display_value("tracked_actions_per_click", 0.37712) == "0.377"

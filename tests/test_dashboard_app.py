@@ -112,11 +112,11 @@ def test_open_detail_drills_through_to_campaign_detail():
     script = AppTest.from_file(str(DASHBOARD / "app.py"),
                                default_timeout=60)
     script.run()
-    picked = script.selectbox(key="act_pick")
+    picked = script.selectbox(key="act_pick__restaurant")
     choice = picked.options[-1]
     picked.set_value(choice).run()
     script.button(key="act_open").click().run()
     assert not script.exception, script.exception
     text = " ".join(block.value for block in script.markdown)
     assert "How has this campaign performed?" in text
-    assert script.selectbox(key="detail_campaign").value == choice
+    assert script.selectbox(key="detail_campaign__restaurant").value == choice
