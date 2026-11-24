@@ -167,6 +167,33 @@ def trend_line(table, x_field, x_title, currency):
     return _layout(fig, height=360)
 
 
+def recent_vs_prior_bar(rows, currency):
+    """Prior and recent cost per tracked action per active campaign.
+
+    rows: data.recent_trend_rows. Prior is grey, recent navy; the
+    legend names both, so colour is not the only cue.
+    """
+    fig = go.Figure()
+    for column, name, colour in (
+            ("prior_cost_per_tracked_action", "Prior window", GRID),
+            ("recent_cost_per_tracked_action", "Recent window", NAVY)):
+        values = rows[column]
+        fig.add_trace(go.Bar(
+            x=rows["campaign"], y=values, name=name,
+            marker_color=colour,
+            marker_line={"color": NAVY, "width": 1},
+            text=[f"{value:,.2f}" if value == value else ""
+                  for value in values],
+            textposition="outside", cliponaxis=False,
+            hovertemplate=(f"%{{x}}<br>{name}: %{{y:,.2f}} {currency}"
+                           "<extra></extra>")))
+    fig.update_layout(barmode="group")
+    fig.update_xaxes(title=None, type="category")
+    fig.update_yaxes(title=f"Cost per tracked action ({currency})",
+                     rangemode="tozero")
+    return _layout(fig, height=340)
+
+
 def weekday_bar(table, currency, highlight=None):
     """Cost per tracked action by weekday, Monday to Sunday."""
     short = str(highlight)[:3] if highlight else None

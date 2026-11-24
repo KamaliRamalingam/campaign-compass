@@ -987,6 +987,80 @@ def trend_with_flags(timeline_df, campaign):
     return table.drop(columns=flags)
 
 
+def _plural(count, word):
+    return f"{count} {word}" + ("" if count == 1 else "s")
+
+
+def trend_takeaway(rows):
+    """One sentence: how many active campaigns have each trend.
+
+    rows: recent_trend_rows. Trends are named as in the data
+    (underscores to spaces), most frequent first.
+    """
+    if rows is None or rows.empty:
+        return "No active campaign has a recent trend."
+    counts = rows["recent_trend"].fillna("unknown").astype(str) \
+        .value_counts()
+    parts = ", ".join(f"{count} {trend.replace('_', ' ')}"
+                      for trend, count in counts.items())
+    return (f"{_plural(len(rows), 'active campaign')} with a recent "
+            f"trend: {parts}.")
+
+
+def weekday_takeaway(pooled, currency, change=None, scenario=None):
+    """One sentence: cheapest and dearest weekday, then the what-if.
+
+    pooled: weekday_core_table. change and scenario: the what-if
+    range text and scenario (what_if_parts), or None.
+    """
+    costs = pooled.dropna(subset=["cost_per_tracked_action"])
+    if costs.empty:
+        text = "No weekday has a cost per tracked action."
+    else:
+        low = costs.loc[costs["cost_per_tracked_action"].idxmin()]
+        high = costs.loc[costs["cost_per_tracked_action"].idxmax()]
+        text = (f"Cost per tracked action is lowest on {low['weekday']} "
+                f"({low['cost_per_tracked_action']:,.2f} {currency}) and "
+                f"highest on {high['weekday']} "
+                f"({high['cost_per_tracked_action']:,.2f} {currency}).")
+    if change:
+        what = f"{scenario}: " if scenario else "Moving spend: "
+        text += f" {what}{change}, a linear estimate."
+    return text
+
+
+def lag_takeaway(summary, configured):
+    """One sentence: does another conversion lag change anything?"""
+    changes = summary.drop(columns=["lag"]).fillna(0).to_numpy().sum()
+    return (f"Configured lag: {configured} days. "
+            + ("No trend or label changes with any other lag."
+               if changes == 0 else
+               "Some trends or labels change with another lag: treat "
+               "the most recent weeks with care."))
+
+
+def journey_takeaway(journey):
+    """One sentence: pooled share of directions and calls.
+
+    Shares are weighted by each campaign's tracked actions.
+    """
+    total = float(journey["tracked_actions"].sum()) \
+        if "tracked_actions" in journey.columns else 0.0
+    if not total:
+        return "No tracked actions to split by type."
+
+    def share(column):
+        if column not in journey.columns:
+            return 0.0
+        return float((journey[column].fillna(0)
+                      * journey["tracked_actions"]).sum()) / total
+
+    return (f"Across {_plural(len(journey), 'campaign')}, "
+            f"{share('directions_share'):.0%} of tracked actions are "
+            f"directions requests and {share('calls_share'):.0%} are "
+            f"calls.")
+
+
 def recent_trend_rows(recent_trend, recommendations):
     """Active campaigns' recent trend: recent vs prior cost and windows."""
     if recent_trend is None or recent_trend.empty:

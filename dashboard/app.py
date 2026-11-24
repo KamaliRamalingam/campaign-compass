@@ -65,6 +65,7 @@ h1, h2, h3, h4 {color: #1F3A5F !important;}
           line-height: 1.6;}
 .cc-todo .cc-counts {color: #5B6573; font-size: 0.95rem;}
 .cc-todo .cc-first {font-size: 1.15rem;}
+.cc-take {font-size: 1.05rem; color: #1C2430; margin: -0.2rem 0 0.8rem;}
 </style>
 """
 
@@ -401,25 +402,32 @@ BENCHMARK_NAMES = {
 }
 
 
-def _section(question, subtitle):
-    """A section heading on the Context page."""
-    st.write("")
-    _title(question, subtitle, level=3)
+def _section(question):
+    """A tab's question heading on the Context page."""
+    st.markdown(f"### {question}")
+
+
+def _takeaway(text):
+    """The one-sentence takeaway under a tab's question."""
+    st.markdown(f"<p class='cc-take'>{html.escape(text)}</p>",
+                unsafe_allow_html=True)
 
 
 def _context_trend(ctx):
-    """Has performance changed recently?"""
+    """Recent change: recent vs prior window per active campaign."""
     tables = ctx["tables"]
     currency = ctx["currency"]
-    _section("Has performance changed recently?",
-             "Recent window against the prior window for active "
-             "campaigns, and the monthly trend with incomplete months "
-             "marked.")
+    _section("Has performance changed recently?")
     rows = dashboard_data.recent_trend_rows(
         tables["recent_trend"], ctx["all_recommendations"])
+    _takeaway(dashboard_data.trend_takeaway(rows))
     if rows.empty:
-        st.caption("No active campaign has a recent trend.")
-    else:
+        return
+    st.plotly_chart(charts.recent_vs_prior_bar(rows, currency),
+                    width="stretch", key="ctx_recent_chart")
+    st.caption("Cost per tracked action in the recent window against "
+               "the prior window, for active campaigns.")
+    with st.expander("Recent trend table"):
         _table(rows.drop(columns=["recent_tracked_actions"]),
                "recent_trend.csv", key="ctx_recent",
                column_config={
@@ -435,67 +443,77 @@ def _context_trend(ctx):
                    "recent_vs_prior_ratio": NUM(
                        "Recent / prior", format="%.2fx"),
                })
-    timeline = tables["timeline_by_campaign"]
-    campaigns = sorted(set(timeline["campaign"]))
-    if not campaigns:
-        return
-    active = [name for name in rows["campaign"] if name in campaigns]
-    default = active[0] if active else campaigns[0]
-    campaign = st.selectbox("Campaign for the monthly trend", campaigns,
-                            index=campaigns.index(default),
-                            key="ctx_trend_campaign")
-    table = dashboard_data.trend_with_flags(timeline, campaign)
-    st.plotly_chart(charts.trend_line(table, "month", "Month", currency),
-                    width="stretch", key="ctx_trend_chart")
-    st.caption("Hollow ring = partial month (the campaign ran only part "
-               "of it) or lagged month (days still being reported). "
-               "Do not read a jump in those months as a change.")
 
 
-def _context_lag(ctx):
-    """Is the latest data complete?"""
-    _section("Is the latest data complete?",
-             "Tracked actions can arrive days late. The lag check "
-             "reruns the recent signals with other lags and counts "
-             "what changes.")
+def _context_completeness(ctx):
+    """Data completeness: monthly trend with incomplete months, lag."""
+    tables = ctx["tables"]
+    currency = ctx["currency"]
+    _section("Is the latest data complete?")
     config = ctx["config"]
     configured = (config.get("analysis", {}).get("recent_trend", {})
                   .get("conversion_lag_days"))
     lag_check = ctx["optional"]["lag_check"]
+    summary = None
     if lag_check is None:
         st.info("The lag check is not turned on for this client "
                 "(recent_trend.lag_check_days in its config).")
-        return
-    summary = dashboard_data.lag_check_summary(lag_check)
-    changes = summary.drop(columns=["lag"]).fillna(0).to_numpy().sum()
-    st.markdown(f"Configured lag: **{configured} days** (unchanged). "
-                + ("No trend or label changes with any other lag."
-                   if changes == 0 else
-                   "Some trends or labels change with another lag: "
-                   "treat the most recent weeks with care."))
-    _table(summary, "lag_check_summary.csv", key="ctx_lag",
-           column_config={
-               "lag": NUM("Lag (days)", format="%d"),
-               "trend_changes": NUM("Trend changes", format="%d"),
-               "label_changes": NUM("Label changes", format="%d")})
-    with st.expander("All lag-check counts"):
-        _table(lag_check, "lag_check.csv", key="ctx_lag_all")
+    else:
+        summary = dashboard_data.lag_check_summary(lag_check)
+        _takeaway(dashboard_data.lag_takeaway(summary, configured))
+    timeline = tables["timeline_by_campaign"]
+    campaigns = sorted(set(timeline["campaign"]))
+    if campaigns:
+        rows = dashboard_data.recent_trend_rows(
+            tables["recent_trend"], ctx["all_recommendations"])
+        active = [name for name in rows["campaign"] if name in campaigns]
+        default = active[0] if active else campaigns[0]
+        campaign = st.selectbox("Campaign for the monthly trend",
+                                campaigns, index=campaigns.index(default),
+                                key="ctx_trend_campaign")
+        table = dashboard_data.trend_with_flags(timeline, campaign)
+        st.plotly_chart(charts.trend_line(table, "month", "Month",
+                                          currency),
+                        width="stretch", key="ctx_trend_chart")
+        st.caption("Hollow ring = partial month (the campaign ran only "
+                   "part of it) or lagged month (days still being "
+                   "reported). Do not read a jump in those months as a "
+                   "change.")
+    if summary is not None:
+        with st.expander("Lag check by lag"):
+            st.caption("Tracked actions can arrive days late. The lag "
+                       "check reruns the recent signals with other lags "
+                       "and counts what changes.")
+            _table(summary, "lag_check_summary.csv", key="ctx_lag",
+                   column_config={
+                       "lag": NUM("Lag (days)", format="%d"),
+                       "trend_changes": NUM("Trend changes", format="%d"),
+                       "label_changes": NUM("Label changes",
+                                            format="%d")})
+        with st.expander("All lag-check counts"):
+            _table(lag_check, "lag_check.csv", key="ctx_lag_all")
 
 
 def _context_weekday(ctx):
-    """Do weekdays differ, and is one day distorting it?"""
+    """Weekdays and spend: weekday chart, one-day breakdown, what-if."""
     tables = ctx["tables"]
     optional = ctx["optional"]
     currency = ctx["currency"]
-    _section("Do weekdays differ, and is one day distorting it?",
-             "Pooled over the time groups in the config; then each "
-             "campaign's share of one weekday and the weekday with "
-             "each campaign left out.")
+    _section("Do weekdays differ, and would moving spend help?")
     try:
         pooled = dashboard_data.weekday_core_table(tables["weekday_core"])
     except ValueError as exc:
         st.error(str(exc))
         return
+    rows, span = dashboard_data.what_if_parts(
+        tables["what_if_weekday_shift"])
+    scenario = (rows["scenario"].iloc[0]
+                if "scenario" in rows.columns and not rows.empty else None)
+    change = span["display"] if span is not None else (
+        rows["display"].iloc[0]
+        if "display" in rows.columns and not rows.empty else None)
+    _takeaway(dashboard_data.weekday_takeaway(pooled, currency, change,
+                                              scenario))
     mix = optional["weekday_mix_by_campaign"]
     loo = optional["weekday_leave_one_out"]
     top = optional["weekday_top_days"]
@@ -507,14 +525,28 @@ def _context_weekday(ctx):
                     width="stretch", key="ctx_weekday_chart")
     if focus:
         st.caption(f"Highlighted: {full.get(focus, focus)}, the weekday "
-                   f"with the most pooled clicks.")
+                   f"with the most pooled clicks. Pooled over the time "
+                   f"groups in the config.")
+    note = rows["note"].iloc[0] if "note" in rows.columns \
+        and not rows.empty else ""
+    if note:
+        st.warning(f"{note}.", icon="⚠️")
     with st.expander("Pooled weekday table"):
         _table(dashboard_data.display_table(pooled), "weekday_pooled.csv",
                key="ctx_weekday_pooled")
     if mix is None or loo is None:
         st.info("The weekday decomposition is not turned on for this "
                 "client (analysis.weekday_decomposition in its config).")
-        return
+    else:
+        label = full.get(focus, focus) if focus else "one weekday"
+        with st.expander(f"Is one campaign distorting {label}?"):
+            _weekday_breakdown(mix, loo, top, focus)
+    with st.expander("What would moving spend do?"):
+        _what_if(rows, span, currency)
+
+
+def _weekday_breakdown(mix, loo, top, focus):
+    """Who makes up one weekday, and the weekday with each left out."""
     short = [day[:3] for day in dashboard_data.WEEKDAYS
              if day[:3] in set(mix["weekday"])]
     weekday = st.selectbox(
@@ -548,20 +580,14 @@ def _context_weekday(ctx):
                    "clicks": NUM("Clicks", format="%.0f")})
     if top is not None and not top.empty:
         top_weekday = top["weekday"].iloc[0]
-        with st.expander(f"Top {len(top)} {top_weekday}s by pooled clicks "
-                         f"(together "
-                         f"{top['share_of_weekday_clicks'].sum():.1%} of "
-                         f"{top_weekday} clicks)"):
-            _table(top, "weekday_top_days.csv", key="ctx_top")
+        st.markdown(f"**Top {len(top)} {top_weekday}s by pooled clicks** "
+                    f"(together {top['share_of_weekday_clicks'].sum():.1%}"
+                    f" of {top_weekday} clicks)")
+        _table(top, "weekday_top_days.csv", key="ctx_top")
 
 
-def _context_what_if(ctx):
-    """What would moving spend do?"""
-    _section("What would moving spend do?",
-             "Moving weekday spend to the weekend, as a linear estimate "
-             "for each variant of the groups.")
-    rows, span = dashboard_data.what_if_parts(
-        ctx["tables"]["what_if_weekday_shift"])
+def _what_if(rows, span, currency):
+    """Moving weekday spend to the weekend, per variant of the groups."""
     if span is not None:
         with st.container(border=True):
             st.metric("Change in tracked actions, range across variants",
@@ -578,23 +604,19 @@ def _context_what_if(ctx):
     _table(shown, "what_if.csv", key="ctx_what_if", column_config={
         "groups": WIDE("Groups"),
         "scenario": WIDE("Scenario"),
-        "spend_moved": NUM(f"Spend moved ({ctx['currency']})",
-                           format="%.0f"),
+        "spend_moved": NUM(f"Spend moved ({currency})", format="%.0f"),
         "tracked_actions_before": NUM("Actions before", format="%.0f"),
         "tracked_actions_after": NUM("Actions after", format="%.0f"),
         "display": WIDE("Change")})
-    note = rows["note"].iloc[0] if "note" in rows.columns else ""
-    if note:
-        st.warning(f"{note}.", icon="⚠️")
 
 
 def _context_journey(ctx):
-    """How do people reach the restaurant?"""
+    """How people reach us: directions, calls, store visits."""
     tables = ctx["tables"]
-    _section("How do people reach the restaurant?",
-             "Share of each campaign's tracked actions that are "
-             "directions requests, calls or store visits.")
-    long = dashboard_data.journey_intent_long(tables["journey_by_campaign"])
+    _section("How do people reach the restaurant?")
+    journey_raw = tables["journey_by_campaign"]
+    _takeaway(dashboard_data.journey_takeaway(journey_raw))
+    long = dashboard_data.journey_intent_long(journey_raw)
     if long.empty:
         st.caption("No journey rows.")
     else:
@@ -602,22 +624,21 @@ def _context_journey(ctx):
                         key="ctx_journey_chart")
     with st.expander("Journey table"):
         journey = dashboard_data.display_table(
-            dashboard_data.journey_display(
-                tables["journey_by_campaign"])).rename(columns={
-            "directions share": "directions share (%)",
-            "calls share": "calls share (%)",
-            "store visits share": "store visits share (%)"})
+            dashboard_data.journey_display(journey_raw)).rename(columns={
+                "directions share": "directions share (%)",
+                "calls share": "calls share (%)",
+                "store visits share": "store visits share (%)"})
         _table(journey, "journey.csv", key="ctx_journey", column_config={
             "campaign": WIDE("Campaign", width="large", pinned=True)})
     break_even = ctx["break_even"]
     if break_even is not None:
-        st.markdown("**Break-even** (illustration: tracked actions are not "
-                    "visits)")
-        _table(dashboard_data.display_table(break_even), "break_even.csv",
-               key="ctx_break_even", column_config={
-                   "campaign": WIDE("Campaign", width="large",
-                                    pinned=True),
-                   "note": WIDE("Note", width="large")})
+        with st.expander("Break-even (illustration: tracked actions are "
+                         "not visits)"):
+            _table(dashboard_data.display_table(break_even),
+                   "break_even.csv", key="ctx_break_even", column_config={
+                       "campaign": WIDE("Campaign", width="large",
+                                        pinned=True),
+                       "note": WIDE("Note", width="large")})
 
 
 def _context_method(ctx):
@@ -671,21 +692,22 @@ def _context_method(ctx):
 
 
 def _page_context(ctx):
-    """Can we trust this? Trend, lag, weekdays, what-if, journey."""
+    """Can we trust this? Four tabs, then method and definitions."""
     _title("Context: can we trust this?",
-           "Checks to read before acting on a label: recent change, "
-           "data completeness, weekday effects, what moving spend "
-           "would do and how people reach the restaurant.", level=1)
+           "Checks to read before acting on a label. Each tab answers "
+           "one question.", level=1)
     _context(ctx)
-    _context_trend(ctx)
-    st.divider()
-    _context_lag(ctx)
-    st.divider()
-    _context_weekday(ctx)
-    st.divider()
-    _context_what_if(ctx)
-    st.divider()
-    _context_journey(ctx)
+    recent, weekdays, completeness, journey = st.tabs([
+        "Recent change", "Weekdays and spend", "Data completeness",
+        "How people reach us"])
+    with recent:
+        _context_trend(ctx)
+    with weekdays:
+        _context_weekday(ctx)
+    with completeness:
+        _context_completeness(ctx)
+    with journey:
+        _context_journey(ctx)
     _context_method(ctx)
 
 

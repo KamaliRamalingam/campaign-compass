@@ -289,3 +289,49 @@ def test_optional_tables_are_none_when_missing(tmp_path):
     assert list(tables["lag_check"]["lag"]) == [3]
     assert tables["weekday_top_days"] is None
     assert set(tables) == set(dd.OPTIONAL_PATHS)
+
+
+def test_trend_takeaway_counts_trends():
+    rows = pd.DataFrame({"campaign": ["A", "B", "C"],
+                         "recent_trend": ["worsening", "stable",
+                                          "worsening"]})
+    assert dd.trend_takeaway(rows) == (
+        "3 active campaigns with a recent trend: 2 worsening, 1 stable.")
+    assert dd.trend_takeaway(rows.iloc[:1]) == (
+        "1 active campaign with a recent trend: 1 worsening.")
+    assert dd.trend_takeaway(rows.iloc[:0]) == (
+        "No active campaign has a recent trend.")
+
+
+def test_weekday_takeaway_low_high_and_what_if():
+    pooled = pd.DataFrame({"weekday": ["Mon", "Tue", "Sat"],
+                           "cost_per_tracked_action": [5.0, 6.5, 3.25]})
+    text = dd.weekday_takeaway(pooled, "SEK", "+10 tracked actions",
+                               "Move spend")
+    assert text == ("Cost per tracked action is lowest on Sat (3.25 SEK) "
+                    "and highest on Tue (6.50 SEK). Move spend: "
+                    "+10 tracked actions, a linear estimate.")
+    assert "linear" not in dd.weekday_takeaway(pooled, "SEK")
+
+
+def test_lag_takeaway_zero_and_some_changes():
+    summary = pd.DataFrame({"lag": [3, 5], "trend_changes": [0, 0],
+                            "label_changes": [0, 0]})
+    assert dd.lag_takeaway(summary, 3) == (
+        "Configured lag: 3 days. No trend or label changes with any "
+        "other lag.")
+    summary.loc[1, "label_changes"] = 1
+    assert "treat the most recent weeks with care" in \
+        dd.lag_takeaway(summary, 3)
+
+
+def test_journey_takeaway_weights_by_tracked_actions():
+    journey = pd.DataFrame({"campaign": ["A", "B"],
+                            "tracked_actions": [300.0, 100.0],
+                            "directions_share": [1.0, 0.0],
+                            "calls_share": [0.0, 1.0]})
+    assert dd.journey_takeaway(journey) == (
+        "Across 2 campaigns, 75% of tracked actions are directions "
+        "requests and 25% are calls.")
+    assert dd.journey_takeaway(journey.iloc[:0]) == (
+        "No tracked actions to split by type.")
