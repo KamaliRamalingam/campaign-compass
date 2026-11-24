@@ -612,51 +612,106 @@ def scope_groups(config, benchmarks=None):
     return [str(name) for name in judged or []], [str(n) for n in bench]
 
 
-def act_summary(recommendations):
-    """What to do: running campaigns, ended ones to know, label counts.
+def first_clause(text):
+    """Text up to the first semicolon or sentence end, never reworded.
 
-    Uses all recommendations (never a filtered view). Returns a dict:
-    running, every campaign whose status_now is active; ended, ended
-    campaigns labelled pause_or_review (do not restart them as they
-    were); restart, ended campaigns labelled continue, best (lowest)
-    ratio first. All lists of dicts with campaign, label and action;
-    running and ended in the order of the ranked action table
-    (not_comparable last).
-    counts, a list of (label, count) in urgency order, zeros left out.
+    "keep running, but test changes; cost ... risen" -> "keep running,
+    but test changes". Missing text gives "".
     """
-    counts = recommendations["label"].value_counts()
-    order = sorted(counts.index, key=lambda label: LABEL_RANK.get(label, 9))
+    if text is None or (not isinstance(text, str) and pd.isna(text)):
+        return ""
+    text = str(text).strip()
+    cuts = [index for index in (text.find(";"), text.find(". "))
+            if index >= 0]
+    if cuts:
+        text = text[:min(cuts)]
+    return text.rstrip(" .")
+
+
+TILE_LABELS = ("pause_or_review", "test", "continue")
+
+
+def act_summary(recommendations, max_lines=3):
+    """Per-tile data for the Act page's four decision tiles.
+
+    Uses all recommendations (never a filtered view), so the counts
+    match the labels in the data. Returns a dict:
+    tiles: one dict per judged label (pause_or_review, test,
+    continue) with label, count, lines (at most max_lines, in the
+    order of the ranked action table) and more (how many are not
+    listed). running: every campaign whose status_now is active (in
+    ranked order, not_comparable last), with its label.
+    Each line: campaign, label, status, running (True when active)
+    and action (the action text up to its first semicolon or
+    sentence end). A campaign with an empty label is in no tile.
+    """
     ranked = action_table(recommendations)[
-        ["campaign", "label", "status_now", "action",
-         "ratio_to_benchmark"]]
+        ["campaign", "label", "status_now", "action"]]
     others = recommendations.loc[
         recommendations["label"] == NOT_COMPARABLE,
         ["campaign", "label", "status_now", "action_text"]].rename(
         columns={"action_text": "action"})
     ranked = pd.concat([ranked, others], ignore_index=True)
 
-    def entries(rows):
-        return [{"campaign": str(row["campaign"]), "label": row["label"],
-                 "action": "" if row["action"] is None
-                 or pd.isna(row["action"]) else str(row["action"])}
-                for _, row in rows.iterrows()]
+    def line(row):
+        label = row["label"]
+        status = row["status_now"]
+        status = "" if status is None or pd.isna(status) else str(status)
+        return {"campaign": str(row["campaign"]),
+                "label": None if label is None or pd.isna(label)
+                else label,
+                "status": status.replace("_", " "),
+                "running": status == "active",
+                "action": first_clause(row["action"])}
 
+    tiles = []
+    for label in TILE_LABELS:
+        part = ranked.loc[ranked["label"] == label]
+        tiles.append({
+            "label": label,
+            "count": int(len(part)),
+            "lines": [line(row) for _, row in
+                      part.head(max_lines).iterrows()],
+            "more": max(0, int(len(part)) - max_lines),
+        })
     status = ranked["status_now"].astype(str)
-    restart = ranked.loc[(status == "ended")
-                         & (ranked["label"] == "continue")].copy()
-    restart["_ratio"] = pd.to_numeric(restart["ratio_to_benchmark"],
-                                      errors="coerce")
-    restart = restart.sort_values(["_ratio", "campaign"],
-                                  na_position="last", kind="stable")
-    return {
-        "running": entries(ranked.loc[status == "active"]),
-        "ended": entries(ranked.loc[(status == "ended")
-                                    & (ranked["label"]
-                                       == "pause_or_review")]),
-        "restart": entries(restart),
-        "counts": [(label, int(counts[label])) for label in order
-                   if counts[label] > 0],
-    }
+    running = [line(row) for _, row in
+               ranked.loc[status == "active"].iterrows()]
+    return {"tiles": tiles, "running": running}
+
+
+def ratio_bar_rows(table, recommendations, cap=2.5):
+    """Bars for the Act page's ratio chart, in the table's order.
+
+    table: action_table (already filtered). One row per judged
+    campaign with a ratio to the benchmark. shown is the ratio cut
+    at cap (the axis edge), over is True when the ratio is above
+    it (the real value is written on the bar). worsening is True
+    when the label comes from the trend override (trend_override
+    is set in recommendations_by_campaign.csv).
+    """
+    columns = ["campaign", "label", "label_text", "colour", "ratio",
+               "shown", "over", "worsening", "label_period",
+               "cost_per_tracked_action", "benchmark"]
+    part = table.loc[table["label"].isin(JUDGED_LABELS)].copy()
+    part["ratio"] = pd.to_numeric(part["ratio_to_benchmark"],
+                                  errors="coerce")
+    part = part.dropna(subset=["ratio"])
+    if part.empty:
+        return pd.DataFrame(columns=columns)
+    override = {}
+    if "trend_override" in recommendations.columns:
+        for name, value in zip(recommendations["campaign"],
+                               recommendations["trend_override"]):
+            override[name] = (value is not None and not pd.isna(value)
+                              and str(value).strip() != "")
+    part["label_text"] = part["label"].map(label_text)
+    part["colour"] = part["label"].map(label_colour)
+    part["shown"] = part["ratio"].clip(upper=cap)
+    part["over"] = part["ratio"] > cap
+    part["worsening"] = [override.get(name, False)
+                         for name in part["campaign"]]
+    return part[columns].reset_index(drop=True)
 
 
 def campaign_detail(recommendations, recent_trend, campaign):

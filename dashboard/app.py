@@ -20,6 +20,7 @@ date range and the last-updated date. The wording is "tracked
 actions" everywhere.
 """
 
+import base64
 import html
 import sys
 from pathlib import Path
@@ -48,10 +49,13 @@ GREEN = "#254C31"
 STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap');
-html, body, [class*="st-"], .stApp, button, input, select, textarea {
+html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
+.stApp button, .stApp td, .stApp th, .stApp li, .stApp a {
   font-family: 'Open Sans', Helvetica, Arial, sans-serif;}
+[data-testid="stIconMaterial"], .material-symbols-rounded {
+  font-family: 'Material Symbols Rounded' !important;}
 .stApp {background: #FBF6EE; color: #3B2F2A;}
-.block-container {padding: 1rem 24px 3rem; max-width: 1600px;}
+.block-container {padding: 80px 24px 3rem; max-width: 1600px;}
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
   {display: none;}
 [data-testid="stVerticalBlock"] {gap: 16px;}
@@ -62,26 +66,44 @@ p, li, td, th {font-size: 14px;}
 /* Header: white, 3px green line. */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
   {background: #FFFFFF; border-bottom: 3px solid #254C31;}
-.st-key-cc_header {background: #FFFFFF; padding: 4px 0 8px;}
+/* Our header row sits over Streamlit's header bar: brand at the
+   left, client picker at the far right; the page links (in the bar)
+   are pushed right, next to the picker. */
+.st-key-cc_header {position: fixed; top: 0; left: 0; right: 0;
+  height: 60px; z-index: 1000000; padding: 0 24px; background: transparent;
+  pointer-events: none; display: flex; justify-content: center;}
+.st-key-cc_header > div {pointer-events: none;}
+.st-key-cc_header img, .st-key-cc_header [data-testid="stSelectbox"],
+.st-key-cc_header [data-baseweb] {pointer-events: auto;}
+[data-testid="stHeader"] {height: 60px;}
+[data-testid="stToolbar"] {height: 60px; align-items: center;}
+[data-testid="stTopNav"] {justify-content: flex-end; padding-right: 230px;}
 .cc-brand {display: flex; align-items: center; gap: 16px;}
+.cc-logo {height: 40px; width: auto; display: block;}
 .cc-divider {width: 1px; height: 36px; background: #D9CFC0;}
 .cc-wordmark {font-size: 14px; font-weight: 600; letter-spacing: 0.25em;
   text-transform: uppercase; color: #7A6B5F;}
 [data-testid="stTopNavLink"] {font-size: 13px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em; color: #3B2F2A;
   border-radius: 4px; padding: 4px 14px;}
-[data-testid="stTopNavLink"] span {font-size: 13px; font-weight: 600;}
+[data-testid="stTopNavLink"] p {font-size: 13px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: inherit;}
 [data-testid="stTopNavLink"][aria-current="page"]
   {background: #254C31; color: #FFFFFF;}
 [data-testid="stTopNavLink"][aria-current="page"] *
   {color: #FFFFFF;}
 
 /* Heading block. */
-.cc-page {font-size: 12px; font-weight: 600; text-transform: uppercase;
+.stApp .cc-page {font-size: 12px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.08em; color: #254C31; margin: 0;}
-.cc-q {font-size: 26px; font-weight: 600; color: #3B2F2A; margin: 2px 0;
+.stApp .cc-q {font-size: 26px; font-weight: 600; color: #3B2F2A; margin: 2px 0;
   line-height: 1.25;}
-.cc-data {font-size: 13px; font-weight: 400; color: #7A6B5F; margin: 0;}
+.stApp .cc-data {font-size: 13px; font-weight: 400; color: #7A6B5F; margin: 0;}
+
+/* Caveat banner: white, warm border, charcoal text. */
+[data-testid="stAlert"] > div {background: #FFFFFF; color: #3B2F2A;
+  border: 1px solid #EADFCF;}
+[data-testid="stAlert"] p {color: #3B2F2A;}
 
 /* Cards. */
 [data-testid="stVerticalBlockBorderWrapper"],
@@ -119,6 +141,8 @@ p, li, td, th {font-size: 14px;}
   vertical-align: top;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-table .nw {white-space: nowrap;}
+.cc-table .per {font-size: 13px;}
+.cc-table .cmp {min-width: 9em;}
 .cc-table .act {width: 100%;}
 .cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;}
@@ -158,9 +182,9 @@ def _heading(page, question, ctx):
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
     st.markdown(
-        f"<p class='cc-page'>{html.escape(page)}</p>"
-        f"<p class='cc-q'>{html.escape(question)}</p>"
-        f"<p class='cc-data'>{html.escape(line)}</p>",
+        f"<div class='cc-page'>{html.escape(page)}</div>"
+        f"<div class='cc-q'>{html.escape(question)}</div>"
+        f"<div class='cc-data'>{html.escape(line)}</div>",
         unsafe_allow_html=True)
 
 
@@ -263,31 +287,43 @@ def _fmt(value, pattern):
 
 
 def _action_html(table):
-    """The ranked action table as HTML: text wraps, nothing is cut.
+    """The ranked action table as HTML.
 
-    The label cell is tinted with the label colour and also names
-    the label in text (with its symbol).
+    The label cell is a pill (tint, left border, symbol and text).
+    The Action column takes the spare width and wraps to at most two
+    lines; its full text is in an escaped tooltip.
     """
     head = ("<tr><th>#</th><th>Campaign</th><th>Final label</th>"
             "<th>Status</th><th class='n'>Ratio</th>"
             "<th class='n'>Tracked actions</th><th>Trend</th>"
-            "<th>Action</th><th>Label period</th></tr>")
+            "<th class='act'>Action</th><th>Label period</th></tr>")
     body = []
     for _, row in table.iterrows():
+        action = html.escape(_readable(row["action"], keep=True),
+                             quote=True)
         body.append(
             "<tr>"
             f"<td class='n'>{int(row['rank'])}</td>"
-            f"<td><b>{html.escape(str(row['campaign']))}</b></td>"
+            f"<td class='cmp'><b>{html.escape(str(row['campaign']))}</b></td>"
             f"<td>{_pill(row['label'])}</td>"
-            f"<td>{html.escape(str(row['status_now']))}</td>"
+            f"<td>{html.escape(_readable(row['status_now']))}</td>"
             f"<td class='n'>{_fmt(row['ratio_to_benchmark'], '{:.2f}x')}</td>"
             f"<td class='n'>{_fmt(row['tracked_actions'], '{:,.0f}')}</td>"
             f"<td>{html.escape(_readable(row['recent_trend']))}</td>"
-            f"<td>{html.escape(_readable(row['action'], keep=True))}</td>"
-            f"<td class='nw'>{html.escape(str(row['label_period'] or '—'))}"
-            "</td></tr>")
+            f"<td class='act'><span class='cc-clamp' title=\"{action}\">"
+            f"{action}</span></td>"
+            f"<td class='per'>{_period_html(row['label_period'])}</td>"
+            "</tr>")
     return (f"<table class='cc-table'><thead>{head}</thead>"
             f"<tbody>{''.join(body)}</tbody></table>")
+
+
+def _period_html(period):
+    """"start to end" on two lines, so dates never break inside."""
+    if not period:
+        return "—"
+    return "<br>".join(f"<span class='nw'>{html.escape(part)}</span>"
+                       for part in str(period).split(" to ", 1))
 
 
 def _readable(value, keep=False):
@@ -323,40 +359,58 @@ def _act_definitions(ctx, kpi):
         f"config); above that, pause or review.",
         "<b>Label period</b>: the latest run with enough volume"
         + (f", or the last {window} days for active campaigns"
-           if window else "") + ". Bubbles use that period's figures.",
-        "<b>Filters</b> only hide rows and bubbles; they never change "
-        "a label or a KPI card.",
+           if window else "") + ". Bars use that period's figures.",
+        "<b>Filters</b> only hide table rows and bars; they never "
+        "change a label, a tile or a KPI card.",
         f"<b>{html.escape(dashboard_data.footnote_text(config))}</b>",
     ]
     return lines
 
 
-def _todo_html(summary):
-    """The "What to do" box: running campaigns, ended campaigns not to
-    restart as they were, then the label counts. Every data value is
-    escaped."""
-    def item(entry):
-        label = html.escape(dashboard_data.label_text(entry["label"]))
-        action = (f": {html.escape(entry['action'])}"
-                  if entry["action"] else "")
-        return (f"<b>{html.escape(entry['campaign'])}</b> "
-                f"({label}){action}")
+def _tile_line(line, with_label=False):
+    """One campaign line in a tile: name, status or label, action."""
+    parts = [f"<b>{html.escape(line['campaign'])}</b>"]
+    if with_label:
+        parts.append(html.escape(
+            f"({dashboard_data.label_text(line['label']) or '—'})"))
+    elif line["running"]:
+        parts.append("<span class='cc-run'>● running</span>")
+    elif line["status"]:
+        parts.append(html.escape(line["status"]))
+    text = " · ".join(parts)
+    if line["action"]:
+        text += f": {html.escape(line['action'])}"
+    return f"<div class='cc-tile-line'>{text}</div>"
 
+
+def _tiles_html(summary):
+    """The four decision tiles: three labels, then Running now."""
+    tiles = []
+    for tile in summary["tiles"]:
+        label = tile["label"]
+        lines = "".join(_tile_line(line) for line in tile["lines"])
+        if tile["more"]:
+            lines += (f"<div class='cc-tile-more'>+{tile['more']} more, "
+                      "see the table</div>")
+        tiles.append(
+            "<div class='cc-tile' style='background:"
+            f"{dashboard_data.label_tint(label)};border-left-color:"
+            f"{dashboard_data.label_colour(label)}'>"
+            "<div class='cc-tile-head'><span class='cc-tile-count'>"
+            f"{tile['count']}</span><span class='cc-tile-label'>"
+            f"{html.escape(dashboard_data.label_text(label))}</span></div>"
+            f"{lines}</div>")
     running = summary["running"]
-    lead = ("Running now: " + "; ".join(item(e) for e in running)
-            if running else "Running now: no campaign is active.")
-    lines = [f"<div class='cc-first'>{lead}</div>"]
-    if summary["ended"]:
-        lines.append("<div>Ended: " + "; ".join(
-            item(e) for e in summary["ended"]) + "</div>")
-    if summary["restart"]:
-        lines.append("<div>Worth restarting: " + "; ".join(
-            item(e) for e in summary["restart"]) + "</div>")
-    counts = " · ".join(
-        f"{html.escape(dashboard_data.label_text(label))} {count}"
-        for label, count in summary["counts"])
-    lines.append(f"<div class='cc-counts'>{counts}</div>")
-    return f"<div class='cc-todo'>{''.join(lines)}</div>"
+    lines = "".join(_tile_line(line, with_label=True) for line in running)
+    if not running:
+        lines = "<div class='cc-tile-more'>No campaign is active.</div>"
+    tiles.append(
+        "<div class='cc-tile' style='background:#FFFFFF;"
+        "border:1px solid #D9CFC0;border-left:5px solid #D9CFC0'>"
+        "<div class='cc-tile-head'><span class='cc-tile-count'>"
+        f"{len(running)}</span><span class='cc-tile-label'>Running now"
+        f"</span></div>{lines}</div>")
+    return f"<div class='cc-tiles'>{''.join(tiles)}</div>"
 
 
 def _totals_scope(ctx, kpi):
@@ -377,13 +431,7 @@ def _page_act(ctx):
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
 
-    # 1. What to do: all campaigns, never filtered.
-    st.markdown("#### What to do")
-    st.markdown(_todo_html(dashboard_data.act_summary(recs)),
-                unsafe_allow_html=True)
-
-    # 2. The ranked table (the filters only hide rows and bubbles).
-    st.markdown("#### What should we do, most urgent first?")
+    # Filters: display only, they hide table rows and bars.
     filters = st.columns(3)
     group = filters[0].selectbox(
         "Campaign group", dashboard_data.group_options(recs),
@@ -397,91 +445,97 @@ def _page_act(ctx):
         help="Display filter only: hides campaigns with fewer tracked "
              "actions in their label period. Labels do not change.")
     view = dashboard_data.filter_view(recs, group, status, min_actions)
-    st.caption("Pause or review first, then test, then continue; within "
-               "a label, the highest ratio to the benchmark first. "
-               "Ratio = cost per tracked action in the label period / "
-               "its benchmark. Costs and group are in the CSV.")
-    show_hidden = st.checkbox(
-        "Also show insufficient data / not judged campaigns",
-        value=False, key="act_show_hidden")
-    table = dashboard_data.action_table(view, tables["recent_trend"])
-    if not show_hidden:
-        table = table.loc[table["label"].isin(
-            dashboard_data.JUDGED_LABELS)].reset_index(drop=True)
-    if table.empty:
-        st.info("No campaign matches the filters.")
-    else:
-        st.markdown(_action_html(table), unsafe_allow_html=True)
-        picks = st.columns([2, 1, 1], vertical_alignment="bottom")
-        campaign = picks[0].selectbox(
-            "Open a campaign's detail", list(table["campaign"]),
-            key="act_pick")
-        if picks[1].button("Open detail", type="primary",
-                           key="act_open"):
-            _open_detail(campaign)
-        picks[2].download_button(
-            "Download CSV",
-            dashboard_data.csv_bytes(table.drop(columns=["label"])),
-            file_name="actions.csv", mime="text/csv",
-            key="act_download")
 
-    # 3. The bubble chart.
+    # Decision tiles: all campaigns, never filtered.
+    st.markdown(_tiles_html(dashboard_data.act_summary(recs)),
+                unsafe_allow_html=True)
+
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
-    st.write("")
-    st.markdown("#### Where does each campaign sit against the "
-                "benchmark?")
-    bubbles = dashboard_data.bubble_rows(view)
-    if bubbles.empty:
-        st.info("No judged campaign with label-period figures "
-                "matches the filters.")
-    else:
-        lines = dashboard_data.reference_lines(
-            ctx["config"], kpi["benchmark"])
-        st.plotly_chart(charts.bubble_chart(bubbles, lines, currency),
-                        width="stretch", key="act_bubble")
-        st.caption("Bubble size = spend in the label period. Marker "
-                   "shape and legend text name the label, so colour "
-                   "is never the only cue.")
+    table = dashboard_data.action_table(view, tables["recent_trend"])
+    left, right = st.columns([1.45, 1])
+    with left.container(border=True):
+        show_hidden = st.checkbox(
+            "Also show insufficient data / not judged campaigns",
+            value=False, key="act_show_hidden")
+        if not show_hidden:
+            table = table.loc[table["label"].isin(
+                dashboard_data.JUDGED_LABELS)].reset_index(drop=True)
+        if table.empty:
+            st.info("No campaign matches the filters.")
+        else:
+            st.markdown(_action_html(table), unsafe_allow_html=True)
+            st.caption("Pause or review first, then test, then continue; "
+                       "within a label, the highest ratio to the "
+                       "benchmark first.")
+            picks = st.columns([3, 1, 1], vertical_alignment="bottom")
+            campaign = picks[0].selectbox(
+                "Campaign", list(table["campaign"]), key="act_pick")
+            if picks[1].button("Open detail", type="primary",
+                               key="act_open", width="stretch"):
+                _open_detail(campaign)
+            picks[2].download_button(
+                "Download CSV",
+                dashboard_data.csv_bytes(table.drop(columns=["label"])),
+                file_name="actions.csv", mime="text/csv",
+                key="act_download", width="stretch")
+    with right.container(border=True):
+        _card_title("Ratio to benchmark (cost per tracked action)")
+        bars = dashboard_data.ratio_bar_rows(table, recs,
+                                             cap=charts.RATIO_CAP)
+        if bars.empty:
+            st.info("No judged campaign with a ratio matches the "
+                    "filters.")
+        else:
+            lines = dashboard_data.reference_lines(
+                ctx["config"], kpi["benchmark"])
+            st.plotly_chart(charts.ratio_bar(bars, lines, currency),
+                            width="stretch", key="act_ratio")
+            st.caption("Same order as the table. Dashed lines: the "
+                       "continue and test limits from the config. A bar "
+                       "past the edge (▶) has its value written. "
+                       "\"worsening\": the label comes from the trend "
+                       "override.")
 
-    # 4. Not comparable.
-    not_comparable = dashboard_data.not_comparable_rows(recs)
-    if not not_comparable.empty:
-        st.write("")
-        with st.container(border=True):
-            st.markdown(f"#### {dashboard_data.label_text('not_comparable')}"
-                        f" ({len(not_comparable)})")
+    below = st.columns(3)
+    with below[0]:
+        not_comparable = dashboard_data.not_comparable_rows(recs)
+        with st.expander(f"Not comparable ({len(not_comparable)})"):
             st.caption("Judged against their own history, not the "
                        "benchmark, so they are not in the chart or the "
                        "ranking.")
             for _, row in not_comparable.iterrows():
-                st.markdown(f"**{row['campaign']}** · {row['group']} · "
-                            f"{row['status_now']}")
-                st.write(row["reason"])
-                st.markdown(f"*Action:* {row['action_text']}")
-
-    # 5. Totals and benchmark.
-    st.write("")
-    with st.expander("Totals and benchmark"):
-        scope = _totals_scope(ctx, kpi)
-        cards = st.columns(4)
-        _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
-              "Total spend of the campaigns in the totals.")
-        _card(cards[1], "Tracked actions", f"{kpi['tracked_actions']:,.0f}",
-              "Directions requests and calls the account counts.")
-        _card(cards[2], "Cost per tracked action",
-              f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
-              "Spend divided by tracked actions.")
-        bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
-                      f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
-                      else "Pooled over the benchmark group(s).")
-        _card(cards[3], "Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
-              f"What a campaign is compared with. {bench_note}")
-        st.caption(f"{scope} Totals use the whole daily range "
-                   f"(benchmarks.csv); the filters do not change them.")
-
-    # 6. How to read this.
-    with st.expander("How to read this"):
-        _footnotes(_act_definitions(ctx, kpi))
+                st.markdown(
+                    f"<b>{html.escape(str(row['campaign']))}</b> · "
+                    f"{html.escape(str(row['group']))} · "
+                    f"{html.escape(str(row['status_now']))}<br>"
+                    f"{html.escape(str(row['reason']))}<br>"
+                    f"<i>Action:</i> {html.escape(str(row['action_text']))}",
+                    unsafe_allow_html=True)
+    with below[1]:
+        with st.expander("Totals and benchmark"):
+            scope = _totals_scope(ctx, kpi)
+            cards = st.columns(2)
+            _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
+                  "Total spend of the campaigns in the totals.")
+            _card(cards[1], "Tracked actions",
+                  f"{kpi['tracked_actions']:,.0f}",
+                  "Directions requests and calls the account counts.")
+            cards = st.columns(2)
+            _card(cards[0], "Cost per tracked action",
+                  f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+                  "Spend divided by tracked actions.")
+            bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
+                          f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
+                          else "Pooled over the benchmark group(s).")
+            _card(cards[1], "Benchmark",
+                  f"{kpi['benchmark']:,.2f} {currency}",
+                  f"What a campaign is compared with. {bench_note}")
+            st.caption(f"{scope} Totals use the whole daily range "
+                       f"(benchmarks.csv); the filters do not change "
+                       f"them.")
+    with below[2]:
+        with st.expander("How to read this"):
+            _footnotes(_act_definitions(ctx, kpi))
 
 
 # --- Context ------------------------------------------------------
@@ -1040,6 +1094,19 @@ def _load(client):
     }
 
 
+LOGO_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
+              ".jpeg": "image/jpeg", ".svg": "image/svg+xml",
+              ".webp": "image/webp"}
+
+
+def _logo_img(path):
+    """The logo as an inline <img> (read locally, never uploaded)."""
+    kind = LOGO_TYPES.get(path.suffix.lower(), "image/png")
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return (f"<img class='cc-logo' alt='Logo' "
+            f"src='data:{kind};base64,{data}'>")
+
+
 def _header(clients):
     """White header: optional logo, divider, wordmark, client picker.
 
@@ -1047,7 +1114,7 @@ def _header(clients):
     the key or the file is missing, only the wordmark shows.
     """
     with st.container(key="cc_header"):
-        brand, picker = st.columns([5, 1], vertical_alignment="center")
+        brand, picker = st.columns([6, 1], vertical_alignment="center")
         client = picker.selectbox("Client", clients, index=0,
                                   key="client",
                                   label_visibility="collapsed")
@@ -1058,16 +1125,14 @@ def _header(clients):
             config = {}
         logo = dashboard_data.logo_path(config)
         wordmark = "<span class='cc-wordmark'>CampaignCompass</span>"
-        with brand:
-            if logo is not None:
-                cols = st.columns([1, 5], vertical_alignment="center")
-                cols[0].image(str(logo), width=160)
-                cols[1].markdown(
-                    "<div class='cc-brand'><span class='cc-divider'>"
-                    f"</span>{wordmark}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='cc-brand'>{wordmark}</div>",
-                            unsafe_allow_html=True)
+        if logo is not None:
+            brand.markdown(
+                f"<div class='cc-brand'>{_logo_img(logo)}"
+                f"<span class='cc-divider'></span>{wordmark}</div>",
+                unsafe_allow_html=True)
+        else:
+            brand.markdown(f"<div class='cc-brand'>{wordmark}</div>",
+                           unsafe_allow_html=True)
     return client
 
 

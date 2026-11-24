@@ -224,3 +224,28 @@ def test_logo_path_missing_key_missing_file_and_file(tmp_path):
     logo.write_bytes(b"png")
     assert dd.logo_path({"branding": {"logo_path": "local/logo.png"}},
                         repo_root=tmp_path) == logo
+
+
+def test_ratio_bar_rows_keep_table_order_cap_and_worsening():
+    recs = _recs()
+    recs["trend_override"] = [
+        "continue -> test", None, None, None, None, None, None]
+    recs.loc[recs["campaign"] == "Gamma", "label_ratio"] = 25.4
+    table = dd.action_table(recs)
+    rows = dd.ratio_bar_rows(table, recs, cap=2.5)
+    judged = table.loc[table["label"].isin(dd.JUDGED_LABELS)]
+    assert list(rows["campaign"]) == list(judged["campaign"])
+    gamma = rows.set_index("campaign").loc["Gamma"]
+    assert gamma["over"] and gamma["shown"] == 2.5
+    assert gamma["ratio"] == 25.4
+    assert rows.set_index("campaign").loc["Alpha", "worsening"]
+    assert not rows.set_index("campaign").loc["Beta", "worsening"]
+    assert not rows.set_index("campaign").loc["Beta", "over"]
+
+
+def test_ratio_bar_rows_without_override_column_or_rows():
+    rows = dd.ratio_bar_rows(dd.action_table(_recs()), _recs())
+    assert not rows["worsening"].any()
+    empty = dd.ratio_bar_rows(dd.action_table(_recs().iloc[4:]),
+                              _recs())
+    assert empty.empty

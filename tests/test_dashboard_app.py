@@ -88,7 +88,9 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
         default_timeout=60)
     script.run()
     assert not script.exception, script.exception
-    assert len(script.get("image")) == (1 if mode == "logo" else 0)
+    page = " ".join(block.value for block in script.markdown)
+    assert ("<img class='cc-logo'" in page) == (mode == "logo")
+    assert "CampaignCompass" in page
 
 
 def test_main_starts_with_top_navigation():

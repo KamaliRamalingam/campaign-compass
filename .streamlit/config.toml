@@ -11,3 +11,7 @@ backgroundColor = "#FBF6EE"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#3B2F2A"
 font = "sans-serif"
+
+[client]
+# Hide the developer toolbar (Deploy button) in the header.
+toolbarMode = "viewer"

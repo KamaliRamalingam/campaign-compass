@@ -46,94 +46,71 @@ def _layout(fig, height=420, legend=True):
     return fig
 
 
-def bubble_chart(rows, lines, currency):
-    """Tracked actions vs cost per tracked action, sized by spend.
+RATIO_CAP = 2.5
 
-    rows: data.bubble_rows. lines: data.reference_lines (the first
-    is the benchmark, dashed; the ratio lines are dotted). Each
-    bubble names its campaign; hover shows its label period, its
-    own benchmark and its ratio.
+
+def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
+    """Ratio to benchmark per judged campaign, as horizontal bars.
+
+    rows: data.ratio_bar_rows (already in the ranked table's order,
+    shown top to bottom). lines: data.reference_lines; the dashed
+    lines are the threshold ratios from the config (the benchmark
+    itself when there are none), each labelled with its cost.
+    Bars are coloured by the final label and the label is also
+    written after the bar, so colour is never the only cue. A ratio
+    above cap is cut at the axis edge, marked with an arrow and its
+    real value written. "worsening" follows the value when the label
+    comes from the trend override. Linear axis, no log scale.
     """
     fig = go.Figure()
-    max_spend = float(rows["label_spend"].max()) if len(rows) else 1.0
-    # Alternate name positions over all bubbles, ordered by cost, so
-    # names of bubbles close together do not print on each other.
-    ordered = rows.sort_values("label_cost_per_tracked_action")["campaign"]
-    positions = {name: ("bottom center", "top center")[i % 2]
-                 for i, name in enumerate(ordered)}
-    for label in dashboard_data.JUDGED_LABELS:
-        part = rows.loc[rows["label"] == label].sort_values(
-            "label_cost_per_tracked_action")
-        if part.empty:
+    names = list(rows["campaign"])
+    texts = []
+    for _, row in rows.iterrows():
+        text = f"{row['ratio']:.2f}x · {row['label_text']}"
+        if row["over"]:
+            text = f"▶ {text}"
+        if row["worsening"]:
+            text += " · worsening"
+        texts.append(text)
+    fig.add_trace(go.Bar(
+        x=rows["shown"], y=names, orientation="h",
+        marker={"color": list(rows["colour"]),
+                "line": {"width": 0}},
+        text=texts, textposition="outside", cliponaxis=False,
+        textfont={"color": TEXT, "size": 12},
+        customdata=rows[["label_text", "ratio", "label_period",
+                         "cost_per_tracked_action",
+                         "benchmark"]].values,
+        hovertemplate=(
+            "<b>%{y}</b><br>%{customdata[0]}"
+            "<br>Ratio to benchmark: %{customdata[1]:.2f}x"
+            "<br>Label period: %{customdata[2]}"
+            f"<br>Cost per tracked action: %{{customdata[3]:,.2f}} "
+            f"{currency}<br>Its benchmark: %{{customdata[4]:,.2f}} "
+            f"{currency}<extra></extra>"),
+        showlegend=False))
+    # One dashed line per distinct threshold ratio from the config.
+    drawn = {}
+    for _name, ratio, value in lines[1:] or lines[:1]:
+        drawn.setdefault(round(ratio, 6), (ratio, value))
+    for ratio, value in drawn.values():
+        if ratio > cap:
             continue
-        style = dashboard_data.LABEL_STYLE[label]
-        fig.add_trace(go.Scatter(
-            x=part["label_tracked_actions"],
-            y=part["label_cost_per_tracked_action"],
-            mode="markers+text",
-            name=dashboard_data.label_text(label),
-            text=part["campaign"],
-            textposition=[positions[name] for name in part["campaign"]],
-            textfont={"size": 12, "color": TEXT},
-            cliponaxis=False,
-            marker={
-                "size": part["label_spend"],
-                "sizemode": "area",
-                "sizeref": 2.0 * max_spend / (60.0 ** 2),
-                "sizemin": 8,
-                "color": style["colour"],
-                "symbol": style["marker"],
-                "opacity": 0.85,
-                "line": {"width": 1.5, "color": "white"},
-            },
-            customdata=part[["label_text", "label_period", "label_spend",
-                             "label_benchmark", "label_ratio",
-                             "status_now"]].values,
-            hovertemplate=(
-                "<b>%{text}</b><br>%{customdata[0]} · %{customdata[5]}"
-                "<br>Label period: %{customdata[1]}"
-                "<br>Tracked actions: %{x:,.0f}"
-                f"<br>Cost per tracked action: %{{y:,.2f}} {currency}"
-                f"<br>Spend: %{{customdata[2]:,.0f}} {currency}"
-                f"<br>Its benchmark: %{{customdata[3]:,.2f}} {currency}"
-                "<br>Ratio to benchmark: %{customdata[4]:.2f}x"
-                "<extra></extra>"),
-        ))
-    # The benchmark line is also the 1.0x line: name it once.
-    drawn = []
-    for name, ratio, value in lines:
-        if drawn and abs(value - drawn[0][2]) < 1e-9:
-            drawn[0] = (f"{drawn[0][0]} = {name.lower()}", 1.0, value)
-            continue
-        drawn.append((name, ratio, value))
-    # Log axes: one campaign far above the benchmark must not squash
-    # the rest; equal steps on the y axis are equal ratios. Ranges
-    # are set explicitly (in log10 units) so the lines always show.
-    xs = list(rows["label_tracked_actions"]) or [1.0]
-    ys = list(rows["label_cost_per_tracked_action"]) + [
-        value for _name, _ratio, value in drawn]
-    x_range = [math.log10(min(xs) / 2.0), math.log10(max(xs) * 3.0)]
-    y_range = [math.log10(min(ys) / 1.6), math.log10(max(ys) * 1.6)]
-    x_line = [10 ** x_range[0], 10 ** x_range[1]]
-    for index, (name, _ratio, value) in enumerate(drawn):
-        colour = NAVY if index == 0 else GREY
-        fig.add_trace(go.Scatter(
-            x=x_line, y=[value, value], mode="lines",
-            line={"color": colour, "width": 1.5,
-                  "dash": "dash" if index == 0 else "dot"},
-            showlegend=False, hoverinfo="skip"))
-        # On a log axis an annotation's y is given in log10 units.
+        fig.add_shape(type="line", x0=ratio, x1=ratio, xref="x",
+                      y0=0, y1=1, yref="paper",
+                      line={"color": TEXT, "width": 1.2, "dash": "dash"})
         fig.add_annotation(
-            x=0.01, xref="paper", y=math.log10(value), yref="y",
-            text=f"{name}: {value:,.2f} {currency}", showarrow=False,
-            xanchor="left", yanchor="bottom",
-            font={"color": colour, "size": 12},
-            bgcolor="rgba(255,255,255,0.85)")
-    fig.update_xaxes(title="Tracked actions in the label period (log)",
-                     type="log", range=x_range)
-    fig.update_yaxes(title=f"Cost per tracked action ({currency}, log)",
-                     type="log", range=y_range)
-    return _layout(fig, height=520)
+            x=ratio, xref="x", y=1, yref="paper", yanchor="bottom",
+            text=f"{ratio:.1f}x<br>({value:,.2f} {currency})",
+            showarrow=False, font={"color": GREY, "size": 11})
+    fig.update_xaxes(title="Ratio to benchmark (1.0x = benchmark)",
+                     range=[0, cap], dtick=0.5, ticksuffix="x",
+                     tickformat=".1f", type="linear")
+    fig.update_yaxes(title=None, type="category", autorange="reversed")
+    _layout(fig, height=max(240, 46 * len(rows) + 110), legend=False)
+    fig.update_layout(margin={"l": 10, "r": 200, "t": 50, "b": 10},
+                      bargap=0.35)
+    return fig
 
 
 def trend_line(table, x_field, x_title, currency):
