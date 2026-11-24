@@ -111,6 +111,11 @@ p, li, td, th {font-size: 14px;}
   {background: #FFFFFF; border-color: #EADFCF !important;}
 [data-testid="stExpander"] details {background: #FFFFFF;
   border-color: #EADFCF;}
+.cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
+  border-radius: 8px; padding: 14px 16px; min-height: 160px;}
+.cc-stat-title {font-size: 15px; font-weight: 600;}
+.cc-stat-v {font-size: 36px; font-weight: 300; line-height: 1.2;
+  margin-top: 4px;}
 .cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
   color: #3B2F2A;}
 
@@ -140,6 +145,10 @@ p, li, td, th {font-size: 14px;}
 .cc-table td {border-bottom: 1px solid #EADFCF; padding: 8px 8px;
   vertical-align: top;}
 .cc-table .n {text-align: right; white-space: nowrap;}
+.cc-scroll {overflow-x: auto; max-width: 100%;}
+.cc-tight th, .cc-tight td {padding: 6px 6px; font-size: 13px;}
+.stApp .cc-table.cc-tight th {white-space: normal !important;
+  vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
 .cc-table .per {font-size: 13px;}
 .cc-table .cmp {min-width: 9em;}
@@ -207,38 +216,11 @@ def _pill(label):
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
 
 
-def _title(question, subtitle, level=2):
-    """A question heading with a grey subtitle under it."""
-    st.markdown(f"{'#' * level} {question}")
-    st.markdown(f"<p class='cc-muted'>{html.escape(subtitle)}</p>",
-                unsafe_allow_html=True)
-
-
 def _card(column, label, value, definition):
     """A bordered KPI card with a one-line definition."""
     with column.container(border=True):
         st.metric(label, value)
         st.caption(definition)
-
-
-LABEL_CELL = {dashboard_data.label_text(label): label
-              for label in dashboard_data.LABEL_STYLE}
-
-
-def _label_cell(value):
-    """Cell style for a label shown as text: tint, border, dark text."""
-    label = LABEL_CELL.get(value)
-    if label is None:
-        return ""
-    return (f"background-color: {dashboard_data.label_tint(label)}; "
-            f"border-left: 3px solid {dashboard_data.label_colour(label)};"
-            f" color: #3B2F2A; font-weight: 600")
-
-
-def _styled(table, columns):
-    """A Styler that colours the given label-text columns."""
-    present = [column for column in columns if column in table.columns]
-    return table.style.map(_label_cell, subset=present)
 
 
 def _badge(label):
@@ -1009,21 +991,104 @@ def _detail_trend(ctx, campaign):
                                                  width="medium")})
 
 
+def _stat_tile(column, title, value_html, caption=""):
+    """A detail-page tile: title, large value, optional caption."""
+    caption_html = (f"<div class='cc-muted' style='margin-top:6px'>"
+                    f"{html.escape(caption)}</div>" if caption else "")
+    column.markdown(
+        f"<div class='cc-stat'><div class='cc-stat-title'>"
+        f"{html.escape(title)}</div>{value_html}{caption_html}</div>",
+        unsafe_allow_html=True)
+
+
+RUN_COLUMNS = (
+    ("run_number", "Run", "{:.0f}", True),
+    ("run_label", "Run label", None, False),
+    ("start", "Start", None, False),
+    ("end", "End", None, False),
+    ("active_days", "Days", "{:.0f}", True),
+    ("spend", "Spend ({currency})", "{:,.0f}", True),
+    ("conversions", "Tracked actions", "{:,.0f}", True),
+    ("cost_per_conversion", "Cost per action ({currency})", "{:,.2f}",
+     True),
+    ("ratio_to_benchmark", "Ratio", "{:.2f}x", True),
+)
+
+
+def _runs_html(runs, currency):
+    """The runs table as HTML: run label as a pill, "—" if missing."""
+    columns = [spec for spec in RUN_COLUMNS if spec[0] in runs.columns]
+    head = "".join(
+        f"<th{' class=n' if numeric else ''}>"
+        f"{html.escape(title.format(currency=currency))}</th>"
+        for _key, title, _pattern, numeric in columns)
+    body = []
+    for _, row in runs.iterrows():
+        cells = []
+        for key, _title, pattern, numeric in columns:
+            value = row[key]
+            if key == "run_label":
+                cells.append(f"<td>{_pill(value)}</td>")
+            elif pattern:
+                cells.append(f"<td class='n'>{_fmt(value, pattern)}</td>")
+            else:
+                cells.append(
+                    f"<td class='nw'>{html.escape(_readable(value, True))}"
+                    "</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
+    return (f"<div class='cc-scroll'><table class='cc-table cc-tight'>"
+            f"<thead><tr>{head}</tr></thead>"
+            f"<tbody>{''.join(body)}</tbody></table></div>")
+
+
+def _runs_card(ctx, campaign):
+    """Runs table: existing columns plus run label, "—" for missing."""
+    currency = ctx["currency"]
+    runs = dashboard_data.run_recommendations_for_campaign(
+        ctx["tables"]["recommendations_by_run"], campaign)
+    head = st.columns([3, 1], vertical_alignment="center")
+    head[0].markdown("<p class='cc-card-title'>Runs</p>",
+                     unsafe_allow_html=True)
+    if runs.empty:
+        st.caption("No runs: runs are built only for the run groups in "
+                   "the config.")
+        return
+    order = [column for column in (
+        "run_number", "run_label", "start", "end", "active_days",
+        "spend", "conversions", "cost_per_conversion",
+        "ratio_to_benchmark") if column in runs.columns]
+    runs = runs[order]
+    download = runs.copy()
+    download["run_label"] = download["run_label"].map(
+        dashboard_data.label_text)
+    head[1].download_button(
+        "Download CSV",
+        dashboard_data.csv_bytes(dashboard_data.display_table(download)),
+        file_name=f"runs_{campaign}.csv", mime="text/csv",
+        key="detail_runs_download", width="stretch")
+    st.markdown(_runs_html(runs, currency), unsafe_allow_html=True)
+    st.caption("Each run judged on its own; the final label comes from "
+               "the latest run with enough volume or the recent window.")
+
+
 def _page_detail(ctx):
-    """One campaign: cards, action and reasons, runs, trend, weekday,
-    journey."""
-    _heading("Campaign detail", "How has this campaign performed?", ctx)
+    """How has this campaign performed? Tiles, action and reasons,
+    runs and trend, then weekday pattern and journey."""
     tables = ctx["tables"]
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
     ranked = list(dashboard_data.action_table(recs)["campaign"])
     options = ranked + sorted(set(recs["campaign"]) - set(ranked))
+    heading, picker = st.columns([3, 1], vertical_alignment="bottom")
+    with heading:
+        _heading("Campaign detail", "How has this campaign performed?",
+                 ctx)
     if not options:
         st.info("No campaigns.")
         return
     if st.session_state.get(DETAIL_KEY) not in options:
         st.session_state[DETAIL_KEY] = options[0]
-    campaign = st.selectbox(
+    campaign = picker.selectbox(
         "Campaign", options, key=DETAIL_KEY,
         help="Ordered as in the Act ranking; not-comparable last.")
     detail = dashboard_data.campaign_detail(
@@ -1031,126 +1096,108 @@ def _page_detail(ctx):
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
-    cards = st.columns(4)
-    with cards[0].container(border=True):
-        st.markdown("Final label")
-        st.markdown(_badge(detail["label"]), unsafe_allow_html=True)
-        st.caption(f"From {detail['label_from'].replace('_', ' ')}"
-                   + (f", {detail['label_period']}"
-                      if detail["label_period"] else ""))
-    _card(cards[1], "Status now",
-          (detail["status_now"] or "—").replace("_", " "),
-          "Active if it ran in the last days of the data.")
-    _card(cards[2], "Recent trend",
-          (detail["recent_trend"] or "—").replace("_", " "),
-          "Recent window against the prior window.")
-    _card(cards[3], "Ratio to benchmark",
-          f"{ratio:.2f}x" if ratio is not None and not pd.isna(ratio)
-          else "—",
-          "Cost per tracked action in the label period / its benchmark.")
+    tiles = st.columns(4)
+    _stat_tile(tiles[0], "Final label",
+               f"<div style='margin-top:6px'>{_badge(detail['label'])}"
+               "</div>",
+               f"From {detail['label_from'].replace('_', ' ')}"
+               + (f", {detail['label_period']}"
+                  if detail["label_period"] else ""))
+    _stat_tile(tiles[1], "Status now",
+               "<div class='cc-stat-v'>" + html.escape(
+                   (detail["status_now"] or "—").replace("_", " "))
+               + "</div>",
+               "Active if it ran in the last days of the data.")
+    _stat_tile(tiles[2], "Recent trend",
+               "<div class='cc-stat-v'>" + html.escape(
+                   (detail["recent_trend"] or "—").replace("_", " "))
+               + "</div>",
+               "Recent window against the prior window.")
+    _stat_tile(tiles[3], "Ratio to benchmark",
+               "<div class='cc-stat-v'>"
+               + _fmt(ratio, "{:.2f}x") + "</div>",
+               "Cost per tracked action in the label period / its "
+               "benchmark.")
 
-    with st.container(border=True):
-        st.markdown(f"**Action:** {detail['action']}")
-        st.markdown("**Why this label**")
-        st.write(detail["reason"])
+    action, why = st.columns([1, 1.6])
+    with action.container(border=True):
+        _card_title("Action")
+        st.markdown(f"<p style='font-size:18px;font-weight:600;"
+                    f"margin:0'>{html.escape(detail['action'] or '—')}</p>",
+                    unsafe_allow_html=True)
+    with why.container(border=True):
+        _card_title("Why this label")
+        st.markdown(f"<p class='cc-take'>{html.escape(detail['reason'])}"
+                    "</p>", unsafe_allow_html=True)
         if detail["trend_window"]:
-            st.markdown(f"**Trend** (recent window {detail['trend_window']}"
-                        f", prior window {detail['prior_window']})")
-            st.write(detail["trend_reason"])
+            st.markdown(
+                f"<p class='cc-take'><b>Trend</b> (recent window "
+                f"{html.escape(detail['trend_window'])}, prior window "
+                f"{html.escape(detail['prior_window'])}): "
+                f"{html.escape(detail['trend_reason'])}</p>",
+                unsafe_allow_html=True)
         else:
             st.caption("No recent trend: the campaign is not active or "
                        "its group is not judged.")
 
-    st.write("")
-    _title("Runs", "Each run judged on its own; the final label comes "
-           "from the latest run with enough volume or the recent "
-           "window.", level=3)
-    runs = dashboard_data.run_recommendations_for_campaign(
-        tables["recommendations_by_run"], campaign)
-    if runs.empty:
-        st.caption("No runs: runs are built only for the run groups in "
-                   "the config.")
-    else:
-        runs["run_label"] = runs["run_label"].map(
-            dashboard_data.label_text)
-        order = [column for column in (
-            "run_number", "run_label", "start", "end", "active_days",
-            "spend", "conversions", "cost_per_conversion",
-            "ratio_to_benchmark") if column in runs.columns]
-        runs = runs[order]
-        # Number formats live in the Styler, not column_config, so
-        # missing values show as "—" (column_config formats would win
-        # over na_rep and show "None"). Values stay numeric for sorting.
-        styled = _styled(runs, ["run_label"]).format({
-            "run_number": "{:d}", "active_days": "{:.0f}",
-            "spend": "{:,.0f}", "conversions": "{:,.0f}",
-            "cost_per_conversion": "{:,.2f}",
-            "ratio_to_benchmark": "{:.2f}x",
-        }, na_rep="—", subset=list(runs.columns))
-        st.dataframe(styled, hide_index=True,
-                     width="stretch", key="detail_runs", column_config={
-                         "run_number": NUM("Run"),
-                         "run_label": WIDE("Run label"),
-                         "start": WIDE("Start"),
-                         "end": WIDE("End"),
-                         "active_days": NUM("Days"),
-                         "spend": NUM(f"Spend ({currency})"),
-                         "conversions": NUM("Tracked actions"),
-                         "cost_per_conversion": NUM(
-                             f"Cost per action ({currency})"),
-                         "ratio_to_benchmark": NUM("Ratio")})
-        st.download_button("Download CSV",
-                           dashboard_data.csv_bytes(
-                               dashboard_data.display_table(runs)),
-                           file_name=f"runs_{campaign}.csv",
-                           mime="text/csv", key="detail_runs_download")
+    runs, trend = st.columns([1.2, 1])
+    with runs.container(border=True):
+        _runs_card(ctx, campaign)
+    with trend.container(border=True):
+        _card_title("Trend")
+        st.caption(f"Cost per tracked action ({currency})")
+        _detail_trend(ctx, campaign)
 
-    st.write("")
-    _title("Trend", "Cost per tracked action over time.", level=3)
-    _detail_trend(ctx, campaign)
-
-    st.write("")
-    _title("Weekday pattern", "This campaign's cost per tracked action "
-           "by weekday.", level=3)
-    by_campaign = tables["weekday_by_campaign"]
-    if campaign not in set(by_campaign["campaign"]):
-        st.caption("No weekday rows: weekday tables cover the time "
-                   "groups in the config.")
-    else:
-        weekday = dashboard_data.weekday_campaign_table(
-            by_campaign, campaign)
-        st.plotly_chart(charts.weekday_bar(weekday, currency),
-                        width="stretch", key="detail_weekday")
-        with st.expander("Weekday table"):
-            _table(dashboard_data.display_table(weekday),
-                   f"weekday_{campaign}.csv", key="detail_weekday_table")
-
-    st.write("")
-    _title("Acquisition journey", "How this campaign's tracked actions "
-           "split into directions, calls and store visits.", level=3)
-    journey = dashboard_data.journey_row(
-        tables["journey_by_campaign"], campaign)
-    if journey.empty:
-        st.caption("No journey row: the journey covers the time groups "
-                   "in the config.")
-    else:
-        long = dashboard_data.journey_intent_long(journey)
-        st.plotly_chart(charts.intent_stack(long), width="stretch",
-                        key="detail_journey_chart")
-        keep = [column for column in (
-            "spend", "clicks", "tracked_actions", "engagement_actions",
-            "tracked_actions_per_click", "cost_per_tracked_action")
-            if column in journey.columns]
-        _table(journey[keep], key="detail_journey", column_config={
-            "spend": NUM(f"Spend ({currency})", format="%.0f"),
-            "clicks": NUM("Clicks", format="%.0f"),
-            "tracked_actions": NUM("Tracked actions", format="%.0f"),
-            "engagement_actions": NUM("Engagement actions",
-                                      format="%.0f"),
-            "tracked_actions_per_click": NUM("Actions / click",
-                                             format="%.3f"),
-            "cost_per_tracked_action": NUM(
-                f"Cost per action ({currency})", format="%.2f")})
+    weekday_col, journey_col = st.columns(2)
+    with weekday_col:
+        with st.expander("Weekday pattern"):
+            by_campaign = tables["weekday_by_campaign"]
+            if campaign not in set(by_campaign["campaign"]):
+                st.caption("No weekday rows: weekday tables cover the "
+                           "time groups in the config.")
+            else:
+                weekday = dashboard_data.weekday_campaign_table(
+                    by_campaign, campaign)
+                st.caption("This campaign's cost per tracked action by "
+                           "weekday.")
+                st.plotly_chart(charts.weekday_bar(weekday, currency),
+                                width="stretch", key="detail_weekday")
+                _table(dashboard_data.display_table(weekday),
+                       f"weekday_{campaign}.csv",
+                       key="detail_weekday_table")
+    with journey_col:
+        with st.expander("Acquisition journey"):
+            journey = dashboard_data.journey_row(
+                tables["journey_by_campaign"], campaign)
+            if journey.empty:
+                st.caption("No journey row: the journey covers the time "
+                           "groups in the config.")
+            else:
+                st.caption("How this campaign's tracked actions split "
+                           "into directions, calls and store visits.")
+                long = dashboard_data.journey_intent_long(journey)
+                st.plotly_chart(charts.intent_stack(long),
+                                width="stretch",
+                                key="detail_journey_chart")
+                keep = [column for column in (
+                    "spend", "clicks", "tracked_actions",
+                    "engagement_actions", "tracked_actions_per_click",
+                    "cost_per_tracked_action")
+                    if column in journey.columns]
+                _table(journey[keep], key="detail_journey",
+                       column_config={
+                           "spend": NUM(f"Spend ({currency})",
+                                        format="%.0f"),
+                           "clicks": NUM("Clicks", format="%.0f"),
+                           "tracked_actions": NUM("Tracked actions",
+                                                  format="%.0f"),
+                           "engagement_actions": NUM(
+                               "Engagement actions", format="%.0f"),
+                           "tracked_actions_per_click": NUM(
+                               "Actions / click", format="%.3f"),
+                           "cost_per_tracked_action": NUM(
+                               f"Cost per action ({currency})",
+                               format="%.2f")})
 
 
 PAGE_TITLES = ("Act", "Context", "Campaign detail")

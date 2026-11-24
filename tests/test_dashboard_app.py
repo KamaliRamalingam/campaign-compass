@@ -104,3 +104,19 @@ def test_main_starts_with_top_navigation():
     text = " ".join(block.value for block in script.markdown)
     assert "Which campaigns should we continue, test or pause?" in text
     assert "Data " in text and "Updated " in text
+
+
+def test_open_detail_drills_through_to_campaign_detail():
+    if not _has_outputs("restaurant"):
+        pytest.skip("no result tables: run bash run.sh")
+    script = AppTest.from_file(str(DASHBOARD / "app.py"),
+                               default_timeout=60)
+    script.run()
+    picked = script.selectbox(key="act_pick")
+    choice = picked.options[-1]
+    picked.set_value(choice).run()
+    script.button(key="act_open").click().run()
+    assert not script.exception, script.exception
+    text = " ".join(block.value for block in script.markdown)
+    assert "How has this campaign performed?" in text
+    assert script.selectbox(key="detail_campaign").value == choice

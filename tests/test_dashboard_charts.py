@@ -105,3 +105,17 @@ def test_intent_stack_hides_labels_under_five_percent():
     texts = {trace.name: list(trace.text) for trace in fig.data}
     assert texts == {"Directions": ["92%"], "Calls": ["5%"],
                      "Store visits": [""]}
+
+
+def test_chart_text_from_the_data_is_escaped():
+    recs = pd.DataFrame([{
+        "campaign": "<a href='x'>Evil</a>", "label": "test",
+        "label_ratio": 1.2, "status_now": "ended", "action_text": "a",
+        "trend_override": None}])
+    fig = charts.ratio_bar(dd.ratio_bar_rows(dd.action_table(recs), recs),
+                           _lines(), "SEK")
+    assert list(fig.data[0].y) == ["&lt;a href=&#x27;x&#x27;&gt;Evil&lt;/a&gt;"]
+    long = pd.DataFrame({"campaign": ["<b>x</b>"], "intent": ["Calls"],
+                         "share": [1.0]})
+    assert list(charts.intent_stack(long).data[0].y) == [
+        "&lt;b&gt;x&lt;/b&gt;"]

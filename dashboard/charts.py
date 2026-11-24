@@ -7,11 +7,10 @@ data.LABEL_STYLE, so a label always looks the same and is always
 named in text, never shown by colour alone.
 """
 
-import math
+import html
 
 import plotly.graph_objects as go
 
-import data as dashboard_data
 
 # Warm spice palette (redesign). Label colours come only from
 # data.LABEL_STYLE; the brand green is never used in charts.
@@ -22,6 +21,11 @@ NEUTRAL = "#8C6F56"
 NEUTRAL_LIGHT = "#D9C8B4"
 NAVY = TEXT  # reference lines: charcoal
 FONT = "Open Sans, Helvetica, Arial, sans-serif"
+
+
+def _safe(values):
+    """Data text for Plotly (which renders some HTML): escaped."""
+    return [html.escape(str(value)) for value in values]
 
 
 def _layout(fig, height=420, legend=True):
@@ -63,10 +67,10 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
     comes from the trend override. Linear axis, no log scale.
     """
     fig = go.Figure()
-    names = list(rows["campaign"])
+    names = _safe(rows["campaign"])
     texts = []
     for _, row in rows.iterrows():
-        text = f"{row['ratio']:.2f}x · {row['label_text']}"
+        text = f"{row['ratio']:.2f}x · {html.escape(row['label_text'])}"
         if row["over"]:
             text = f"▶ {text}"
         if row["worsening"]:
@@ -78,9 +82,10 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
                 "line": {"width": 0}},
         text=texts, textposition="outside", cliponaxis=False,
         textfont={"color": TEXT, "size": 12},
-        customdata=rows[["label_text", "ratio", "label_period",
-                         "cost_per_tracked_action",
-                         "benchmark"]].values,
+        customdata=list(zip(
+            _safe(rows["label_text"]), rows["ratio"],
+            _safe(rows["label_period"]), rows["cost_per_tracked_action"],
+            rows["benchmark"])),
         hovertemplate=(
             "<b>%{y}</b><br>%{customdata[0]}"
             "<br>Ratio to benchmark: %{customdata[1]:.2f}x"
@@ -198,7 +203,7 @@ def share_bar(table, weekday):
     """Each campaign's share of the pooled clicks on one weekday."""
     table = table.sort_values("share_of_weekday_clicks")
     fig = go.Figure(go.Bar(
-        x=table["share_of_weekday_clicks"], y=table["campaign"],
+        x=table["share_of_weekday_clicks"], y=_safe(table["campaign"]),
         orientation="h", marker_color=NEUTRAL,
         text=[f"{value:.0%}" for value in
               table["share_of_weekday_clicks"]],
@@ -228,7 +233,7 @@ def intent_stack(long):
         if part.empty:
             continue
         fig.add_trace(go.Bar(
-            x=part["share"], y=part["campaign"], orientation="h",
+            x=part["share"], y=_safe(part["campaign"]), orientation="h",
             name=intent, marker_color=colour,
             text=[f"{value:.0%}" if value >= INTENT_LABEL_MIN else ""
                   for value in part["share"]],
