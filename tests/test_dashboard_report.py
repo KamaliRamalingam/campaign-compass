@@ -191,3 +191,36 @@ def test_journey_intent_long():
 def test_footnote_text_from_config_or_default():
     assert dd.footnote_text({"analysis": {"footnote_text": "x"}}) == "x"
     assert dd.footnote_text({}) == dd.DEFAULT_FOOTNOTE
+
+
+# --- Redesign: theme, header helpers --------------------------------
+
+def test_label_colours_match_the_redesign_palette():
+    assert dd.label_colour("pause_or_review") == "#C8452D"
+    assert dd.label_colour("test") == "#D9961A"
+    assert dd.label_colour("continue") == "#2E9E5B"
+    for label in ("not_comparable", "insufficient_data", "not_judged"):
+        assert dd.label_colour(label) == "#8C8C8C"
+    assert dd.label_tint("pause_or_review") == "#FBE3DD"
+    assert dd.label_tint("test") == "#FFF0CC"
+    assert dd.label_tint("continue") == "#DDF0E2"
+    assert dd.label_tint("something_new") == dd.GREY_TINT
+
+
+def test_data_line_format():
+    from datetime import date, datetime
+    line = dd.data_line((date(2024, 7, 1), date(2026, 11, 12)),
+                        datetime(2026, 11, 24, 10, 48, 31))
+    assert line == "Data 1 Jul 2024 – 12 Nov 2026 · Updated 24 Nov 2026 10:48"
+
+
+def test_logo_path_missing_key_missing_file_and_file(tmp_path):
+    assert dd.logo_path({}) is None
+    assert dd.logo_path({"branding": {}}) is None
+    assert dd.logo_path({"branding": {"logo_path": "nope.png"}},
+                        repo_root=tmp_path) is None
+    (tmp_path / "local").mkdir()
+    logo = tmp_path / "local" / "logo.png"
+    logo.write_bytes(b"png")
+    assert dd.logo_path({"branding": {"logo_path": "local/logo.png"}},
+                        repo_root=tmp_path) == logo

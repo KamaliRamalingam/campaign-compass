@@ -2,6 +2,11 @@
 # go/no-go checks. Do not put account IDs or credentials in this file.
 client: restaurant_chain
 currency: SEK
+# Dashboard only (redesign): optional logo in the header. The file
+# lives in config/local/ (git-ignored, never committed). Missing key
+# or missing file: the header shows the text wordmark.
+branding:
+  logo_path: config/local/logo.png
 # Optional: remove these if campaign names do not show location/offer
 # location_rule:
 #   source: campaign_name

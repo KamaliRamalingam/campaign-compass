@@ -34,46 +34,159 @@ import data as dashboard_data  # noqa: E402
 
 WIDE = st.column_config.TextColumn  # shorthand below
 NUM = st.column_config.NumberColumn
-PAGE_KEY = "page"
 DETAIL_KEY = "detail_campaign"
 # Widgets whose options depend on the client: reset on a switch.
 CLIENT_WIDGETS = ("act_group", "act_status", "act_pick", DETAIL_KEY,
                   "ctx_trend_campaign", "ctx_weekday")
 
+# Warm spice theme (redesign). Colours: text #3B2F2A, secondary
+# #7A6B5F (#6B5E54 inside tinted tiles, for 4.5:1), card border
+# #EADFCF, brand green #254C31 only for the header line, the active
+# tab and buttons. Open Sans from Google Fonts; Helvetica / Arial
+# when offline.
+GREEN = "#254C31"
 STYLE = """
 <style>
-.block-container {padding-top: 2.2rem; padding-bottom: 4rem;
-                  max-width: 1400px;}
-h1, h2, h3, h4 {color: #1F3A5F !important;}
-.cc-sub {color: #5B6573; font-size: 1.02rem; margin: -0.4rem 0 1.1rem;}
-.cc-badge {display: inline-block; padding: 0.2rem 0.75rem;
-           border-radius: 999px; font-weight: 600; font-size: 1.05rem;
-           border: 2px solid; color: #1C2430;}
-.cc-foot {color: #5B6573; font-size: 0.88rem; line-height: 1.5;}
-.cc-table {width: 100%; border-collapse: collapse; font-size: 0.92rem;
-           margin: 0.4rem 0 1rem;}
-.cc-table th {text-align: left; color: #1F3A5F; font-weight: 600;
-              border-bottom: 2px solid #1F3A5F; padding: 0.5rem 0.6rem;}
-.cc-table td {border-bottom: 1px solid #E6E9EF; padding: 0.55rem 0.6rem;
-              vertical-align: top;}
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap');
+html, body, [class*="st-"], .stApp, button, input, select, textarea {
+  font-family: 'Open Sans', Helvetica, Arial, sans-serif;}
+.stApp {background: #FBF6EE; color: #3B2F2A;}
+.block-container {padding: 1rem 24px 3rem; max-width: 1600px;}
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
+  {display: none;}
+[data-testid="stVerticalBlock"] {gap: 16px;}
+[data-testid="stHorizontalBlock"] {gap: 16px;}
+h1, h2, h3, h4 {color: #3B2F2A !important;}
+p, li, td, th {font-size: 14px;}
+
+/* Header: white, 3px green line. */
+[data-testid="stHeader"], [data-testid="stAppHeader"]
+  {background: #FFFFFF; border-bottom: 3px solid #254C31;}
+.st-key-cc_header {background: #FFFFFF; padding: 4px 0 8px;}
+.cc-brand {display: flex; align-items: center; gap: 16px;}
+.cc-divider {width: 1px; height: 36px; background: #D9CFC0;}
+.cc-wordmark {font-size: 14px; font-weight: 600; letter-spacing: 0.25em;
+  text-transform: uppercase; color: #7A6B5F;}
+[data-testid="stTopNavLink"] {font-size: 13px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: #3B2F2A;
+  border-radius: 4px; padding: 4px 14px;}
+[data-testid="stTopNavLink"] span {font-size: 13px; font-weight: 600;}
+[data-testid="stTopNavLink"][aria-current="page"]
+  {background: #254C31; color: #FFFFFF;}
+[data-testid="stTopNavLink"][aria-current="page"] *
+  {color: #FFFFFF;}
+
+/* Heading block. */
+.cc-page {font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #254C31; margin: 0;}
+.cc-q {font-size: 26px; font-weight: 600; color: #3B2F2A; margin: 2px 0;
+  line-height: 1.25;}
+.cc-data {font-size: 13px; font-weight: 400; color: #7A6B5F; margin: 0;}
+
+/* Cards. */
+[data-testid="stVerticalBlockBorderWrapper"],
+.st-key-cc_card, div[class*="st-key-card_"]
+  {background: #FFFFFF; border-color: #EADFCF !important;}
+[data-testid="stExpander"] details {background: #FFFFFF;
+  border-color: #EADFCF;}
+.cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
+  color: #3B2F2A;}
+
+/* Buttons. */
+.stButton button[kind="primary"], .stDownloadButton button,
+.stButton button {background: #254C31; color: #FFFFFF;
+  border-color: #254C31;}
+.stButton button:hover, .stDownloadButton button:hover
+  {background: #1C3A25; color: #FFFFFF; border-color: #1C3A25;}
+
+/* Labels: soft tint, coloured left border, symbol and dark text. */
+.cc-pill {display: inline-block; padding: 2px 10px; border-radius: 4px;
+  font-weight: 600; font-size: 13px; color: #3B2F2A; white-space: nowrap;
+  border-left: 3px solid;}
+.cc-badge {display: inline-block; padding: 6px 14px; border-radius: 6px;
+  font-weight: 600; font-size: 20px; color: #3B2F2A; border-left: 5px solid;}
+.cc-foot {color: #7A6B5F; font-size: 13px; line-height: 1.5;}
+.cc-take {font-size: 14px; color: #3B2F2A; margin: 0 0 8px;}
+.cc-muted {color: #7A6B5F; font-size: 13px;}
+
+/* Tables. */
+.cc-table {width: 100%; border-collapse: collapse; font-size: 14px;
+  margin: 0 0 8px;}
+.cc-table th {text-align: left; color: #7A6B5F; font-size: 12px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid #EADFCF; padding: 8px 8px; background: #FBF6EE;}
+.cc-table td {border-bottom: 1px solid #EADFCF; padding: 8px 8px;
+  vertical-align: top;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-table .nw {white-space: nowrap;}
-.cc-table .lab {font-weight: 600; white-space: nowrap; color: #1C2430;}
-.cc-todo {border: 2px solid #1F3A5F; border-radius: 0.6rem;
-          padding: 0.9rem 1.1rem; margin: 0.4rem 0 1.2rem;
-          background: #F4F7FB; color: #1C2430; font-size: 1.05rem;
-          line-height: 1.6;}
-.cc-todo .cc-counts {color: #5B6573; font-size: 0.95rem;}
-.cc-todo .cc-first {font-size: 1.15rem;}
-.cc-take {font-size: 1.05rem; color: #1C2430; margin: -0.2rem 0 0.8rem;}
+.cc-table .act {width: 100%;}
+.cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;}
+
+/* Decision tiles. */
+.cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 16px; align-items: stretch;}
+.cc-tile {border-radius: 8px; padding: 14px 16px; border-left: 5px solid;
+  color: #3B2F2A; min-height: 150px;}
+.cc-tile-head {display: flex; align-items: baseline; gap: 12px;}
+.cc-tile-count {font-size: 36px; font-weight: 300; line-height: 1;}
+.cc-tile-label {font-size: 15px; font-weight: 600;}
+.cc-tile-line {font-size: 13px; font-weight: 400; line-height: 1.4;
+  margin-top: 6px;}
+.cc-tile-more {font-size: 13px; color: #6B5E54; margin-top: 6px;}
+.cc-run {color: #6B5E54; white-space: nowrap;}
+@media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
+
+/* Context: recent-window rows, what-if tile, tags. */
+.cc-tag {display: inline-block; border: 1px solid #3B2F2A;
+  border-radius: 4px; padding: 0 6px; font-size: 12px; font-weight: 600;
+  color: #3B2F2A; background: #FFFFFF; white-space: nowrap;}
+.cc-big {background: #FBF6EE; border-radius: 8px; padding: 20px;
+  text-align: center;}
+.cc-big-n {font-size: 36px; font-weight: 300; line-height: 1.2;}
+.cc-rt {width: 100%; border-collapse: collapse; font-size: 13px;}
+.cc-rt td {padding: 4px 6px; vertical-align: middle;
+  border-bottom: 1px solid #EADFCF;}
+.cc-bar {display: inline-block; height: 12px; vertical-align: middle;
+  border-radius: 2px;}
 </style>
 """
 
 
+def _heading(page, question, ctx):
+    """The heading block: page label, question, data line."""
+    first, last = ctx["date_range"]
+    line = dashboard_data.data_line((first, last), ctx["updated"])
+    st.markdown(
+        f"<p class='cc-page'>{html.escape(page)}</p>"
+        f"<p class='cc-q'>{html.escape(question)}</p>"
+        f"<p class='cc-data'>{html.escape(line)}</p>",
+        unsafe_allow_html=True)
+
+
+def _caveat(ctx):
+    """The client's caveat banner (on every page)."""
+    st.info(ctx["caveat"], icon="ℹ️")
+
+
+def _card_title(text):
+    """A card's question title."""
+    st.markdown(f"<p class='cc-card-title'>{html.escape(text)}</p>",
+                unsafe_allow_html=True)
+
+
+def _pill(label):
+    """A label pill: tint, strong left border, symbol and text."""
+    text = html.escape(dashboard_data.label_text(label) or "—")
+    return (f"<span class='cc-pill' style='background:"
+            f"{dashboard_data.label_tint(label)};border-color:"
+            f"{dashboard_data.label_colour(label)}'>{text}</span>")
+
+
 def _title(question, subtitle, level=2):
-    """A navy question heading with a grey subtitle under it."""
+    """A question heading with a grey subtitle under it."""
     st.markdown(f"{'#' * level} {question}")
-    st.markdown(f"<p class='cc-sub'>{html.escape(subtitle)}</p>",
+    st.markdown(f"<p class='cc-muted'>{html.escape(subtitle)}</p>",
                 unsafe_allow_html=True)
 
 
@@ -84,26 +197,18 @@ def _card(column, label, value, definition):
         st.caption(definition)
 
 
-def _tint(colour, amount=0.78):
-    """A light tint of a hex colour, for readable cell backgrounds."""
-    colour = colour.lstrip("#")
-    red, green, blue = (int(colour[i:i + 2], 16) for i in (0, 2, 4))
-    mix = [round(value + (255 - value) * amount)
-           for value in (red, green, blue)]
-    return "#{:02X}{:02X}{:02X}".format(*mix)
-
-
-LABEL_CELL = {dashboard_data.label_text(label): style["colour"]
-              for label, style in dashboard_data.LABEL_STYLE.items()}
+LABEL_CELL = {dashboard_data.label_text(label): label
+              for label in dashboard_data.LABEL_STYLE}
 
 
 def _label_cell(value):
-    """Cell style for a label shown as text: tinted, dark text."""
-    colour = LABEL_CELL.get(value)
-    if colour is None:
+    """Cell style for a label shown as text: tint, border, dark text."""
+    label = LABEL_CELL.get(value)
+    if label is None:
         return ""
-    return (f"background-color: {_tint(colour)}; color: #1C2430; "
-            f"font-weight: 600")
+    return (f"background-color: {dashboard_data.label_tint(label)}; "
+            f"border-left: 3px solid {dashboard_data.label_colour(label)};"
+            f" color: #3B2F2A; font-weight: 600")
 
 
 def _styled(table, columns):
@@ -113,11 +218,11 @@ def _styled(table, columns):
 
 
 def _badge(label):
-    """A coloured label badge that also says the label in text."""
-    colour = dashboard_data.label_colour(label)
+    """A large label badge: tint, strong left border, symbol and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
-    return (f"<span class='cc-badge' style='background:{_tint(colour)};"
-            f"border-color:{colour}'>{text}</span>")
+    return (f"<span class='cc-badge' style='background:"
+            f"{dashboard_data.label_tint(label)};border-color:"
+            f"{dashboard_data.label_colour(label)}'>{text}</span>")
 
 
 def _footnotes(lines):
@@ -128,23 +233,9 @@ def _footnotes(lines):
 
 
 def _open_detail(campaign):
-    """Drill-through: open the Campaign detail page on a campaign.
-
-    Runs as a button callback, before the next rerun, so it may set
-    the page radio and the campaign selector.
-    """
-    st.session_state[PAGE_KEY] = "Campaign detail"
+    """Drill-through: open the Campaign detail page on a campaign."""
     st.session_state[DETAIL_KEY] = campaign
-
-
-def _context(ctx):
-    """Caveat banner, data date range and last-updated date."""
-    st.info(ctx["caveat"], icon="ℹ️")
-    first, last = ctx["date_range"]
-    st.caption(
-        f"Client: {ctx['client']} · Data date range: {first} to "
-        f"{last} · Last updated: {ctx['updated']:%Y-%m-%d %H:%M}"
-    )
+    st.switch_page(PAGE_OBJECTS["Campaign detail"])
 
 
 def _table(table, file_name=None, column_config=None, key=None,
@@ -183,14 +274,11 @@ def _action_html(table):
             "<th>Action</th><th>Label period</th></tr>")
     body = []
     for _, row in table.iterrows():
-        colour = dashboard_data.label_colour(row["label"])
         body.append(
             "<tr>"
             f"<td class='n'>{int(row['rank'])}</td>"
             f"<td><b>{html.escape(str(row['campaign']))}</b></td>"
-            f"<td class='lab' style='background:{_tint(colour)};"
-            f"border-left:4px solid {colour}'>"
-            f"{html.escape(row['final_label'])}</td>"
+            f"<td>{_pill(row['label'])}</td>"
             f"<td>{html.escape(str(row['status_now']))}</td>"
             f"<td class='n'>{_fmt(row['ratio_to_benchmark'], '{:.2f}x')}</td>"
             f"<td class='n'>{_fmt(row['tracked_actions'], '{:,.0f}')}</td>"
@@ -283,11 +371,8 @@ def _totals_scope(ctx, kpi):
 
 def _page_act(ctx):
     """Which campaigns should we continue, test or pause?"""
-    _title("Act: which campaigns should we continue, test or pause?",
-           "Final labels after the trend override, ranked by urgency. "
-           "Read the Context page before acting on any of them.",
-           level=1)
-    _context(ctx)
+    _heading("Act", "Which campaigns should we continue, test or pause?",
+             ctx)
     tables = ctx["tables"]
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
@@ -331,9 +416,9 @@ def _page_act(ctx):
         campaign = picks[0].selectbox(
             "Open a campaign's detail", list(table["campaign"]),
             key="act_pick")
-        picks[1].button("Open detail", on_click=_open_detail,
-                        args=(campaign,), type="primary",
-                        key="act_open")
+        if picks[1].button("Open detail", type="primary",
+                           key="act_open"):
+            _open_detail(campaign)
         picks[2].download_button(
             "Download CSV",
             dashboard_data.csv_bytes(table.drop(columns=["label"])),
@@ -699,10 +784,8 @@ def _context_method(ctx):
 
 def _page_context(ctx):
     """Can we trust this? Four tabs, then method and definitions."""
-    _title("Context: can we trust this?",
-           "Checks to read before acting on a label. Each tab answers "
-           "one question.", level=1)
-    _context(ctx)
+    _heading("Context", "Can we trust these labels, and when should we "
+             "run campaigns?", ctx)
     recent, weekdays, completeness, journey = st.tabs([
         "Recent change", "Weekdays and spend", "Data completeness",
         "How people reach us"])
@@ -769,11 +852,7 @@ def _detail_trend(ctx, campaign):
 def _page_detail(ctx):
     """One campaign: cards, action and reasons, runs, trend, weekday,
     journey."""
-    _title("Campaign detail",
-           "Everything behind one campaign's label. Open it from the "
-           "ranked table on the Act page, or pick a campaign here.",
-           level=1)
-    _context(ctx)
+    _heading("Campaign detail", "How has this campaign performed?", ctx)
     tables = ctx["tables"]
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
@@ -914,11 +993,27 @@ def _page_detail(ctx):
                 f"Cost per action ({currency})", format="%.2f")})
 
 
-PAGES = {
-    "Act": _page_act,
-    "Context": _page_context,
-    "Campaign detail": _page_detail,
-}
+PAGE_TITLES = ("Act", "Context", "Campaign detail")
+PAGE_OBJECTS = {}
+_CTX = {}
+
+
+def act():
+    """Act page (st.navigation entry)."""
+    _page_act(_CTX)
+    _caveat(_CTX)
+
+
+def context():
+    """Context page (st.navigation entry)."""
+    _page_context(_CTX)
+    _caveat(_CTX)
+
+
+def campaign_detail():
+    """Campaign detail page (st.navigation entry)."""
+    _page_detail(_CTX)
+    _caveat(_CTX)
 
 
 def _load(client):
@@ -945,13 +1040,48 @@ def _load(client):
     }
 
 
+def _header(clients):
+    """White header: optional logo, divider, wordmark, client picker.
+
+    The logo comes from branding.logo_path in the client config; when
+    the key or the file is missing, only the wordmark shows.
+    """
+    with st.container(key="cc_header"):
+        brand, picker = st.columns([5, 1], vertical_alignment="center")
+        client = picker.selectbox("Client", clients, index=0,
+                                  key="client",
+                                  label_visibility="collapsed")
+        try:
+            config = dashboard_data.load_config(
+                dashboard_data.client_config_path(client))
+        except FileNotFoundError:
+            config = {}
+        logo = dashboard_data.logo_path(config)
+        wordmark = "<span class='cc-wordmark'>CampaignCompass</span>"
+        with brand:
+            if logo is not None:
+                cols = st.columns([1, 5], vertical_alignment="center")
+                cols[0].image(str(logo), width=160)
+                cols[1].markdown(
+                    "<div class='cc-brand'><span class='cc-divider'>"
+                    f"</span>{wordmark}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='cc-brand'>{wordmark}</div>",
+                            unsafe_allow_html=True)
+    return client
+
+
 def main():
-    """Pick a client and a page, load the tables, show the page."""
-    st.set_page_config(page_title="CampaignCompass", layout="wide")
+    """Top navigation, header and client, load the tables, run a page."""
+    st.set_page_config(page_title="CampaignCompass", layout="wide",
+                       initial_sidebar_state="collapsed")
     st.markdown(STYLE, unsafe_allow_html=True)
-    st.sidebar.markdown("## CampaignCompass")
-    client = st.sidebar.selectbox(
-        "Client", dashboard_data.list_clients(), index=0)
+    pages = [st.Page(act, title="Act", default=True),
+             st.Page(context, title="Context"),
+             st.Page(campaign_detail, title="Campaign detail")]
+    PAGE_OBJECTS.update(zip(PAGE_TITLES, pages))
+    page = st.navigation(pages, position="top")
+    client = _header(dashboard_data.list_clients())
     if st.session_state.get("_client") != client:
         for key in CLIENT_WIDGETS:
             st.session_state.pop(key, None)
@@ -964,8 +1094,9 @@ def main():
     recs = ctx["tables"]["recommendations_by_campaign"]
     ctx["all_recommendations"] = recs
     ctx["campaigns"] = sorted(recs["campaign"])
-    page = st.sidebar.radio("Page", list(PAGES), key=PAGE_KEY)
-    PAGES[page](ctx)
+    _CTX.clear()
+    _CTX.update(ctx)
+    page.run()
 
 
 if __name__ == "__main__":

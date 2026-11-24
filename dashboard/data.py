@@ -809,23 +809,33 @@ def csv_bytes(table):
 
 # --- PR 5: three-page report -------------------------------------
 
-# Display text, symbol and colour per label. Okabe-Ito colours
-# (colour-blind safe); every label also has its own text and
-# symbol, so the meaning never depends on colour alone.
+# Display text, symbol and colours per label (redesign palette).
+# colour: the strong colour for bars, borders and markers. tint:
+# the soft fill for tiles and pills, always with dark text (dark
+# text on the strong green or grey is below 4.5:1). Every label
+# also has its own text and symbol, so the meaning never depends
+# on colour alone.
 LABEL_STYLE = {
     "continue": {"text": "Continue", "symbol": "✓",
-                 "colour": "#009E73", "marker": "circle"},
+                 "colour": "#2E9E5B", "tint": "#DDF0E2",
+                 "marker": "circle"},
     "test": {"text": "Test", "symbol": "◆",
-             "colour": "#E69F00", "marker": "diamond"},
+             "colour": "#D9961A", "tint": "#FFF0CC",
+             "marker": "diamond"},
     "pause_or_review": {"text": "Pause or review", "symbol": "✕",
-                        "colour": "#D55E00", "marker": "x"},
+                        "colour": "#C8452D", "tint": "#FBE3DD",
+                        "marker": "x"},
     "not_comparable": {"text": "Not comparable", "symbol": "○",
-                       "colour": "#0072B2", "marker": "circle-open"},
+                       "colour": "#8C8C8C", "tint": "#EFEAE3",
+                       "marker": "circle-open"},
     "insufficient_data": {"text": "Insufficient data", "symbol": "–",
-                          "colour": "#8C8C8C", "marker": "circle-open"},
+                          "colour": "#8C8C8C", "tint": "#EFEAE3",
+                          "marker": "circle-open"},
     "not_judged": {"text": "Not judged", "symbol": "–",
-                   "colour": "#8C8C8C", "marker": "circle-open"},
+                   "colour": "#8C8C8C", "tint": "#EFEAE3",
+                   "marker": "circle-open"},
 }
+GREY_TINT = "#EFEAE3"
 JUDGED_LABELS = ("continue", "test", "pause_or_review")
 # Most urgent first in the ranked action table.
 LABEL_RANK = {"pause_or_review": 0, "test": 1, "continue": 2,
@@ -849,6 +859,40 @@ def label_text(label):
 def label_colour(label):
     """Colour of a label (grey for unknown labels)."""
     return LABEL_STYLE.get(label, {}).get("colour", "#8C8C8C")
+
+
+def label_tint(label):
+    """Soft fill of a label (light grey for unknown labels)."""
+    return LABEL_STYLE.get(label, {}).get("tint", GREY_TINT)
+
+
+def _day(value):
+    """"1 Jul 2024" (no leading zero on the day)."""
+    return f"{value.day} {value:%b %Y}"
+
+
+def data_line(date_range, updated):
+    """"Data 1 Jul 2024 – 12 Nov 2026 · Updated 24 Nov 2026 10:48"."""
+    first, last = date_range
+    return (f"Data {_day(first)} – {_day(last)} · Updated "
+            f"{_day(updated)} {updated:%H:%M}")
+
+
+def logo_path(config, repo_root=None):
+    """The header logo from branding.logo_path, or None.
+
+    None when the key is missing or the file does not exist, so
+    the header falls back to the text wordmark without an error.
+    A relative path is read from the repo root.
+    """
+    branding = (config or {}).get("branding") or {}
+    configured = branding.get("logo_path")
+    if not configured:
+        return None
+    path = Path(configured)
+    if not path.is_absolute():
+        path = (Path(repo_root) if repo_root else REPO_ROOT) / path
+    return path if path.is_file() else None
 
 
 def footnote_text(config):

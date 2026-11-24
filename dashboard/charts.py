@@ -13,19 +13,23 @@ import plotly.graph_objects as go
 
 import data as dashboard_data
 
-NAVY = "#1F3A5F"
-GREY = "#5B6573"
-GRID = "#E6E9EF"
-NEUTRAL = "#4C6A92"
-FONT = "Source Sans Pro, Helvetica, Arial, sans-serif"
+# Warm spice palette (redesign). Label colours come only from
+# data.LABEL_STYLE; the brand green is never used in charts.
+TEXT = "#3B2F2A"
+GREY = "#7A6B5F"
+GRID = "#EADFCF"
+NEUTRAL = "#8C6F56"
+NEUTRAL_LIGHT = "#D9C8B4"
+NAVY = TEXT  # reference lines: charcoal
+FONT = "Open Sans, Helvetica, Arial, sans-serif"
 
 
 def _layout(fig, height=420, legend=True):
-    """Shared look: white background, navy text, room for labels."""
+    """Shared look: white background, charcoal text, room for labels."""
     fig.update_layout(
         height=height,
         template="plotly_white",
-        font={"family": FONT, "color": "#1C2430", "size": 13},
+        font={"family": FONT, "color": TEXT, "size": 13},
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -70,7 +74,7 @@ def bubble_chart(rows, lines, currency):
             name=dashboard_data.label_text(label),
             text=part["campaign"],
             textposition=[positions[name] for name in part["campaign"]],
-            textfont={"size": 12, "color": "#1C2430"},
+            textfont={"size": 12, "color": TEXT},
             cliponaxis=False,
             marker={
                 "size": part["label_spend"],
@@ -159,7 +163,7 @@ def trend_line(table, x_field, x_title, currency):
                 text=flagged["month_note"], textposition="top center",
                 textfont={"color": GREY, "size": 11},
                 marker={"size": 13, "symbol": "circle-open",
-                        "color": "#D55E00", "line": {"width": 2}},
+                        "color": TEXT, "line": {"width": 2}},
                 hovertemplate="%{x}: %{text}<extra></extra>"))
     fig.update_xaxes(title=x_title, type="category")
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
@@ -197,7 +201,7 @@ def recent_vs_prior_bar(rows, currency):
 def weekday_bar(table, currency, highlight=None):
     """Cost per tracked action by weekday, Monday to Sunday."""
     short = str(highlight)[:3] if highlight else None
-    colours = [("#D55E00" if str(day)[:3] == short else NEUTRAL)
+    colours = [(TEXT if str(day)[:3] == short else NEUTRAL)
                for day in table["weekday"]]
     fig = go.Figure(go.Bar(
         x=table["weekday"], y=table["cost_per_tracked_action"],
