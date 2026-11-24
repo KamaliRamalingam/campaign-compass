@@ -249,3 +249,15 @@ def test_ratio_bar_rows_without_override_column_or_rows():
     empty = dd.ratio_bar_rows(dd.action_table(_recs().iloc[4:]),
                               _recs())
     assert empty.empty
+
+
+def test_recent_rows_capped_and_most_clicks_weekday():
+    rows = pd.DataFrame({"campaign": list("ABCDEFG")})
+    shown, more = dd.recent_rows_capped(rows, 5)
+    assert list(shown["campaign"]) == list("ABCDE") and more == 2
+    shown, more = dd.recent_rows_capped(rows.head(3), 5)
+    assert len(shown) == 3 and more == 0
+    empty, more = dd.recent_rows_capped(rows.iloc[0:0], 5)
+    assert empty.empty and more == 0
+    assert dd.most_clicks_weekday(pd.DataFrame(
+        {"weekday": ["Mon"], "tracked_actions": [1]})) is None

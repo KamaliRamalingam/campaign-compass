@@ -61,3 +61,47 @@ def test_ratio_bar_dashed_lines_at_config_ratios_with_costs():
     texts = [note.text for note in fig.layout.annotations]
     assert any("4.88 SEK" in text for text in texts)
     assert any("9.76 SEK" in text for text in texts)
+
+
+def test_trend_line_flagged_months_are_hollow():
+    table = pd.DataFrame({
+        "month": ["2026-07", "2026-08", "2026-09"],
+        "cost_per_tracked_action": [4.5, 2.0, 5.8],
+        "spend": [1.0, 1.0, 1.0], "tracked_actions": [1.0, 1.0, 1.0],
+        "month_note": ["partial", "", "partial, lagged"]})
+    fig = charts.trend_line(table, "month", "Month", "SEK")
+    base, rings = fig.data
+    assert list(base.marker.color) == [
+        "rgba(0,0,0,0)", charts.NEUTRAL, "rgba(0,0,0,0)"]
+    assert rings.marker.symbol == "circle-open"
+    assert list(rings.text) == ["partial", "partial, lagged"]
+    assert fig.layout.yaxis.type != "log"
+
+
+def test_weekday_bar_outlines_only_the_busiest_weekday():
+    table = pd.DataFrame({
+        "weekday": ["Mon", "Tue", "Fri"],
+        "cost_per_tracked_action": [5.0, 6.0, 5.8],
+        "tracked_actions": [1.0, 1.0, 1.0],
+        "clicks": [10.0, 12.0, 30.0]})
+    busiest = dd.most_clicks_weekday(table)
+    assert busiest == "Fri"
+    fig = charts.weekday_bar(table, "SEK", highlight=busiest,
+                             note="most pooled clicks")
+    bar = fig.data[0]
+    # One neutral colour for every bar; only Fri has an outline.
+    assert bar.marker.color == charts.NEUTRAL
+    assert list(bar.marker.line.width) == [0, 0, 2.5]
+    assert [note.text for note in fig.layout.annotations] == [
+        "most pooled clicks"]
+
+
+def test_intent_stack_hides_labels_under_five_percent():
+    long = pd.DataFrame({
+        "campaign": ["A", "A", "A"],
+        "intent": ["Directions", "Calls", "Store visits"],
+        "share": [0.92, 0.05, 0.03]})
+    fig = charts.intent_stack(long)
+    texts = {trace.name: list(trace.text) for trace in fig.data}
+    assert texts == {"Directions": ["92%"], "Calls": ["5%"],
+                     "Store visits": [""]}

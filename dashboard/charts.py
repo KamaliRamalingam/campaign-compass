@@ -113,18 +113,22 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
     return fig
 
 
-def trend_line(table, x_field, x_title, currency):
+def trend_line(table, x_field, x_title, currency, height=360):
     """Cost per tracked action over time.
 
     Months with a month_note (partial or lagged) are drawn as
     hollow markers and named on the chart, so they read as
     incomplete without relying on colour.
     """
+    notes = (table["month_note"] if "month_note" in table.columns
+             else [""] * len(table))
+    # A flagged month has no filled dot: only the hollow ring below.
+    fill = ["rgba(0,0,0,0)" if note else NEUTRAL for note in notes]
     fig = go.Figure(go.Scatter(
         x=table[x_field].astype(str), y=table["cost_per_tracked_action"],
         mode="lines+markers", name="Cost per tracked action",
         line={"color": NEUTRAL, "width": 2},
-        marker={"size": 9, "color": NEUTRAL},
+        marker={"size": 9, "color": fill, "line": {"width": 0}},
         customdata=table[["spend", "tracked_actions"]].values,
         hovertemplate=(f"%{{x}}<br>Cost per tracked action: "
                        f"%{{y:,.2f}} {currency}<br>Spend: "
@@ -138,58 +142,52 @@ def trend_line(table, x_field, x_title, currency):
                 y=flagged["cost_per_tracked_action"],
                 mode="markers+text", name="Partial or lagged month",
                 text=flagged["month_note"], textposition="top center",
-                textfont={"color": GREY, "size": 11},
-                marker={"size": 13, "symbol": "circle-open",
+                textfont={"color": GREY, "size": 11}, cliponaxis=False,
+                marker={"size": 12, "symbol": "circle-open",
                         "color": TEXT, "line": {"width": 2}},
                 hovertemplate="%{x}: %{text}<extra></extra>"))
     fig.update_xaxes(title=x_title, type="category")
+    values = table["cost_per_tracked_action"].dropna()
+    top = float(values.max()) * 1.2 if len(values) else None
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
-                     rangemode="tozero")
-    return _layout(fig, height=360)
+                     rangemode="tozero",
+                     range=[0, top] if top else None)
+    return _layout(fig, height=height)
 
 
-def recent_vs_prior_bar(rows, currency):
-    """Prior and recent cost per tracked action per active campaign.
+def weekday_bar(table, currency, highlight=None, note=None):
+    """Cost per tracked action by weekday, Monday to Sunday.
 
-    rows: data.recent_trend_rows. Prior is grey, recent navy; the
-    legend names both, so colour is not the only cue.
+    All bars in the neutral colour with value labels; no good or bad
+    colours. highlight (a weekday) gets a dark outline and, when
+    given, the note written above it (for example "most pooled
+    clicks").
     """
-    fig = go.Figure()
-    for column, name, colour in (
-            ("prior_cost_per_tracked_action", "Prior window", GRID),
-            ("recent_cost_per_tracked_action", "Recent window", NAVY)):
-        values = rows[column]
-        fig.add_trace(go.Bar(
-            x=rows["campaign"], y=values, name=name,
-            marker_color=colour,
-            marker_line={"color": NAVY, "width": 1},
-            text=[f"{value:,.2f}" if value == value else ""
-                  for value in values],
-            textposition="outside", cliponaxis=False,
-            hovertemplate=(f"%{{x}}<br>{name}: %{{y:,.2f}} {currency}"
-                           "<extra></extra>")))
-    fig.update_layout(barmode="group")
-    fig.update_xaxes(title=None, type="category")
-    fig.update_yaxes(title=f"Cost per tracked action ({currency})",
-                     rangemode="tozero")
-    return _layout(fig, height=340)
-
-
-def weekday_bar(table, currency, highlight=None):
-    """Cost per tracked action by weekday, Monday to Sunday."""
-    short = str(highlight)[:3] if highlight else None
-    colours = [(TEXT if str(day)[:3] == short else NEUTRAL)
-               for day in table["weekday"]]
+    short = str(highlight)[:3] if highlight is not None else None
+    marked = [str(day)[:3] == short for day in table["weekday"]]
     fig = go.Figure(go.Bar(
         x=table["weekday"], y=table["cost_per_tracked_action"],
-        marker_color=colours,
+        marker={"color": NEUTRAL,
+                "line": {"color": [TEXT if mark else NEUTRAL
+                                   for mark in marked],
+                         "width": [2.5 if mark else 0
+                                   for mark in marked]}},
         text=[f"{value:,.2f}" for value in
               table["cost_per_tracked_action"]],
         textposition="outside", cliponaxis=False,
+        textfont={"color": TEXT},
         customdata=table[["tracked_actions", "clicks"]].values,
         hovertemplate=(f"%{{x}}: %{{y:,.2f}} {currency}<br>Tracked "
                        "actions: %{customdata[0]:,.0f}<br>Clicks: "
                        "%{customdata[1]:,.0f}<extra></extra>")))
+    if note and any(marked):
+        row = table.loc[marked].iloc[0]
+        fig.add_annotation(
+            x=row["weekday"], y=row["cost_per_tracked_action"],
+            text=note, showarrow=False, yshift=34,
+            font={"color": TEXT, "size": 11},
+            bgcolor="#FBF6EE", bordercolor=TEXT, borderwidth=1,
+            borderpad=3)
     fig.update_xaxes(title=None, type="category")
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
                      rangemode="tozero")
@@ -216,6 +214,8 @@ def share_bar(table, weekday):
                    legend=False)
 
 
+# Segment labels under this share are hidden (they do not fit).
+INTENT_LABEL_MIN = 0.05
 INTENT_COLOURS = {"Directions": "#0072B2", "Calls": "#E69F00",
                   "Store visits": "#009E73"}
 
@@ -230,7 +230,7 @@ def intent_stack(long):
         fig.add_trace(go.Bar(
             x=part["share"], y=part["campaign"], orientation="h",
             name=intent, marker_color=colour,
-            text=[f"{value:.0%}" if value >= 0.08 else ""
+            text=[f"{value:.0%}" if value >= INTENT_LABEL_MIN else ""
                   for value in part["share"]],
             textposition="inside", insidetextanchor="middle",
             hovertemplate=f"%{{y}}<br>{intent}: %{{x:.1%}}<extra></extra>"))

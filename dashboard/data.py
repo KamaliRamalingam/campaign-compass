@@ -1228,6 +1228,27 @@ def recent_trend_rows(recent_trend, recommendations):
     return table.sort_values("campaign").reset_index(drop=True)
 
 
+def recent_rows_capped(rows, limit=5):
+    """(first `limit` rows, how many more) of recent_trend_rows."""
+    if rows is None or rows.empty:
+        return rows, 0
+    return rows.head(limit).reset_index(drop=True), max(
+        0, len(rows) - limit)
+
+
+def most_clicks_weekday(pooled):
+    """The weekday with the most pooled clicks, or None.
+
+    pooled: weekday_core_table. Picks a row, computes nothing.
+    """
+    if pooled is None or pooled.empty or "clicks" not in pooled.columns:
+        return None
+    clicks = pd.to_numeric(pooled["clicks"], errors="coerce")
+    if clicks.notna().sum() == 0:
+        return None
+    return pooled.loc[clicks.idxmax(), "weekday"]
+
+
 def journey_intent_long(journey):
     """(campaign, intent, share) rows for a stacked intent bar."""
     campaigns = journey_campaigns(journey)
