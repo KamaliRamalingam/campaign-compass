@@ -982,8 +982,8 @@ def _completeness(ctx, campaign):
                    "lag": NUM("Lag (days)", format="%d"),
                    "trend_changes": NUM("Trend changes", format="%d"),
                    "label_changes": NUM("Label changes", format="%d")})
-        st.markdown("**All lag-check counts**")
-        _table(lag_check, "lag_check.csv", key="ctx_lag_all")
+        with st.expander("All lag-check counts"):
+            _table(lag_check, "lag_check.csv", key="ctx_lag_all")
     if campaign is not None:
         st.markdown(f"**Monthly trend: {campaign}**")
         st.caption("month note: partial (the campaign ran only part of "
@@ -1100,10 +1100,18 @@ def _context_method(ctx):
         st.caption(f"{int(stable.sum())} of {len(stable)} campaigns keep "
                    f"the same label in every threshold combination "
                    f"(labels before the trend override).")
-        _table(sensitivity, "recommendation_sensitivity.csv",
-               key="ctx_sensitivity", column_config={
-                   "campaign": WIDE("Campaign", width="large",
-                                    pinned=True)})
+        unstable = sensitivity[~sensitivity["label_stable"].astype(bool)]
+        if not unstable.empty:
+            st.markdown("**Labels that move**")
+            _table(unstable, None, key="ctx_sensitivity_unstable",
+                   column_config={
+                       "campaign": WIDE("Campaign", width="large",
+                                        pinned=True)})
+        with st.expander(f"Show all {len(sensitivity)} rows"):
+            _table(sensitivity, "recommendation_sensitivity.csv",
+                   key="ctx_sensitivity", column_config={
+                       "campaign": WIDE("Campaign", width="large",
+                                        pinned=True)})
 
         st.markdown("**Volume rule and thresholds (from the config)**")
         _table(dashboard_data.rules_table(config), "rules.csv",
