@@ -1167,13 +1167,18 @@ def _page_context(ctx):
 
 # --- Campaign detail ----------------------------------------------
 
-def _period_slider(values, label, key):
-    """A from-to slider over the sorted periods; returns (start, end)."""
+def _period_slider(values, label, key, default=None):
+    """A from-to slider over the sorted periods; returns (start, end).
+
+    default is the (start, end) the slider opens on; without it the
+    whole range is shown.
+    """
     options = sorted(set(str(value) for value in values))
     if len(options) < 2:
         return None, None
+    value = default or (options[0], options[-1])
     return st.select_slider(label, options=options,
-                            value=(options[0], options[-1]), key=key)
+                            value=value, key=key)
 
 
 def _detail_trend(ctx, campaign):
@@ -1198,8 +1203,17 @@ def _detail_trend(ctx, campaign):
         st.caption("No monthly or weekly rows: the trend tables cover "
                    "the time groups in the config.")
         return
+    default = None
+    if view == "Monthly" and "source" in table.columns:
+        # Open on the daily range, not the monthly-history range: the
+        # history months are still there if the slider is widened.
+        day_months = sorted(str(month) for month, source in
+                            zip(table["month"], table["source"])
+                            if source == "day")
+        if len(day_months) >= 2:
+            default = (day_months[0], day_months[-1])
     start, end = _period_slider(table[x_field], "Period",
-                                f"detail_period_{key}")
+                                f"detail_period_{key}", default=default)
     table = dashboard_data.filter_period(table, x_field, start, end)
     st.plotly_chart(charts.trend_line(
         table, x_field, x_title, currency,
