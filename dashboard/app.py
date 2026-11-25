@@ -68,20 +68,21 @@ p, li, td, th {font-size: 14px;}
 
 /* No header bar: Streamlit's header is transparent and empty except
    for its menu (⋮), which is lined up with the tabs row. The header
-   is two rows on the page: [title | client picker] above, [data
-   line | tabs | logo] below, with the menu at the far right of the
-   tabs row. The logo sits in the tabs row, filling the space the
-   tabs used to leave empty under it. The rows run 20px above the
-   title row, a 38px title row, 16px between the rows and a 72px
-   tabs row, so the tabs row's middle is 110px from the top; the
-   header overlay is 220px high to put the menu there. When the
-   title wraps to two lines the header grows to 298px: see
+   is two rows on the left ([title | client picker] above, [data
+   line | tabs] below) and the logo at the far right, spanning both
+   rows and centred on the header, so the space above it is not
+   empty. The picker sits directly above the tabs, right-aligned
+   with them, so it is above the CAMPAIGN DETAIL tab. The rows run
+   20px above the title row, a 38px title row, 16px between the rows
+   and a 40px tabs row, so the tabs row's middle is 94px from the
+   top; the header overlay is 188px high to put the menu there. When
+   the title wraps to two lines the header grows to 266px: see
    _top_row_css, which sets the window width for that per heading. */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
-  {background: transparent; border: 0; height: 220px;
+  {background: transparent; border: 0; height: 188px;
    pointer-events: none;}
 [data-testid="stDecoration"] {display: none;}
-[data-testid="stToolbar"] {height: 220px; align-items: center;
+[data-testid="stToolbar"] {height: 188px; align-items: center;
   max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
   box-sizing: border-box; left: 0; right: 0;}
 /* The empty header must not catch clicks meant for the top row;
@@ -92,25 +93,34 @@ p, li, td, th {font-size: 14px;}
   {pointer-events: auto;}
 [data-testid="stMainMenu"] {background: #FBF6EE; border-radius: 50%;}
 .st-key-cc_header {padding: 0; margin: 0 0 4px;}  /* + 16px gap = 20px */
+.st-key-cc_header_main [data-testid="stHorizontalBlock"],
 .st-key-cc_header_top [data-testid="stHorizontalBlock"],
 .st-key-cc_header_tabs [data-testid="stHorizontalBlock"]
   {align-items: center; flex-wrap: nowrap; gap: 24px;}
-/* Two columns in the top row (title, picker) and three in the tabs
-   row (data line, tabs, logo): the logo sits at the right of the
-   tabs row, filling the space the tabs used to leave empty under
-   it, and the tabs end before it. The 40px right margin leaves
-   room for the menu (⋮). */
+/* The header's outer columns (left stack, logo) come first: they
+   match the inner columns too (same specificity), so the inner
+   rules below, which come later, win for the picker and the tabs.
+   The left stack takes the width; the logo column is as wide as
+   the logo and the 40px right margin leaves room for the menu (⋮).
+   The left stack holds two rows: the top row (title, picker) and
+   the tabs row (data line, tabs). The picker sits at the right of
+   the top row, directly above the tabs, so it is above the
+   CAMPAIGN DETAIL tab; the logo spans both rows, centred on the
+   header, so the space above it is not empty. */
+.st-key-cc_header_main [data-testid="stColumn"]:nth-child(1)
+  {flex: 1 1 auto !important; width: auto !important; min-width: 0;}
+.st-key-cc_header_main [data-testid="stColumn"]:nth-child(2)
+  {flex: 0 0 auto !important; width: auto !important; min-width: 0;
+   margin-right: 40px;}
 .st-key-cc_header_top [data-testid="stColumn"]:nth-child(1),
 .st-key-cc_header_tabs [data-testid="stColumn"]:nth-child(1)
   {flex: 1 1 auto !important; width: auto !important; min-width: 0;}
 .st-key-cc_header_top [data-testid="stColumn"]:nth-child(2)
-  {flex: 0 0 180px !important; width: 180px !important; min-width: 180px;
-   margin-right: 40px;}
+  {flex: 0 0 180px !important; width: 180px !important; min-width: 180px;}
 .st-key-cc_header_tabs [data-testid="stColumn"]:nth-child(2)
   {flex: 0 0 340px !important; width: 340px !important; min-width: 340px;}
-.st-key-cc_header_tabs [data-testid="stColumn"]:nth-child(3)
-  {flex: 0 0 auto !important; width: auto !important; min-width: 0;
-   margin-right: 40px;}
+.st-key-cc_header_main [data-testid="stMarkdownContainer"],
+.st-key-cc_header_main [data-testid="stElementContainer"],
 .st-key-cc_header_top [data-testid="stMarkdownContainer"],
 .st-key-cc_header_top [data-testid="stElementContainer"],
 .st-key-cc_header_tabs [data-testid="stMarkdownContainer"],
@@ -277,47 +287,53 @@ def _ckey(name):
 
 
 # The header's heading slots (title in the top row, data line in
-# the tabs row), set by _header on every run; the heading is
-# filled by the page's _heading.
-_TOP = {"slot": None, "data_slot": None}
+# the tabs row) and the brand width in px (logo, or the wordmark),
+# set by _header on every run; the heading is filled by the page's
+# _heading, and the brand width feeds _top_row_css.
+_TOP = {"slot": None, "data_slot": None, "mark_px": 0}
 
 
 def _brand_html(brand):
-    """Logo or wordmark, at the far right of the tabs row."""
+    """Logo or wordmark, at the far right of the header, spanning
+    both rows and centred on it."""
     return f"<div class='cc-brand'>{brand}</div>"
 
 
 # Widths (px) for the header: Open Sans at 32px averages about
 # 18.5px per character in 600 weight and 15.8px in 400 (measured, then
 # rounded up so the estimate errs towards the two-line title); the
-# picker 180, the tabs 340, one 24px gap between the title and the
-# picker, the 40px right margin for the menu and the page padding
+# picker 180, the tabs 340, the wordmark 290, one 24px gap between
+# the title and the picker and one between the left stack and the
+# logo, the 40px right margin for the menu and the page padding
 # of 32px on each side.
 HEAD_CHAR_BOLD, HEAD_CHAR, NAV_PX = 18.5, 15.8, 340
 PICKER_PX = 180
+WORDMARK_PX = 290
 PAGE_MAX_PX = 2200 + 64  # widest window before the content stops growing
 
 
 def _top_row_css(name, question):
     """Media query for the top row, from this heading's length.
 
-    The header is two rows: [title | picker] above, [data line |
-    tabs | logo] below. The menu (⋮) is centred on the tabs row by
-    the 220px header height in STYLE. When the window is too narrow
+    The header is two rows on the left ([title | picker] above,
+    [data line | tabs] below) and the logo at the far right,
+    spanning both rows. The menu (⋮) is centred on the tabs row by
+    the 188px header height in STYLE. When the window is too narrow
     for the title beside the picker on one line, the title wraps to
-    two lines and the header grows to 298px so the menu stays
+    two lines and the header grows to 266px so the menu stays
     centred on the tabs row. A title that never fits beside the
     picker within the 2200px page always uses the taller header.
     """
     text = (len(name) + 1) * HEAD_CHAR_BOLD + (len(question) + 1) * HEAD_CHAR
     # 64px page padding, one 24px gap between title and picker, the
-    # 180px picker and the 40px right margin for the menu.
-    one_line = round(64 + text + 24 + PICKER_PX + 40)
+    # 180px picker, the brand width, one 24px gap between the left
+    # stack and the logo and the 40px right margin for the menu.
+    one_line = round(64 + text + 24 + PICKER_PX + _TOP["mark_px"] + 24 + 40)
     if one_line > PAGE_MAX_PX:
         one_line = 100000
     return (f"<style>@media (max-width: {one_line}px) {{"
             "[data-testid='stHeader'], [data-testid='stAppHeader'],"
-            "[data-testid='stToolbar'] {height: 298px;}"
+            "[data-testid='stToolbar'] {height: 266px;}"
             "}</style>")
 
 
@@ -325,9 +341,9 @@ def _heading(page, question, ctx):
     """The heading: one heading line ("CampaignCompass · <page>:"
     in 600 weight, then the question in 400 weight) in the top row,
     and the data line in the tabs row, both at the left. The logo
-    or wordmark is at the far right, so the heading always names
-    the tool. When the page runs alone (a page run without the
-    header), the heading is shown where the page is.
+    or wordmark is at the far right, spanning both rows, so the
+    heading always names the tool. When the page runs alone (a page
+    run without the header), the heading is shown where the page is.
     """
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
@@ -1493,20 +1509,24 @@ LOGO_HEIGHT = 216  # pixels kept in memory: sharp at 72px on 2x-3x screens
 
 @st.cache_data(show_spinner=False)
 def _logo_data(path_text, mtime):
-    """(media type, base64) of the logo, downscaled in memory.
+    """(media type, base64, width/height ratio) of the logo,
+    downscaled in memory.
 
     A raster logo taller than LOGO_HEIGHT is resized (aspect ratio
     kept) so a large file is not sent in full on every rerun. The
     file on disk is never changed. mtime is part of the cache key.
+    An SVG has no raster size, so its ratio is 1.
     """
     path = Path(path_text)
     kind = LOGO_TYPES.get(path.suffix.lower(), "image/png")
     raw = path.read_bytes()
+    ratio = 1.0
     if kind != "image/svg+xml":
         try:
             import io
             from PIL import Image
             with Image.open(io.BytesIO(raw)) as image:
+                ratio = image.width / image.height
                 if image.height > LOGO_HEIGHT:
                     width = round(image.width * LOGO_HEIGHT / image.height)
                     small = image.resize((width, LOGO_HEIGHT),
@@ -1516,70 +1536,81 @@ def _logo_data(path_text, mtime):
                     raw, kind = out.getvalue(), "image/png"
         except Exception:  # an unreadable image: send the file as is
             pass
-    return kind, base64.b64encode(raw).decode("ascii")
+    return kind, base64.b64encode(raw).decode("ascii"), ratio
 
 
 def _logo_img(path):
-    """The logo as an inline <img> (read locally, never uploaded)."""
-    kind, data = _logo_data(str(path), path.stat().st_mtime)
+    """The logo as an inline <img> (read locally, never uploaded),
+    and its width in px at 72px high."""
+    kind, data, ratio = _logo_data(str(path), path.stat().st_mtime)
     return (f"<img class='cc-logo' alt='Logo' "
-            f"src='data:{kind};base64,{data}'>")
+            f"src='data:{kind};base64,{data}'>",
+            round(72 * ratio))
 
 
 def _header(clients, pages=None, current=None):
-    """The header, in two rows on the page background: the page
-    title at the left and the client picker at the right, in the
-    row above; the data line at the left, the page tabs in the
-    middle and the client's logo (or the CAMPAIGNCOMPASS wordmark)
-    at the far right, in the row below, with the menu (⋮) lined up
-    with the tabs.
+    """The header: two rows on the left and the logo at the far
+    right, spanning both rows and centred on the header, so the
+    space above it is not empty. The top row is the page title at
+    the left and the client picker at the right; the picker sits
+    directly above the tabs, right-aligned with them, so it is
+    above the CAMPAIGN DETAIL tab. The row below is the data line
+    at the left and the page tabs at the right. The menu (⋮) is
+    lined up with the tabs row.
 
     The logo comes from branding.logo_path in the client config; when
     the key or the file is missing, the wordmark shows in its place.
     The logo follows the picked client, so the brand is filled in
-    after the picker, into a placeholder in the tabs row. The logo
-    fills the space the tabs used to leave empty under it. pages:
+    after the picker, into a placeholder in the logo column. pages:
     the st.Page objects for the tabs (none in tests that run one
     page); current: the page being shown, whose tab is underlined.
     """
     with st.container(key="cc_header"):
-        with st.container(key="cc_header_top"):
-            title_col, picker_col = st.columns(
+        with st.container(key="cc_header_main"):
+            left_col, brand_col = st.columns(
                 2, vertical_alignment="center")
-            _TOP["slot"] = title_col.empty()
-            with picker_col.container(key="cc_picker"):
-                client = st.selectbox("Client", clients, index=0,
-                                      key="client",
-                                      label_visibility="collapsed")
-        try:
-            config = dashboard_data.load_config(
-                dashboard_data.client_config_path(client))
-        except FileNotFoundError:
-            config = {}
-        logo = dashboard_data.logo_path(config)
-        if logo is not None:
-            mark = _logo_img(logo)
-        else:
-            mark = "<span class='cc-wordmark'>CampaignCompass</span>"
-        with st.container(key="cc_header_tabs"):
-            data_col, nav_col, brand_col = st.columns(
-                3, vertical_alignment="center")
-            _TOP["data_slot"] = data_col.empty()
-            brand_col.markdown(_brand_html(mark), unsafe_allow_html=True)
-        if pages:
-            with nav_col.container(key="cc_nav", horizontal=True):
-                for number, page in enumerate(pages):
-                    active = current is not None and \
-                        page.url_path == current.url_path
-                    state = "on" if active else f"off_{number}"
-                    with st.container(key=f"cc_nav_{state}", width="content"):
-                        st.page_link(page, label=page.title)
+            brand_slot = brand_col.empty()
+            with left_col:
+                with st.container(key="cc_header_top"):
+                    title_col, picker_col = st.columns(
+                        2, vertical_alignment="center")
+                    _TOP["slot"] = title_col.empty()
+                    with picker_col.container(key="cc_picker"):
+                        client = st.selectbox("Client", clients, index=0,
+                                              key="client",
+                                              label_visibility="collapsed")
+                try:
+                    config = dashboard_data.load_config(
+                        dashboard_data.client_config_path(client))
+                except FileNotFoundError:
+                    config = {}
+                logo = dashboard_data.logo_path(config)
+                if logo is not None:
+                    mark, _TOP["mark_px"] = _logo_img(logo)
+                else:
+                    mark = "<span class='cc-wordmark'>CampaignCompass</span>"
+                    _TOP["mark_px"] = WORDMARK_PX
+                brand_slot.markdown(_brand_html(mark),
+                                    unsafe_allow_html=True)
+                with st.container(key="cc_header_tabs"):
+                    data_col, nav_col = st.columns(
+                        2, vertical_alignment="center")
+                    _TOP["data_slot"] = data_col.empty()
+                if pages:
+                    with nav_col.container(key="cc_nav", horizontal=True):
+                        for number, page in enumerate(pages):
+                            active = current is not None and \
+                                page.url_path == current.url_path
+                            state = "on" if active else f"off_{number}"
+                            with st.container(key=f"cc_nav_{state}",
+                                             width="content"):
+                                st.page_link(page, label=page.title)
     return client
 
 
 def main():
-    """Header (title and picker above; data line, tabs and logo
-    below), load the tables, run a page."""
+    """Header (title and picker above the tabs; logo spanning both
+    rows at the far right), load the tables, run a page."""
     st.set_page_config(page_title="CampaignCompass", layout="wide",
                        initial_sidebar_state="collapsed")
     st.markdown(STYLE, unsafe_allow_html=True)
