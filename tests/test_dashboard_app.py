@@ -90,10 +90,11 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     assert not script.exception, script.exception
     page = " ".join(block.value for block in script.markdown)
     assert ("<img class='cc-logo'" in page) == (mode == "logo")
-    # Wordmark in the header only without a logo; the heading repeats
-    # the tool name only beside a logo (the wordmark already names it).
+    # Wordmark in the header only without a logo. The heading always
+    # names the tool now: the brand is at the top-right, not beside
+    # the heading, so the heading cannot rely on it.
     assert ("cc-wordmark'>CampaignCompass" in page) == (mode != "logo")
-    assert ("CampaignCompass · " in page) == (mode == "logo")
+    assert "CampaignCompass · " in page
     assert "class='cc-page'>" in page and "class='cc-q'>" in page
 
 
