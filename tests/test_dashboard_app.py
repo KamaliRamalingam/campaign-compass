@@ -177,3 +177,26 @@ def test_campaign_detail_table_expanders_sit_under_their_charts():
     pattern = next(block for block in script.expander
                    if block.label == "Weekday pattern")
     assert [block.label for block in pattern.expander] == ["Weekday table"]
+
+
+def test_act_table_shows_the_full_action_text():
+    """A long action text is in the Act table in full: no clamp, no
+    "…", and the Action cell is the wide, wrapping column."""
+    import pandas as pd
+
+    import app
+
+    action = ("keep running, but test changes; cost per tracked action "
+              "has risen recently: check budget changes & conversion "
+              "reporting")
+    table = pd.DataFrame([{
+        "rank": 1, "campaign": "Lunch", "label": "test",
+        "status_now": "active", "ratio_to_benchmark": 1.4,
+        "tracked_actions": 120, "recent_trend": "worsening",
+        "action": action, "label_period": "2025-06-06 to 2025-10-04"}])
+    out = app._action_html(table)
+    escaped = action.replace("&", "&amp;")
+    assert f"<td class='act'>{escaped}</td>" in out
+    assert "…" not in out
+    assert "cc-clamp" not in out and "line-clamp" not in app.STYLE
+    assert ".cc-table .act {width: 32%; white-space: normal;" in app.STYLE
