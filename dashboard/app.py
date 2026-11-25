@@ -51,46 +51,70 @@ GREEN = "#254C31"
 STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap');
+/* Scale: every size below comes from these variables, so the whole
+   dashboard can be tuned here. --cc-s is the overall scale (0.88 =
+   about 12% smaller than the original design); sizes keep a 12px
+   floor except footnotes. Streamlit sizes its own widgets (selects,
+   inputs, buttons, card padding) in rem, so the root font size
+   follows the same scale. */
+:root {
+  --cc-s: 0.88;
+  --cc-pad-k: calc(var(--cc-s) - 0.08);          /* padding: ~20% less */
+  --cc-root: calc(16px * var(--cc-s));
+  --cc-text: max(12px, calc(14.2px * var(--cc-s)));   /* body: 12.5px */
+  --cc-small: max(12px, calc(13px * var(--cc-s)));    /* 12px */
+  --cc-foot: calc(13px * var(--cc-s));                /* footnotes */
+  --cc-th: 12px;                                      /* table headers */
+  --cc-num: calc(34px * var(--cc-s));                 /* tile numbers: 30px */
+  --cc-kpi: calc(22px * var(--cc-s));
+  --cc-badge: calc(20px * var(--cc-s));
+  --cc-card-title: calc(18px * var(--cc-s));
+  --cc-label: calc(15px * var(--cc-s));
+  --cc-wordmark: calc(22px * var(--cc-s));
+  --cc-gap: calc(13.64px * var(--cc-s));             /* 12px */
+  --cc-pad-y: calc(14px * var(--cc-pad-k));
+  --cc-pad-x: calc(16px * var(--cc-pad-k));
+  --cc-tile-min: calc(150px * var(--cc-s));
+  --cc-page-max: 1500px;                              /* content width */
+  --cc-side: 24px;                                    /* side padding */
+  --cc-logo-h: 64px;
+  --cc-picker-w: 160px;
+}
+html {font-size: var(--cc-root);}
 html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 .stApp button, .stApp td, .stApp th, .stApp li, .stApp a {
   font-family: 'Open Sans', Helvetica, Arial, sans-serif;}
 [data-testid="stIconMaterial"], .material-symbols-rounded {
   font-family: 'Material Symbols Rounded' !important;}
 .stApp {background: #FBF6EE; color: #3B2F2A;}
-/* Page width: 32px side padding, at most 2200px of content; the
-   header row uses the same box so both share one left/right edge. */
-.block-container {padding: 4px 32px 3rem; max-width: 2200px;}
-/* (4px + the 16px gap after the style element = 20px above the row) */
+/* Page width: at most 1500px of content, centred, 24px side
+   padding; the header uses the same box so both share one edge. */
+.block-container {padding: 4px var(--cc-side) 3rem;
+  max-width: calc(var(--cc-page-max) + 2 * var(--cc-side));}
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
   {display: none;}
-[data-testid="stVerticalBlock"] {gap: 16px;}
-[data-testid="stHorizontalBlock"] {gap: 16px;}
+[data-testid="stVerticalBlock"] {gap: var(--cc-gap);}
+[data-testid="stHorizontalBlock"] {gap: var(--cc-gap);}
 h1, h2, h3, h4 {color: #3B2F2A !important;}
-p, li, td, th {font-size: 14px;}
+p, li, td, th {font-size: var(--cc-text);}
 
 /* No header bar: Streamlit's header is transparent and empty except
-   for its menu (⋮), which is lined up with the tabs. The header is
-   the heading row (logo or wordmark at the left, a thin divider,
-   then the one-line heading with the data line under it) and the
-   controls (client picker and tabs, then the menu). Below 1800px
-   the controls are a row of their own under the heading row,
-   right-aligned; from 1800px they sit at the right of the heading
-   row. The rows run 20px above the heading row, a 72px heading
-   row, 16px between the rows and a 40px controls row, so the
-   controls' middle is 128px from the top below 1800px (header
-   overlay 256px) and 56px from 1800px (overlay 112px): the menu is
-   centred in the overlay, so it sits level with the controls. */
+   for its menu (⋮). The header is two rows at every width: the
+   heading (one line, data line under it) at the left and the logo
+   (or the wordmark) at the right edge; then the page tabs at the
+   left, under the heading text, and the client picker at the right,
+   with room after it for the menu. The menu is centred in the
+   header overlay, and the tabs row's middle is about 112px from the
+   top (16px above the 64px heading row, a 12px gap, then the tabs
+   row), so the overlay is 225px high. */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
-  {background: transparent; border: 0; height: 256px;
+  {background: transparent; border: 0; height: 225px;
    pointer-events: none;}
 [data-testid="stDecoration"] {display: none;}
-[data-testid="stToolbar"] {height: 256px; align-items: center;
-  max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
+[data-testid="stToolbar"] {height: 225px; align-items: center;
+  max-width: calc(var(--cc-page-max) + 2 * var(--cc-side));
+  margin: 0 auto; padding: 0 8px 0 var(--cc-side);
   box-sizing: border-box; left: 0; right: 0;}
-@media (min-width: 1800px) {
-  [data-testid="stHeader"], [data-testid="stAppHeader"],
-  [data-testid="stToolbar"] {height: 112px;}
-}
 /* The empty header must not catch clicks meant for the top row;
    only its menu (⋮) stays clickable. */
 [data-testid="stHeader"] * {pointer-events: none;}
@@ -98,44 +122,35 @@ p, li, td, th {font-size: 14px;}
 [data-testid="stHeader"] [data-testid="stMainMenu"] *
   {pointer-events: auto;}
 [data-testid="stMainMenu"] {background: #FBF6EE; border-radius: 50%;}
-.st-key-cc_header {padding: 0; margin: 0 0 4px;}  /* + 16px gap = 20px */
+.st-key-cc_header {padding: 0; margin: 0;}
 .st-key-cc_header [data-testid="stMarkdownContainer"],
 .st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
-/* Controls: picker, then the tabs, right-aligned; the 40px right
+/* Tabs row: tabs at the left, picker at the right; the 40px right
    margin leaves room for the menu (⋮). */
-.st-key-cc_controls {justify-content: flex-end; align-items: center;
-  gap: 16px; flex-wrap: nowrap;}
-.st-key-cc_header > [data-testid="stLayoutWrapper"]:has(> .st-key-cc_controls)
-  {align-self: flex-end; margin-right: 40px; flex: 0 0 auto;}
-@media (min-width: 1800px) {
-  .st-key-cc_header {flex-direction: row; align-items: center;
-    flex-wrap: nowrap; gap: 24px;}
-  .st-key-cc_header > [data-testid="stElementContainer"]
-    {flex: 1 1 auto; min-width: 0; width: auto !important;}
-  .st-key-cc_header > [data-testid="stLayoutWrapper"]:has(> .st-key-cc_controls)
-    {align-self: center;}
-}
-/* Heading row: brand at the left, a thin divider, then the heading
-   with the data line under it, both starting at the same left edge. */
-.cc-head {display: flex; align-items: center; gap: 16px;
-  min-height: 72px; min-width: 0;}
-.cc-brand {display: flex; align-items: center; min-height: 72px;
-  flex: 0 0 auto;}
-.cc-divider {flex: 0 0 1px; align-self: stretch; background: #EADFCF;}
+.st-key-cc_controls {justify-content: space-between; align-items: center;
+  gap: var(--cc-gap); flex-wrap: nowrap; padding-right: 40px;
+  box-sizing: border-box;}
+/* Heading row: heading at the left, brand at the right edge. */
+.cc-head {display: flex; align-items: center; gap: 24px;
+  min-height: var(--cc-logo-h); min-width: 0;}
 .cc-headtext {flex: 1 1 auto; min-width: 0;}
-.cc-logo {height: 72px; width: auto; display: block; flex: 0 0 auto;}
-.cc-wordmark {font-size: 22px; font-weight: 600; letter-spacing: 0.2em;
-  text-transform: uppercase; color: #7A6B5F; flex: 0 0 auto;
-  white-space: nowrap;}
-/* Page tabs: plain text; the active one has a 3px green underline. */
-.st-key-cc_nav {justify-content: flex-end; gap: 4px; flex-wrap: nowrap;
-  width: auto;}
+.cc-brand {display: flex; align-items: center; justify-content: flex-end;
+  min-height: var(--cc-logo-h); flex: 0 0 auto; margin-left: auto;}
+.cc-logo {height: var(--cc-logo-h); width: auto; display: block;
+  flex: 0 0 auto;}
+.cc-wordmark {font-size: var(--cc-wordmark); font-weight: 600;
+  letter-spacing: 0.2em; text-transform: uppercase; color: #7A6B5F;
+  flex: 0 0 auto; white-space: nowrap;}
+/* Page tabs: plain text; the active one has a 3px green underline.
+   The first tab's text starts at the heading's left edge. */
+.st-key-cc_nav {justify-content: flex-start; gap: 4px; flex-wrap: nowrap;
+  width: auto; margin-left: -12px;}
 .st-key-cc_nav [data-testid="stPageLink"] a {background: transparent;
-  border-radius: 0; padding: 8px 12px 6px; border-bottom: 3px solid
+  border-radius: 0; padding: 6px 12px 5px; border-bottom: 3px solid
   transparent;}
 .st-key-cc_nav [data-testid="stPageLink"] a:hover
   {background: transparent; border-bottom-color: #D9CFC0;}
-.st-key-cc_nav [data-testid="stPageLink"] p {font-size: 13px;
+.st-key-cc_nav [data-testid="stPageLink"] p {font-size: var(--cc-small);
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
   color: #3B2F2A; white-space: nowrap;}
 .st-key-cc_nav_on [data-testid="stPageLink"] a
@@ -143,31 +158,24 @@ p, li, td, th {font-size: 14px;}
 .st-key-cc_nav_on [data-testid="stPageLink"] a:hover
   {border-bottom-color: #254C31;}
 .st-key-cc_nav_on [data-testid="stPageLink"] p {color: #254C31;}
-.st-key-cc_picker [data-baseweb="select"] > div {min-height: 34px;
-  font-size: 13px;}
 
 /* Heading: always one deep green line, tool and page name in 600
    weight, the question in 400; never wraps. The size follows the
-   window (18-32px) so the longest heading (Context) fits beside the
-   brand: below 1800px the heading has the row to itself; from
-   1800px it shares it with the controls (about 700px), so it uses a
-   second scale. Below 1150px the "CampaignCompass · " part is
-   hidden (the logo or wordmark already names the tool) and the
-   wordmark is smaller. Data line 14px grey under it. */
-.stApp .cc-title {font-size: clamp(18px, calc((100vw - 330px) / 46), 32px);
+   window (18px up to about 28px at the 1500px content cap) so the
+   longest heading (Context) fits beside the brand. Below 1150px the
+   "CampaignCompass · " part is hidden (the logo already names the
+   tool) and the wordmark is smaller. Data line grey under it. */
+.stApp .cc-title {font-size:
+    clamp(18px, calc((min(100vw, 1548px) - 260px) / 46), 32px);
   line-height: 1.2; color: #254C31; margin: 0; white-space: nowrap;}
-@media (min-width: 1800px) {
-  .stApp .cc-title {font-size:
-    clamp(18px, calc((min(100vw, 2264px) - 1030px) / 44), 32px);}
-}
 @media (max-width: 1149px) {
   .stApp .cc-tool {display: none;}
-  .cc-wordmark {font-size: 18px;}
+  .cc-wordmark {font-size: 16px;}
 }
 .stApp .cc-page {font-weight: 600; color: #254C31;}
 .stApp .cc-q {font-weight: 400; color: #254C31;}
-.stApp .cc-data {font-size: 14px; font-weight: 400; color: #7A6B5F;
-  margin: 4px 0 0; white-space: nowrap;}
+.stApp .cc-data {font-size: var(--cc-text); font-weight: 400;
+  color: #7A6B5F; margin: 4px 0 0; white-space: nowrap;}
 
 /* Caveat banner: white, warm border, charcoal text. */
 [data-testid="stAlert"] > div {background: #FFFFFF; color: #3B2F2A;
@@ -190,28 +198,30 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   background: #FFFFFF;}
 /* Space after HTML blocks (Streamlit gives markdown a negative bottom
    margin, so rows of HTML cards would touch the next row). */
-.cc-tiles, .cc-stat {margin-bottom: 16px;}
+.cc-tiles, .cc-stat {margin-bottom: var(--cc-gap);}
 .cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: 14px 16px; min-height: 160px;}
-.cc-stat-title {font-size: 15px; font-weight: 600;}
-.cc-stat-v {font-size: 36px; font-weight: 300; line-height: 1.2;
+  border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
+  min-height: calc(160px * var(--cc-s));}
+.cc-stat-title {font-size: var(--cc-label); font-weight: 600;}
+.cc-stat-v {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;
   margin-top: 4px; color: #254C31;}
-.cc-kpis {display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-  margin-bottom: 12px;}
+.cc-kpis {display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--cc-gap); margin-bottom: var(--cc-gap);}
 .cc-kpi {background: #FBF6EE; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: 10px 12px;}
-.cc-kpi-l {font-size: 13px; font-weight: 600; color: #3B2F2A;}
-.cc-kpi-v {font-size: 22px; font-weight: 600; line-height: 1.25;
+  border-radius: 8px; padding: calc(10px * var(--cc-pad-k))
+  calc(12px * var(--cc-pad-k));}
+.cc-kpi-l {font-size: var(--cc-small); font-weight: 600; color: #3B2F2A;}
+.cc-kpi-v {font-size: var(--cc-kpi); font-weight: 600; line-height: 1.25;
   margin: 4px 0; overflow-wrap: anywhere; color: #254C31;}
-.cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
-  color: #3B2F2A;}
+.cc-card-title {font-size: var(--cc-card-title); font-weight: 600;
+  margin: 0 0 4px; color: #3B2F2A;}
 /* The Act-page filter labels (Campaign group, Status now, Minimum
-   tracked actions) match the card titles: 18px, weight 600. Only
-   the labels inside the filters container change. */
+   tracked actions) match the card titles. Only the labels inside
+   the filters container change. */
 .st-key-cc_filters [data-testid="stWidgetLabel"],
 .st-key-cc_filters [data-testid="stWidgetLabel"] p,
 .st-key-cc_filters [data-testid="stWidgetLabel"] span
-  {font-size: 18px; font-weight: 600; color: #3B2F2A;}
+  {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
 
 /* Buttons. */
 .stButton button[kind="primary"], .stDownloadButton button,
@@ -221,22 +231,23 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   {background: #1C3A25; color: #FFFFFF; border-color: #1C3A25;}
 
 /* Labels: soft tint, coloured left border, symbol and dark text. */
-.cc-pill {display: inline-block; padding: 2px 10px; border-radius: 4px;
-  font-weight: 600; font-size: 13px; color: #3B2F2A; white-space: nowrap;
-  border-left: 3px solid;}
-.cc-badge {display: inline-block; padding: 6px 14px; border-radius: 6px;
-  font-weight: 600; font-size: 20px; color: #3B2F2A; border-left: 5px solid;}
-.cc-foot {color: #7A6B5F; font-size: 13px; line-height: 1.5;}
-.cc-take {font-size: 14px; color: #3B2F2A; margin: 0 0 8px;}
-.cc-muted {color: #7A6B5F; font-size: 13px;}
+.cc-pill {display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; font-size: var(--cc-small); color: #3B2F2A;
+  white-space: nowrap; border-left: 3px solid;}
+.cc-badge {display: inline-block; padding: 5px 12px; border-radius: 6px;
+  font-weight: 600; font-size: var(--cc-badge); color: #3B2F2A;
+  border-left: 5px solid;}
+.cc-foot {color: #7A6B5F; font-size: var(--cc-foot); line-height: 1.5;}
+.cc-take {font-size: var(--cc-text); color: #3B2F2A; margin: 0 0 8px;}
+.cc-muted {color: #7A6B5F; font-size: var(--cc-small);}
 
 /* Tables. */
-.cc-table {width: 100%; border-collapse: collapse; font-size: 14px;
-  margin: 0 0 8px;}
-.cc-table th {text-align: left; color: #7A6B5F; font-size: 12px;
+.cc-table {width: 100%; border-collapse: collapse;
+  font-size: var(--cc-text); margin: 0 0 8px;}
+.cc-table th {text-align: left; color: #7A6B5F; font-size: var(--cc-th);
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  border-bottom: 1px solid #EADFCF; padding: 8px 8px; background: #F3EADB;}
-.cc-table td {border-bottom: 1px solid #EADFCF; padding: 8px 8px;
+  border-bottom: 1px solid #EADFCF; padding: 6px; background: #F3EADB;}
+.cc-table td {border-bottom: 1px solid #EADFCF; padding: 6px;
   vertical-align: top; background: #FFFFFF;}
 .cc-table, .cc-table tr, .cc-table tr:nth-child(even) td
   {background: #FFFFFF;}
@@ -244,20 +255,20 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .stApp .cc-table th, .stApp .cc-table td {border-left: 0; border-right: 0;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-scroll {overflow-x: auto; max-width: 100%;}
-.stApp .cc-tight th, .stApp .cc-tight td {padding: 5px 5px;
-  font-size: 12px;}
+.stApp .cc-tight th, .stApp .cc-tight td {padding: 4px;
+  font-size: var(--cc-small);}
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
-.cc-table .per {font-size: 13px;}
+.cc-table .per {font-size: var(--cc-small);}
 .cc-table .cmp {min-width: 7.5em;}
 /* Narrower windows: the ranked table gets compact so it fits its
    card (the 2-column layout stays). */
 @media (max-width: 1500px) {
-  .stApp .cc-act th, .stApp .cc-act td {padding: 6px 5px;
-    font-size: 12.5px;}
-  .stApp .cc-act th {letter-spacing: 0; font-size: 11px;}
-  .stApp .cc-act .cc-pill {font-size: 12px; padding: 2px 6px;}
+  .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;
+    font-size: var(--cc-small);}
+  .stApp .cc-act th {letter-spacing: 0; font-size: var(--cc-th);}
+  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;}
 }
 .cc-table .act {width: 100%;}
 .cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
@@ -265,26 +276,27 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 16px; align-items: stretch;}
-.cc-tile {border-radius: 8px; padding: 14px 16px; border-left: 5px solid;
-  color: #3B2F2A; min-height: 150px;}
-.cc-tile-head {display: flex; align-items: baseline; gap: 12px;}
-.cc-tile-count {font-size: 36px; font-weight: 300; line-height: 1;}
-.cc-tile-label {font-size: 15px; font-weight: 600;}
-.cc-tile-line {font-size: 13px; font-weight: 400; line-height: 1.4;
-  margin-top: 6px;}
-.cc-tile-more {font-size: 13px; color: #6B5E54; margin-top: 6px;}
+  gap: var(--cc-gap); align-items: stretch;}
+.cc-tile {border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
+  border-left: 5px solid; color: #3B2F2A; min-height: var(--cc-tile-min);}
+.cc-tile-head {display: flex; align-items: baseline; gap: 10px;}
+.cc-tile-count {font-size: var(--cc-num); font-weight: 300; line-height: 1;}
+.cc-tile-label {font-size: var(--cc-label); font-weight: 600;}
+.cc-tile-line {font-size: var(--cc-small); font-weight: 400;
+  line-height: 1.4; margin-top: 5px;}
+.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 5px;}
 .cc-run {color: #6B5E54; white-space: nowrap;}
 @media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
 
 /* Context: recent-window rows, what-if tile, tags. */
 .cc-tag {display: inline-block; border: 1px solid #3B2F2A;
-  border-radius: 4px; padding: 0 6px; font-size: 12px; font-weight: 600;
-  color: #3B2F2A; background: #FFFFFF; white-space: nowrap;}
-.cc-big {background: #FBF6EE; border-radius: 8px; padding: 20px;
-  text-align: center;}
-.cc-big-n {font-size: 36px; font-weight: 300; line-height: 1.2;}
-.cc-rt {width: 100%; border-collapse: collapse; font-size: 13px;}
+  border-radius: 4px; padding: 0 6px; font-size: var(--cc-th);
+  font-weight: 600; color: #3B2F2A; background: #FFFFFF;
+  white-space: nowrap;}
+.cc-big {background: #FBF6EE; border-radius: 8px;
+  padding: calc(20px * var(--cc-pad-k)); text-align: center;}
+.cc-big-n {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;}
+.cc-rt {width: 100%; border-collapse: collapse; font-size: var(--cc-small);}
 .cc-rt td {padding: 4px 6px; vertical-align: middle;
   border-bottom: 1px solid #EADFCF;}
 .cc-bar {display: inline-block; height: 12px; vertical-align: middle;
@@ -311,10 +323,10 @@ WORDMARK = "<span class='cc-wordmark'>CampaignCompass</span>"
 
 
 def _heading(page, question, ctx):
-    """The heading row: the brand (logo or wordmark) at the left, a
-    thin divider, then one heading line ("CampaignCompass · <page>:"
+    """The heading row: one heading line ("CampaignCompass · <page>:"
     in 600 weight, then the question in 400 weight) with the data
-    line under it. Without a logo the wordmark names the tool, so
+    line under it at the left, and the brand (logo or wordmark) at
+    the right edge. Without a logo the wordmark names the tool, so
     the heading is only "<page>: <question>". When the page runs
     alone (a page run without the header), the heading is shown
     where the page is, without a brand.
@@ -330,9 +342,9 @@ def _heading(page, question, ctx):
     data = f"<div class='cc-data'>{html.escape(line)}</div>"
     if _TOP["slot"] is not None:
         _TOP["slot"].markdown(
-            f"<div class='cc-head'><div class='cc-brand'>{brand}</div>"
-            f"<div class='cc-divider'></div>"
-            f"<div class='cc-headtext'>{title}{data}</div></div>",
+            f"<div class='cc-head'>"
+            f"<div class='cc-headtext'>{title}{data}</div>"
+            f"<div class='cc-brand'>{brand}</div></div>",
             unsafe_allow_html=True)
     else:
         st.markdown(title + data, unsafe_allow_html=True)
@@ -1553,12 +1565,11 @@ def _logo_img(path):
 
 
 def _header(clients, pages=None, current=None):
-    """The header: the heading row (logo or wordmark at the left, a
-    thin divider, the one-line heading and the data line under it)
-    and the controls (client picker, then the page tabs, then the
-    menu). Below 1800px the controls are a row of their own under
-    the heading row, right-aligned; from 1800px they sit at the
-    right of the heading row (see STYLE).
+    """The header, two rows at every width: the heading row (the
+    one-line heading and the data line under it at the left, the
+    logo or wordmark at the right edge) and the tabs row (the page
+    tabs at the left, under the heading text; the client picker at
+    the right, then the menu).
 
     The logo comes from branding.logo_path in the client config; when
     the key or the file is missing, the wordmark shows in its place.
@@ -1571,22 +1582,20 @@ def _header(clients, pages=None, current=None):
     with st.container(key="cc_header"):
         _TOP["slot"] = st.empty()
         with st.container(key="cc_controls", horizontal=True, wrap=False,
-                          width="content", horizontal_alignment="right",
                           vertical_alignment="center"):
-            with st.container(key="cc_picker", width=180):
+            with st.container(key="cc_nav", horizontal=True, wrap=False,
+                              width="content"):
+                for number, page in enumerate(pages or ()):
+                    active = current is not None and \
+                        page.url_path == current.url_path
+                    state = "on" if active else f"off_{number}"
+                    with st.container(key=f"cc_nav_{state}",
+                                      width="content"):
+                        st.page_link(page, label=page.title)
+            with st.container(key="cc_picker", width=160):
                 client = st.selectbox("Client", clients, index=0,
                                       key="client",
                                       label_visibility="collapsed")
-            if pages:
-                with st.container(key="cc_nav", horizontal=True,
-                                  wrap=False, width="content"):
-                    for number, page in enumerate(pages):
-                        active = current is not None and \
-                            page.url_path == current.url_path
-                        state = "on" if active else f"off_{number}"
-                        with st.container(key=f"cc_nav_{state}",
-                                          width="content"):
-                            st.page_link(page, label=page.title)
     try:
         config = dashboard_data.load_config(
             dashboard_data.client_config_path(client))
@@ -1598,8 +1607,8 @@ def _header(clients, pages=None, current=None):
 
 
 def main():
-    """Header (heading row with the logo at the left; picker and
-    tabs), load the tables, run a page."""
+    """Header (heading with the logo at the right; tabs and picker
+    below), load the tables, run a page."""
     st.set_page_config(page_title="CampaignCompass", layout="wide",
                        initial_sidebar_state="collapsed")
     st.markdown(STYLE, unsafe_allow_html=True)

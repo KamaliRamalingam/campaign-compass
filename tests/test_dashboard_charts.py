@@ -110,6 +110,33 @@ def test_intent_stack_hides_labels_under_five_percent():
                      "Store visits": [""]}
 
 
+def _contrast(foreground, background):
+    def luminance(colour):
+        rgb = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        rgb = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+               for c in rgb]
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+    high, low = sorted([luminance(foreground), luminance(background)],
+                       reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_intent_stack_brown_family_with_readable_labels():
+    long = pd.DataFrame({
+        "campaign": ["A", "A", "A"],
+        "intent": ["Directions", "Calls", "Store visits"],
+        "share": [0.5, 0.3, 0.2]})
+    fig = charts.intent_stack(long)
+    colours = {trace.name: trace.marker.color for trace in fig.data}
+    assert colours == {"Directions": "#6B5240", "Calls": "#A68A6D",
+                       "Store visits": "#D9C7B0"}
+    for trace in fig.data:
+        assert trace.insidetextfont.color == charts.INTENT_TEXT[trace.name]
+        assert _contrast(trace.insidetextfont.color,
+                         trace.marker.color) >= 4.5
+    assert fig.data[0].insidetextfont.color == "#FFFFFF"  # dark bar
+
+
 def test_chart_text_from_the_data_is_escaped():
     recs = pd.DataFrame([{
         "campaign": "<a href='x'>Evil</a>", "label": "test",

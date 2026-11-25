@@ -44,25 +44,37 @@ def _wrapped(values, width=16):
     return out
 
 
+# Overall chart scale (with the --cc-s CSS scale in dashboard/app.py):
+# every chart height goes through _layout, so this one number sizes
+# them all. 0.88 = about 12% smaller than the original design.
+CHART_SCALE = 0.88
+CHART_FONT = 12  # px; no chart text is smaller
+
+
 def _layout(fig, height=420, legend=True):
-    """Shared look: white background, charcoal text, room for labels."""
+    """Shared look: white background, charcoal text, room for labels.
+    The height is scaled by CHART_SCALE."""
     fig.update_layout(
-        height=height,
+        height=round(height * CHART_SCALE),
         template="plotly_white",
-        font={"family": FONT, "color": TEXT, "size": 13},
+        font={"family": FONT, "color": TEXT, "size": CHART_FONT},
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         plot_bgcolor="white",
         paper_bgcolor="white",
         showlegend=legend,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02,
-                "xanchor": "left", "x": 0, "title": None},
-        hoverlabel={"bgcolor": "white", "font_size": 13},
+                "xanchor": "left", "x": 0, "title": None,
+                "font": {"size": CHART_FONT}},
+        hoverlabel={"bgcolor": "white", "font_size": CHART_FONT},
         legend_traceorder="normal",
     )
-    fig.update_xaxes(automargin=True, gridcolor=GRID, zeroline=False,
-                     title_font={"color": GREY})
-    fig.update_yaxes(automargin=True, gridcolor=GRID, zeroline=False,
-                     title_font={"color": GREY})
+    # Explicit sizes: Streamlit's chart theme sizes ticks in rem, which
+    # would follow the smaller root font below 12px.
+    axis = {"automargin": True, "gridcolor": GRID, "zeroline": False,
+            "title_font": {"color": GREY, "size": CHART_FONT},
+            "tickfont": {"size": CHART_FONT}}
+    fig.update_xaxes(**axis)
+    fig.update_yaxes(**axis)
     return fig
 
 
@@ -97,7 +109,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
         marker={"color": list(rows["colour"]),
                 "line": {"width": 0}},
         text=texts, textposition="outside", cliponaxis=False,
-        textfont={"color": TEXT, "size": 11},
+        textfont={"color": TEXT, "size": CHART_FONT},
         customdata=list(zip(
             _safe(rows["label_text"]), rows["ratio"],
             _safe(rows["label_period"]), rows["cost_per_tracked_action"],
@@ -123,7 +135,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
         fig.add_annotation(
             x=ratio, xref="x", y=1, yref="paper", yanchor="bottom",
             text=f"{ratio:.1f}x<br>{value:,.2f}<br>{currency}",
-            showarrow=False, font={"color": GREY, "size": 11})
+            showarrow=False, font={"color": GREY, "size": CHART_FONT})
     fig.update_xaxes(title="Ratio to benchmark (1.0x = benchmark)",
                      range=[0, cap], dtick=0.5, ticksuffix="x",
                      tickformat=".1f", type="linear")
@@ -172,7 +184,7 @@ def trend_line(table, x_field, x_title, currency, height=360,
                 y=flagged["cost_per_tracked_action"],
                 mode="markers+text", name="Partial or lagged month",
                 text=flagged["month_note"], textposition="top center",
-                textfont={"color": GREY, "size": 11}, cliponaxis=False,
+                textfont={"color": GREY, "size": CHART_FONT}, cliponaxis=False,
                 marker={"size": 12, "symbol": "circle-open",
                         "color": TEXT, "line": {"width": 2}},
                 hovertemplate="%{x|%b %Y}: %{text}<extra></extra>"))
@@ -229,7 +241,7 @@ def weekday_bar(table, currency, highlight=None, note=None):
         fig.add_annotation(
             x=row["weekday"], y=row["cost_per_tracked_action"],
             text=note, showarrow=False, yshift=34,
-            font={"color": TEXT, "size": 11},
+            font={"color": TEXT, "size": CHART_FONT},
             bgcolor="#FBF6EE", bordercolor=TEXT, borderwidth=1,
             borderpad=3)
     fig.update_xaxes(title=None, type="category")
@@ -260,8 +272,14 @@ def share_bar(table, weekday):
 
 # Segment labels under this share are hidden (they do not fit).
 INTENT_LABEL_MIN = 0.05
-INTENT_COLOURS = {"Directions": "#0072B2", "Calls": "#E69F00",
-                  "Store visits": "#009E73"}
+# A brown family (no red, amber or green: those are for labels only),
+# dark to light. The share inside each bar is white on the dark bar
+# and near-black brown on the lighter ones, all at least 4.5:1
+# (white on #6B5240 7.2:1; #1E1713 on #A68A6D 5.5:1, on #D9C7B0 10.7:1).
+INTENT_COLOURS = {"Directions": "#6B5240", "Calls": "#A68A6D",
+                  "Store visits": "#D9C7B0"}
+INTENT_TEXT = {"Directions": "#FFFFFF", "Calls": "#1E1713",
+               "Store visits": "#1E1713"}
 
 
 def intent_stack(long):
@@ -277,6 +295,8 @@ def intent_stack(long):
             text=[f"{value:.0%}" if value >= INTENT_LABEL_MIN else ""
                   for value in part["share"]],
             textposition="inside", insidetextanchor="middle",
+            insidetextfont={"color": INTENT_TEXT[intent]},
+            textfont={"color": INTENT_TEXT[intent]},
             hovertemplate=f"%{{y}}<br>{intent}: %{{x:.1%}}<extra></extra>"))
     campaigns = long["campaign"].nunique()
     fig.update_layout(barmode="stack")

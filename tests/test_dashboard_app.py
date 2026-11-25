@@ -96,11 +96,11 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     # wordmark it is only "<page>: <question>".
     assert ("cc-wordmark'>CampaignCompass" in page) == (mode != "logo")
     assert ("class='cc-tool'>CampaignCompass · " in page) == (mode == "logo")
-    # The brand is at the left of the heading row, before the
-    # heading, with the data line under the heading. (The style
-    # block also names these classes, so match the divs.)
-    assert page.index("class='cc-brand'") < page.index("class='cc-title'")
+    # The heading (data line under it) is at the left of the heading
+    # row and the brand at its right edge, after the heading. (The
+    # style block also names these classes, so match the divs.)
     assert page.index("class='cc-title'") < page.index("class='cc-data'")
+    assert page.index("class='cc-data'") < page.index("class='cc-brand'")
     assert "class='cc-page'>" in page and "class='cc-q'>" in page
 
 
