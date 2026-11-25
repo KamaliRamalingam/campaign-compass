@@ -168,47 +168,80 @@ def _recs_with_ended_pauses():
     return recs
 
 
-def test_act_summary_running_ended_and_counts():
+def test_act_summary_tile_counts_in_label_order():
     summary = dd.act_summary(_recs_with_ended_pauses())
-    assert summary["running"] == [
-        {"campaign": "Alpha", "label": "test",
-         "action": "keep running, but test changes"},
-        {"campaign": "Pmax", "label": "not_comparable",
-         "action": "judge against its own history, not the benchmark"}]
-    # Ended and pause_or_review only, highest ratio first.
-    assert summary["ended"] == [
-        {"campaign": "Zeta", "label": "pause_or_review",
-         "action": "do not restart without changes"},
-        {"campaign": "Epsilon", "label": "pause_or_review",
-         "action": "do not restart without changes"}]
-    assert summary["restart"] == [
-        {"campaign": "Beta", "label": "continue",
-         "action": "worked well when it ran; candidate to restart"}]
-    assert summary["counts"] == [
-        ("pause_or_review", 2), ("test", 1), ("continue", 1),
-        ("not_comparable", 1), ("insufficient_data", 1),
-        ("not_judged", 1)]
+    assert [(tile["label"], tile["count"]) for tile in summary["tiles"]] \
+        == [("pause_or_review", 2), ("test", 1), ("continue", 1)]
+    # Ranked order inside a tile: highest ratio first.
+    pause = summary["tiles"][0]
+    assert [line["campaign"] for line in pause["lines"]] == [
+        "Zeta", "Epsilon"]
+    assert pause["more"] == 0
 
 
-def test_act_summary_restart_best_ratio_first():
+def test_act_summary_caps_three_names_then_more():
     recs = _recs()
-    extra = recs.iloc[[1, 1]].copy()
-    extra["campaign"] = ["Eta", "Theta"]
+    extra = recs.iloc[[1] * 5].copy()
+    extra["campaign"] = ["E1", "E2", "E3", "E4", "E5"]
     recs = pd.concat([recs, extra], ignore_index=True)
-    recs["label_ratio"] = [1.5, 0.8, None, None, None, 0.4, 0.95]
-    restart = dd.act_summary(recs)["restart"]
-    assert [entry["campaign"] for entry in restart] == [
-        "Eta", "Beta", "Theta"]
+    recs["label_ratio"] = [1.5, 0.1, None, None, None,
+                           0.9, 0.8, 0.7, 0.6, 0.5]
+    tile = dd.act_summary(recs)["tiles"][2]
+    assert tile["label"] == "continue"
+    assert tile["count"] == 6
+    assert [line["campaign"] for line in tile["lines"]] == [
+        "E1", "E2", "E3"]
+    assert tile["more"] == 3
 
 
-def test_act_summary_none_running_none_ended():
+def test_act_summary_running_marker_and_first_clause():
+    summary = dd.act_summary(_recs_with_ended_pauses())
+    test_line = summary["tiles"][1]["lines"][0]
+    assert test_line == {"campaign": "Alpha", "label": "test",
+                         "status": "active", "running": True,
+                         "action": "keep running, but test changes"}
+    continue_line = summary["tiles"][2]["lines"][0]
+    # Cut at the semicolon, never reworded.
+    assert continue_line["action"] == "worked well when it ran"
+    assert continue_line["running"] is False
+    assert continue_line["status"] == "ended"
+    # Running now: every active campaign, not_comparable last.
+    assert [(line["campaign"], line["label"])
+            for line in summary["running"]] == [
+        ("Alpha", "test"), ("Pmax", "not_comparable")]
+
+
+def test_act_summary_no_active_campaigns():
     recs = _recs()
     recs["status_now"] = "ended"
-    recs.loc[recs["label"] == "continue", "label"] = "test"
     summary = dd.act_summary(recs)
     assert summary["running"] == []
-    assert summary["ended"] == []
-    assert summary["restart"] == []
+    assert all(not line["running"] for tile in summary["tiles"]
+               for line in tile["lines"])
+
+
+def test_act_summary_empty_label_is_in_no_tile():
+    recs = _recs()
+    recs.loc[recs["campaign"] == "Alpha", "label"] = None
+    summary = dd.act_summary(recs)
+    assert summary["tiles"][1]["count"] == 0
+    names = [line["campaign"] for tile in summary["tiles"]
+             for line in tile["lines"]]
+    assert "Alpha" not in names
+    # Still active, so still listed under Running now, label empty.
+    assert summary["running"][0]["campaign"] == "Alpha"
+    assert summary["running"][0]["label"] is None
+
+
+def test_first_clause():
+    assert dd.first_clause("a, b; c") == "a, b"
+    assert dd.first_clause("First part. Second part.") == "First part"
+    assert dd.first_clause("no cut here") == "no cut here"
+    assert dd.first_clause("restart only with changes; best run was run "
+                           "2 (2025-06-06 to 2025-10-04)") == \
+        "restart only with changes"
+    assert dd.first_clause(None) == ""
+    assert dd.first_clause(float("nan")) == ""
 
 
 def test_campaign_detail_has_both_periods():

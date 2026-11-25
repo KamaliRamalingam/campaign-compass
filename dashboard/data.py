@@ -612,51 +612,106 @@ def scope_groups(config, benchmarks=None):
     return [str(name) for name in judged or []], [str(n) for n in bench]
 
 
-def act_summary(recommendations):
-    """What to do: running campaigns, ended ones to know, label counts.
+def first_clause(text):
+    """Text up to the first semicolon or sentence end, never reworded.
 
-    Uses all recommendations (never a filtered view). Returns a dict:
-    running, every campaign whose status_now is active; ended, ended
-    campaigns labelled pause_or_review (do not restart them as they
-    were); restart, ended campaigns labelled continue, best (lowest)
-    ratio first. All lists of dicts with campaign, label and action;
-    running and ended in the order of the ranked action table
-    (not_comparable last).
-    counts, a list of (label, count) in urgency order, zeros left out.
+    "keep running, but test changes; cost ... risen" -> "keep running,
+    but test changes". Missing text gives "".
     """
-    counts = recommendations["label"].value_counts()
-    order = sorted(counts.index, key=lambda label: LABEL_RANK.get(label, 9))
+    if text is None or (not isinstance(text, str) and pd.isna(text)):
+        return ""
+    text = str(text).strip()
+    cuts = [index for index in (text.find(";"), text.find(". "))
+            if index >= 0]
+    if cuts:
+        text = text[:min(cuts)]
+    return text.rstrip(" .")
+
+
+TILE_LABELS = ("pause_or_review", "test", "continue")
+
+
+def act_summary(recommendations, max_lines=3):
+    """Per-tile data for the Act page's four decision tiles.
+
+    Uses all recommendations (never a filtered view), so the counts
+    match the labels in the data. Returns a dict:
+    tiles: one dict per judged label (pause_or_review, test,
+    continue) with label, count, lines (at most max_lines, in the
+    order of the ranked action table) and more (how many are not
+    listed). running: every campaign whose status_now is active (in
+    ranked order, not_comparable last), with its label.
+    Each line: campaign, label, status, running (True when active)
+    and action (the action text up to its first semicolon or
+    sentence end). A campaign with an empty label is in no tile.
+    """
     ranked = action_table(recommendations)[
-        ["campaign", "label", "status_now", "action",
-         "ratio_to_benchmark"]]
+        ["campaign", "label", "status_now", "action"]]
     others = recommendations.loc[
         recommendations["label"] == NOT_COMPARABLE,
         ["campaign", "label", "status_now", "action_text"]].rename(
         columns={"action_text": "action"})
     ranked = pd.concat([ranked, others], ignore_index=True)
 
-    def entries(rows):
-        return [{"campaign": str(row["campaign"]), "label": row["label"],
-                 "action": "" if row["action"] is None
-                 or pd.isna(row["action"]) else str(row["action"])}
-                for _, row in rows.iterrows()]
+    def line(row):
+        label = row["label"]
+        status = row["status_now"]
+        status = "" if status is None or pd.isna(status) else str(status)
+        return {"campaign": str(row["campaign"]),
+                "label": None if label is None or pd.isna(label)
+                else label,
+                "status": status.replace("_", " "),
+                "running": status == "active",
+                "action": first_clause(row["action"])}
 
+    tiles = []
+    for label in TILE_LABELS:
+        part = ranked.loc[ranked["label"] == label]
+        tiles.append({
+            "label": label,
+            "count": int(len(part)),
+            "lines": [line(row) for _, row in
+                      part.head(max_lines).iterrows()],
+            "more": max(0, int(len(part)) - max_lines),
+        })
     status = ranked["status_now"].astype(str)
-    restart = ranked.loc[(status == "ended")
-                         & (ranked["label"] == "continue")].copy()
-    restart["_ratio"] = pd.to_numeric(restart["ratio_to_benchmark"],
-                                      errors="coerce")
-    restart = restart.sort_values(["_ratio", "campaign"],
-                                  na_position="last", kind="stable")
-    return {
-        "running": entries(ranked.loc[status == "active"]),
-        "ended": entries(ranked.loc[(status == "ended")
-                                    & (ranked["label"]
-                                       == "pause_or_review")]),
-        "restart": entries(restart),
-        "counts": [(label, int(counts[label])) for label in order
-                   if counts[label] > 0],
-    }
+    running = [line(row) for _, row in
+               ranked.loc[status == "active"].iterrows()]
+    return {"tiles": tiles, "running": running}
+
+
+def ratio_bar_rows(table, recommendations, cap=2.5):
+    """Bars for the Act page's ratio chart, in the table's order.
+
+    table: action_table (already filtered). One row per judged
+    campaign with a ratio to the benchmark. shown is the ratio cut
+    at cap (the axis edge), over is True when the ratio is above
+    it (the real value is written on the bar). worsening is True
+    when the label comes from the trend override (trend_override
+    is set in recommendations_by_campaign.csv).
+    """
+    columns = ["campaign", "label", "label_text", "colour", "ratio",
+               "shown", "over", "worsening", "label_period",
+               "cost_per_tracked_action", "benchmark"]
+    part = table.loc[table["label"].isin(JUDGED_LABELS)].copy()
+    part["ratio"] = pd.to_numeric(part["ratio_to_benchmark"],
+                                  errors="coerce")
+    part = part.dropna(subset=["ratio"])
+    if part.empty:
+        return pd.DataFrame(columns=columns)
+    override = {}
+    if "trend_override" in recommendations.columns:
+        for name, value in zip(recommendations["campaign"],
+                               recommendations["trend_override"]):
+            override[name] = (value is not None and not pd.isna(value)
+                              and str(value).strip() != "")
+    part["label_text"] = part["label"].map(label_text)
+    part["colour"] = part["label"].map(label_colour)
+    part["shown"] = part["ratio"].clip(upper=cap)
+    part["over"] = part["ratio"] > cap
+    part["worsening"] = [override.get(name, False)
+                         for name in part["campaign"]]
+    return part[columns].reset_index(drop=True)
 
 
 def campaign_detail(recommendations, recent_trend, campaign):
@@ -802,6 +857,78 @@ def rules_table(config):
     return pd.DataFrame(rows, columns=["setting", "value"])
 
 
+MISSING = "—"
+# Display-only rounding by column name (the CSV keeps raw values).
+# Checked in order; the first rule whose words are in the name wins.
+ROUNDING_RULES = (
+    (("cost", "benchmark", "loo_min", "loo_max", "cpa"), 2),
+    (("per click", "per_click"), 3),
+    (("share", "ratio", "vs", "(%)", "rate", "pct"), 2),
+    (("spend",), 0),
+    (("action", "conversion", "click", "impression", "before", "after",
+      "delta", "days", "campaigns", "changes", "lag", "count"), 0),
+)
+
+
+def _is_missing(value):
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def format_number(value, pattern):
+    """A number in a printf pattern from column_config ("%.2fx",
+    "%d", "%.0f"), with thousands separators; MISSING if missing."""
+    if _is_missing(value):
+        return MISSING
+    import re
+    match = re.fullmatch(r"(.*)%(?:\.(\d+))?([df])(.*)", pattern)
+    if not match:
+        return pattern % value
+    prefix, digits, kind, suffix = match.groups()
+    if kind == "d":
+        return f"{prefix}{int(round(float(value))):,}{suffix}"
+    places = int(digits) if digits is not None else 6
+    return f"{prefix}{float(value):,.{places}f}{suffix}"
+
+
+def display_value(column, value, pattern=None):
+    """Display text of one table value (never changes the data).
+
+    MISSING for a missing value. A pattern (from column_config) wins;
+    otherwise numbers are rounded by column name: actions, clicks
+    and spend 0 dp, cost 2 dp, shares and ratios 2 dp, per-click
+    rates 3 dp, other decimals 2 dp. Text is returned as is.
+    """
+    if _is_missing(value):
+        return MISSING
+    if isinstance(value, bool) or (hasattr(value, "dtype")
+                                   and str(value.dtype) == "bool"):
+        return str(value)
+    if pattern:
+        try:
+            return format_number(value, pattern)
+        except (TypeError, ValueError):
+            return str(value)
+    if isinstance(value, str) or not pd.api.types.is_number(value):
+        return str(value)
+    name = str(column).lower()
+    places = None
+    for words, digits in ROUNDING_RULES:
+        if any(word in name for word in words):
+            places = digits
+            break
+    if places is None:
+        if float(value).is_integer():
+            return f"{int(value):,}" if abs(value) >= 10000 else str(
+                int(value))
+        places = 2
+    return f"{float(value):,.{places}f}"
+
+
 def csv_bytes(table):
     """A table as CSV bytes, for a download button."""
     return table.to_csv(index=False).encode("utf-8")
@@ -809,23 +936,33 @@ def csv_bytes(table):
 
 # --- PR 5: three-page report -------------------------------------
 
-# Display text, symbol and colour per label. Okabe-Ito colours
-# (colour-blind safe); every label also has its own text and
-# symbol, so the meaning never depends on colour alone.
+# Display text, symbol and colours per label (redesign palette).
+# colour: the strong colour for bars, borders and markers. tint:
+# the soft fill for tiles and pills, always with dark text (dark
+# text on the strong green or grey is below 4.5:1). Every label
+# also has its own text and symbol, so the meaning never depends
+# on colour alone.
 LABEL_STYLE = {
     "continue": {"text": "Continue", "symbol": "✓",
-                 "colour": "#009E73", "marker": "circle"},
+                 "colour": "#2E9E5B", "tint": "#DDF0E2",
+                 "marker": "circle"},
     "test": {"text": "Test", "symbol": "◆",
-             "colour": "#E69F00", "marker": "diamond"},
+             "colour": "#D9961A", "tint": "#FFF0CC",
+             "marker": "diamond"},
     "pause_or_review": {"text": "Pause or review", "symbol": "✕",
-                        "colour": "#D55E00", "marker": "x"},
+                        "colour": "#C8452D", "tint": "#FBE3DD",
+                        "marker": "x"},
     "not_comparable": {"text": "Not comparable", "symbol": "○",
-                       "colour": "#0072B2", "marker": "circle-open"},
+                       "colour": "#8C8C8C", "tint": "#EFEAE3",
+                       "marker": "circle-open"},
     "insufficient_data": {"text": "Insufficient data", "symbol": "–",
-                          "colour": "#8C8C8C", "marker": "circle-open"},
+                          "colour": "#8C8C8C", "tint": "#EFEAE3",
+                          "marker": "circle-open"},
     "not_judged": {"text": "Not judged", "symbol": "–",
-                   "colour": "#8C8C8C", "marker": "circle-open"},
+                   "colour": "#8C8C8C", "tint": "#EFEAE3",
+                   "marker": "circle-open"},
 }
+GREY_TINT = "#EFEAE3"
 JUDGED_LABELS = ("continue", "test", "pause_or_review")
 # Most urgent first in the ranked action table.
 LABEL_RANK = {"pause_or_review": 0, "test": 1, "continue": 2,
@@ -849,6 +986,40 @@ def label_text(label):
 def label_colour(label):
     """Colour of a label (grey for unknown labels)."""
     return LABEL_STYLE.get(label, {}).get("colour", "#8C8C8C")
+
+
+def label_tint(label):
+    """Soft fill of a label (light grey for unknown labels)."""
+    return LABEL_STYLE.get(label, {}).get("tint", GREY_TINT)
+
+
+def _day(value):
+    """"1 Jul 2024" (no leading zero on the day)."""
+    return f"{value.day} {value:%b %Y}"
+
+
+def data_line(date_range, updated):
+    """"Data 1 Jul 2024 – 12 Nov 2026 · Updated 24 Nov 2026 10:48"."""
+    first, last = date_range
+    return (f"Data {_day(first)} – {_day(last)} · Updated "
+            f"{_day(updated)} {updated:%H:%M}")
+
+
+def logo_path(config, repo_root=None):
+    """The header logo from branding.logo_path, or None.
+
+    None when the key is missing or the file does not exist, so
+    the header falls back to the text wordmark without an error.
+    A relative path is read from the repo root.
+    """
+    branding = (config or {}).get("branding") or {}
+    configured = branding.get("logo_path")
+    if not configured:
+        return None
+    path = Path(configured)
+    if not path.is_absolute():
+        path = (Path(repo_root) if repo_root else REPO_ROOT) / path
+    return path if path.is_file() else None
 
 
 def footnote_text(config):
@@ -1079,8 +1250,12 @@ def lag_takeaway(summary, configured):
 def journey_takeaway(journey):
     """One sentence: pooled share of directions and calls.
 
-    Shares are weighted by each campaign's tracked actions.
+    Campaign rows only: the "core group" aggregate row is left out,
+    as in the chart, so it is neither counted as a campaign nor
+    weighted twice. Shares are weighted by each campaign's tracked
+    actions.
     """
+    journey = journey_campaigns(journey)
     total = float(journey["tracked_actions"].sum()) \
         if "tracked_actions" in journey.columns else 0.0
     if not total:
@@ -1127,6 +1302,57 @@ def recent_trend_rows(recent_trend, recommendations):
             recent_trend["recent_tracked_actions"],
     })
     return table.sort_values("campaign").reset_index(drop=True)
+
+
+def with_period_gaps(table, x_field, freq):
+    """The table with a real date column and empty rows for gaps.
+
+    x_field holds months ("2026-01") when freq is "MS", or week
+    starts ("2026-01-05") when freq is "W-MON". Adds period_date (a
+    date) and inserts a row with no values for each missing month
+    or week between the first and the last, so a line chart breaks
+    there instead of joining across the gap. Display only: nothing
+    is filled in or recomputed.
+    """
+    if table is None or table.empty:
+        result = table.copy() if table is not None else pd.DataFrame()
+        result["period_date"] = pd.Series(dtype="datetime64[ns]")
+        return result
+    result = table.copy()
+    result["period_date"] = pd.to_datetime(result[x_field].astype(str))
+    full = pd.date_range(result["period_date"].min(),
+                         result["period_date"].max(), freq=freq)
+    missing = full.difference(pd.DatetimeIndex(result["period_date"]))
+    if len(missing):
+        gaps = pd.DataFrame({"period_date": missing})
+        gaps[x_field] = [
+            value.strftime("%Y-%m" if freq == "MS" else "%Y-%m-%d")
+            for value in missing]
+        if "month_note" in result.columns:
+            gaps["month_note"] = ""
+        result = pd.concat([result, gaps], ignore_index=True)
+    return result.sort_values("period_date").reset_index(drop=True)
+
+
+def recent_rows_capped(rows, limit=5):
+    """(first `limit` rows, how many more) of recent_trend_rows."""
+    if rows is None or rows.empty:
+        return rows, 0
+    return rows.head(limit).reset_index(drop=True), max(
+        0, len(rows) - limit)
+
+
+def most_clicks_weekday(pooled):
+    """The weekday with the most pooled clicks, or None.
+
+    pooled: weekday_core_table. Picks a row, computes nothing.
+    """
+    if pooled is None or pooled.empty or "clicks" not in pooled.columns:
+        return None
+    clicks = pd.to_numeric(pooled["clicks"], errors="coerce")
+    if clicks.notna().sum() == 0:
+        return None
+    return pooled.loc[clicks.idxmax(), "weekday"]
 
 
 def journey_intent_long(journey):

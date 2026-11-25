@@ -191,3 +191,128 @@ def test_journey_intent_long():
 def test_footnote_text_from_config_or_default():
     assert dd.footnote_text({"analysis": {"footnote_text": "x"}}) == "x"
     assert dd.footnote_text({}) == dd.DEFAULT_FOOTNOTE
+
+
+# --- Redesign: theme, header helpers --------------------------------
+
+def test_label_colours_match_the_redesign_palette():
+    assert dd.label_colour("pause_or_review") == "#C8452D"
+    assert dd.label_colour("test") == "#D9961A"
+    assert dd.label_colour("continue") == "#2E9E5B"
+    for label in ("not_comparable", "insufficient_data", "not_judged"):
+        assert dd.label_colour(label) == "#8C8C8C"
+    assert dd.label_tint("pause_or_review") == "#FBE3DD"
+    assert dd.label_tint("test") == "#FFF0CC"
+    assert dd.label_tint("continue") == "#DDF0E2"
+    assert dd.label_tint("something_new") == dd.GREY_TINT
+
+
+def test_data_line_format():
+    from datetime import date, datetime
+    line = dd.data_line((date(2024, 7, 1), date(2026, 11, 12)),
+                        datetime(2026, 11, 24, 10, 48, 31))
+    assert line == "Data 1 Jul 2024 – 12 Nov 2026 · Updated 24 Nov 2026 10:48"
+
+
+def test_logo_path_missing_key_missing_file_and_file(tmp_path):
+    assert dd.logo_path({}) is None
+    assert dd.logo_path({"branding": {}}) is None
+    assert dd.logo_path({"branding": {"logo_path": "nope.png"}},
+                        repo_root=tmp_path) is None
+    (tmp_path / "local").mkdir()
+    logo = tmp_path / "local" / "logo.png"
+    logo.write_bytes(b"png")
+    assert dd.logo_path({"branding": {"logo_path": "local/logo.png"}},
+                        repo_root=tmp_path) == logo
+
+
+def test_ratio_bar_rows_keep_table_order_cap_and_worsening():
+    recs = _recs()
+    recs["trend_override"] = [
+        "continue -> test", None, None, None, None, None, None]
+    recs.loc[recs["campaign"] == "Gamma", "label_ratio"] = 25.4
+    table = dd.action_table(recs)
+    rows = dd.ratio_bar_rows(table, recs, cap=2.5)
+    judged = table.loc[table["label"].isin(dd.JUDGED_LABELS)]
+    assert list(rows["campaign"]) == list(judged["campaign"])
+    gamma = rows.set_index("campaign").loc["Gamma"]
+    assert gamma["over"] and gamma["shown"] == 2.5
+    assert gamma["ratio"] == 25.4
+    assert rows.set_index("campaign").loc["Alpha", "worsening"]
+    assert not rows.set_index("campaign").loc["Beta", "worsening"]
+    assert not rows.set_index("campaign").loc["Beta", "over"]
+
+
+def test_ratio_bar_rows_without_override_column_or_rows():
+    rows = dd.ratio_bar_rows(dd.action_table(_recs()), _recs())
+    assert not rows["worsening"].any()
+    empty = dd.ratio_bar_rows(dd.action_table(_recs().iloc[4:]),
+                              _recs())
+    assert empty.empty
+
+
+def test_recent_rows_capped_and_most_clicks_weekday():
+    rows = pd.DataFrame({"campaign": list("ABCDEFG")})
+    shown, more = dd.recent_rows_capped(rows, 5)
+    assert list(shown["campaign"]) == list("ABCDE") and more == 2
+    shown, more = dd.recent_rows_capped(rows.head(3), 5)
+    assert len(shown) == 3 and more == 0
+    empty, more = dd.recent_rows_capped(rows.iloc[0:0], 5)
+    assert empty.empty and more == 0
+    assert dd.most_clicks_weekday(pd.DataFrame(
+        {"weekday": ["Mon"], "tracked_actions": [1]})) is None
+
+
+def test_journey_takeaway_leaves_out_the_core_group_row():
+    journey = pd.DataFrame({
+        "campaign": ["A", "B", "core group"],
+        "tracked_actions": [90.0, 10.0, 100.0],
+        "directions_share": [1.0, 0.0, 0.9],
+        "calls_share": [0.0, 1.0, 0.1]})
+    assert dd.journey_takeaway(journey) == (
+        "Across 2 campaigns, 90% of tracked actions are directions "
+        "requests and 10% are calls.")
+
+
+def test_with_period_gaps_months_and_weeks():
+    months = pd.DataFrame({"month": ["2026-01", "2026-02", "2026-05"],
+                           "cost_per_tracked_action": [1.0, 2.0, 3.0],
+                           "month_note": ["", "partial", ""]})
+    out = dd.with_period_gaps(months, "month", "MS")
+    assert list(out["month"]) == ["2026-01", "2026-02", "2026-03",
+                                  "2026-04", "2026-05"]
+    assert out["cost_per_tracked_action"].isna().tolist() == [
+        False, False, True, True, False]
+    assert list(out["month_note"]) == ["", "partial", "", "", ""]
+    assert str(out["period_date"].dtype).startswith("datetime64")
+    weeks = pd.DataFrame({"week_start": ["2026-01-05", "2026-01-19"],
+                          "cost_per_tracked_action": [1.0, 2.0]})
+    out = dd.with_period_gaps(weeks, "week_start", "W-MON")
+    assert list(out["week_start"]) == ["2026-01-05", "2026-01-12",
+                                       "2026-01-19"]
+    # The input table is unchanged.
+    assert len(months) == 3 and "period_date" not in months.columns
+
+
+def test_display_value_rounds_by_column_and_shows_dash():
+    assert dd.display_value("spend", 177041.37) == "177,041"
+    assert dd.display_value("tracked_actions", 3632.5) == "3,632"
+    assert dd.display_value("tracked actions", 932.5) == "932"
+    assert dd.display_value("clicks", 14394.0) == "14,394"
+    assert dd.display_value("cost_per_tracked_action", 5.367721) == "5.37"
+    assert dd.display_value("loo_min", 4.8812) == "4.88"
+    assert dd.display_value("share_of_weekday_clicks", 0.18934) == "0.19"
+    assert dd.display_value("actions_per_click", 0.30469) == "0.305"
+    assert dd.display_value("loo_max", None) == "—"
+    assert dd.display_value("spend", float("nan")) == "—"
+    assert dd.display_value("display", "+728 tracked actions") == \
+        "+728 tracked actions"
+    # A column_config pattern wins, with thousands separators.
+    assert dd.display_value("x", 1.2345, "%.2fx") == "1.23x"
+    assert dd.display_value("x", 12271.2, "%.0f") == "12,271"
+    assert dd.display_value("x", 3.0, "%d") == "3"
+
+
+def test_display_value_cost_per_click_is_a_cost():
+    assert dd.display_value("cost_per_click", 0.91567) == "0.92"
+    assert dd.display_value("tracked_actions_per_click", 0.37712) == "0.377"

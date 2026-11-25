@@ -7,25 +7,49 @@ data.LABEL_STYLE, so a label always looks the same and is always
 named in text, never shown by colour alone.
 """
 
-import math
+import html
 
 import plotly.graph_objects as go
 
 import data as dashboard_data
 
-NAVY = "#1F3A5F"
-GREY = "#5B6573"
-GRID = "#E6E9EF"
-NEUTRAL = "#4C6A92"
-FONT = "Source Sans Pro, Helvetica, Arial, sans-serif"
+
+# Warm spice palette (redesign). Label colours come only from
+# data.LABEL_STYLE; the brand green is never used in charts.
+TEXT = "#3B2F2A"
+GREY = "#7A6B5F"
+GRID = "#EADFCF"
+NEUTRAL = "#8C6F56"
+NEUTRAL_LIGHT = "#D9C8B4"
+NAVY = TEXT  # reference lines: charcoal
+FONT = "Open Sans, Helvetica, Arial, sans-serif"
+
+
+def _safe(values):
+    """Data text for Plotly (which renders some HTML): escaped."""
+    return [html.escape(str(value)) for value in values]
+
+
+def _wrapped(values, width=16):
+    """Escaped names, long ones split over two lines at a space, so
+    the axis labels leave room for the bars on narrow screens."""
+    out = []
+    for value in _safe(values):
+        if len(value) > width and " " in value:
+            middle = len(value) // 2
+            spaces = [i for i, char in enumerate(value) if char == " "]
+            cut = min(spaces, key=lambda i: abs(i - middle))
+            value = value[:cut] + "<br>" + value[cut + 1:]
+        out.append(value)
+    return out
 
 
 def _layout(fig, height=420, legend=True):
-    """Shared look: white background, navy text, room for labels."""
+    """Shared look: white background, charcoal text, room for labels."""
     fig.update_layout(
         height=height,
         template="plotly_white",
-        font={"family": FONT, "color": "#1C2430", "size": 13},
+        font={"family": FONT, "color": TEXT, "size": 13},
         margin={"l": 10, "r": 10, "t": 30, "b": 10},
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -42,173 +66,166 @@ def _layout(fig, height=420, legend=True):
     return fig
 
 
-def bubble_chart(rows, lines, currency):
-    """Tracked actions vs cost per tracked action, sized by spend.
+RATIO_CAP = 2.5
 
-    rows: data.bubble_rows. lines: data.reference_lines (the first
-    is the benchmark, dashed; the ratio lines are dotted). Each
-    bubble names its campaign; hover shows its label period, its
-    own benchmark and its ratio.
+
+def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
+    """Ratio to benchmark per judged campaign, as horizontal bars.
+
+    rows: data.ratio_bar_rows (already in the ranked table's order,
+    shown top to bottom). lines: data.reference_lines; the dashed
+    lines are the threshold ratios from the config (the benchmark
+    itself when there are none), each labelled with its cost.
+    Bars are coloured by the final label and the label is also
+    written after the bar, so colour is never the only cue. A ratio
+    above cap is cut at the axis edge, marked with an arrow and its
+    real value written. "worsening" follows the value when the label
+    comes from the trend override. Linear axis, no log scale.
     """
     fig = go.Figure()
-    max_spend = float(rows["label_spend"].max()) if len(rows) else 1.0
-    # Alternate name positions over all bubbles, ordered by cost, so
-    # names of bubbles close together do not print on each other.
-    ordered = rows.sort_values("label_cost_per_tracked_action")["campaign"]
-    positions = {name: ("bottom center", "top center")[i % 2]
-                 for i, name in enumerate(ordered)}
-    for label in dashboard_data.JUDGED_LABELS:
-        part = rows.loc[rows["label"] == label].sort_values(
-            "label_cost_per_tracked_action")
-        if part.empty:
+    names = _wrapped(rows["campaign"])
+    texts = []
+    for _, row in rows.iterrows():
+        text = f"{row['ratio']:.2f}x · {html.escape(row['label_text'])}"
+        if row["over"]:
+            text = f"▶ {text}"
+        if row["worsening"]:
+            text += " · worsening"
+        texts.append(text)
+    fig.add_trace(go.Bar(
+        x=rows["shown"], y=names, orientation="h",
+        marker={"color": list(rows["colour"]),
+                "line": {"width": 0}},
+        text=texts, textposition="outside", cliponaxis=False,
+        textfont={"color": TEXT, "size": 11},
+        customdata=list(zip(
+            _safe(rows["label_text"]), rows["ratio"],
+            _safe(rows["label_period"]), rows["cost_per_tracked_action"],
+            rows["benchmark"])),
+        hovertemplate=(
+            "<b>%{y}</b><br>%{customdata[0]}"
+            "<br>Ratio to benchmark: %{customdata[1]:.2f}x"
+            "<br>Label period: %{customdata[2]}"
+            f"<br>Cost per tracked action: %{{customdata[3]:,.2f}} "
+            f"{currency}<br>Its benchmark: %{{customdata[4]:,.2f}} "
+            f"{currency}<extra></extra>"),
+        showlegend=False))
+    # One dashed line per distinct threshold ratio from the config.
+    drawn = {}
+    for _name, ratio, value in lines[1:] or lines[:1]:
+        drawn.setdefault(round(ratio, 6), (ratio, value))
+    for ratio, value in drawn.values():
+        if ratio > cap:
             continue
-        style = dashboard_data.LABEL_STYLE[label]
-        fig.add_trace(go.Scatter(
-            x=part["label_tracked_actions"],
-            y=part["label_cost_per_tracked_action"],
-            mode="markers+text",
-            name=dashboard_data.label_text(label),
-            text=part["campaign"],
-            textposition=[positions[name] for name in part["campaign"]],
-            textfont={"size": 12, "color": "#1C2430"},
-            cliponaxis=False,
-            marker={
-                "size": part["label_spend"],
-                "sizemode": "area",
-                "sizeref": 2.0 * max_spend / (60.0 ** 2),
-                "sizemin": 8,
-                "color": style["colour"],
-                "symbol": style["marker"],
-                "opacity": 0.85,
-                "line": {"width": 1.5, "color": "white"},
-            },
-            customdata=part[["label_text", "label_period", "label_spend",
-                             "label_benchmark", "label_ratio",
-                             "status_now"]].values,
-            hovertemplate=(
-                "<b>%{text}</b><br>%{customdata[0]} · %{customdata[5]}"
-                "<br>Label period: %{customdata[1]}"
-                "<br>Tracked actions: %{x:,.0f}"
-                f"<br>Cost per tracked action: %{{y:,.2f}} {currency}"
-                f"<br>Spend: %{{customdata[2]:,.0f}} {currency}"
-                f"<br>Its benchmark: %{{customdata[3]:,.2f}} {currency}"
-                "<br>Ratio to benchmark: %{customdata[4]:.2f}x"
-                "<extra></extra>"),
-        ))
-    # The benchmark line is also the 1.0x line: name it once.
-    drawn = []
-    for name, ratio, value in lines:
-        if drawn and abs(value - drawn[0][2]) < 1e-9:
-            drawn[0] = (f"{drawn[0][0]} = {name.lower()}", 1.0, value)
-            continue
-        drawn.append((name, ratio, value))
-    # Log axes: one campaign far above the benchmark must not squash
-    # the rest; equal steps on the y axis are equal ratios. Ranges
-    # are set explicitly (in log10 units) so the lines always show.
-    xs = list(rows["label_tracked_actions"]) or [1.0]
-    ys = list(rows["label_cost_per_tracked_action"]) + [
-        value for _name, _ratio, value in drawn]
-    x_range = [math.log10(min(xs) / 2.0), math.log10(max(xs) * 3.0)]
-    y_range = [math.log10(min(ys) / 1.6), math.log10(max(ys) * 1.6)]
-    x_line = [10 ** x_range[0], 10 ** x_range[1]]
-    for index, (name, _ratio, value) in enumerate(drawn):
-        colour = NAVY if index == 0 else GREY
-        fig.add_trace(go.Scatter(
-            x=x_line, y=[value, value], mode="lines",
-            line={"color": colour, "width": 1.5,
-                  "dash": "dash" if index == 0 else "dot"},
-            showlegend=False, hoverinfo="skip"))
-        # On a log axis an annotation's y is given in log10 units.
+        fig.add_shape(type="line", x0=ratio, x1=ratio, xref="x",
+                      y0=0, y1=1, yref="paper",
+                      line={"color": TEXT, "width": 1.2, "dash": "dash"})
         fig.add_annotation(
-            x=0.01, xref="paper", y=math.log10(value), yref="y",
-            text=f"{name}: {value:,.2f} {currency}", showarrow=False,
-            xanchor="left", yanchor="bottom",
-            font={"color": colour, "size": 12},
-            bgcolor="rgba(255,255,255,0.85)")
-    fig.update_xaxes(title="Tracked actions in the label period (log)",
-                     type="log", range=x_range)
-    fig.update_yaxes(title=f"Cost per tracked action ({currency}, log)",
-                     type="log", range=y_range)
-    return _layout(fig, height=520)
+            x=ratio, xref="x", y=1, yref="paper", yanchor="bottom",
+            text=f"{ratio:.1f}x<br>{value:,.2f}<br>{currency}",
+            showarrow=False, font={"color": GREY, "size": 11})
+    fig.update_xaxes(title="Ratio to benchmark (1.0x = benchmark)",
+                     range=[0, cap], dtick=0.5, ticksuffix="x",
+                     tickformat=".1f", type="linear")
+    fig.update_yaxes(title=None, type="category", autorange="reversed")
+    _layout(fig, height=max(240, 46 * len(rows) + 110), legend=False)
+    fig.update_layout(margin={"l": 10, "r": 170, "t": 50, "b": 10},
+                      bargap=0.35)
+    fig.update_xaxes(tickangle=0)
+    return fig
 
 
-def trend_line(table, x_field, x_title, currency):
-    """Cost per tracked action over time.
+def trend_line(table, x_field, x_title, currency, height=360,
+               freq="MS"):
+    """Cost per tracked action over time, on a date axis.
 
-    Months with a month_note (partial or lagged) are drawn as
-    hollow markers and named on the chart, so they read as
-    incomplete without relying on colour.
+    The table gets a real date per period and an empty row for each
+    missing month (freq "MS") or week (freq "W-MON"), so the line
+    breaks across gaps. Months with a month_note (partial or lagged)
+    are drawn as hollow rings and named on the chart, so they read
+    as incomplete without relying on colour.
     """
+    table = dashboard_data.with_period_gaps(table, x_field, freq)
+    notes = (table["month_note"].fillna("")
+             if "month_note" in table.columns else [""] * len(table))
+    # A flagged month has no filled dot: only the hollow ring below.
+    fill = ["rgba(0,0,0,0)" if note else NEUTRAL for note in notes]
+    extra = [column for column in ("spend", "tracked_actions")
+             if column in table.columns]
     fig = go.Figure(go.Scatter(
-        x=table[x_field].astype(str), y=table["cost_per_tracked_action"],
+        x=table["period_date"], y=table["cost_per_tracked_action"],
         mode="lines+markers", name="Cost per tracked action",
+        connectgaps=False,
         line={"color": NEUTRAL, "width": 2},
-        marker={"size": 9, "color": NEUTRAL},
-        customdata=table[["spend", "tracked_actions"]].values,
-        hovertemplate=(f"%{{x}}<br>Cost per tracked action: "
-                       f"%{{y:,.2f}} {currency}<br>Spend: "
-                       f"%{{customdata[0]:,.0f}}<br>Tracked actions: "
-                       "%{customdata[1]:,.0f}<extra></extra>")))
+        marker={"size": 9, "color": fill, "line": {"width": 0}},
+        customdata=table[extra].values if len(extra) == 2 else None,
+        hovertemplate=(f"%{{x|{'%b %Y' if freq == 'MS' else '%d %b %Y'}}}"
+                       f"<br>Cost per tracked action: %{{y:,.2f}} "
+                       f"{currency}<br>Spend: %{{customdata[0]:,.0f}}"
+                       "<br>Tracked actions: %{customdata[1]:,.0f}"
+                       "<extra></extra>")))
     if "month_note" in table.columns:
-        flagged = table.loc[table["month_note"] != ""]
+        flagged = table.loc[table["month_note"].fillna("") != ""]
         if not flagged.empty:
             fig.add_trace(go.Scatter(
-                x=flagged[x_field].astype(str),
+                x=flagged["period_date"],
                 y=flagged["cost_per_tracked_action"],
                 mode="markers+text", name="Partial or lagged month",
                 text=flagged["month_note"], textposition="top center",
-                textfont={"color": GREY, "size": 11},
-                marker={"size": 13, "symbol": "circle-open",
-                        "color": "#D55E00", "line": {"width": 2}},
-                hovertemplate="%{x}: %{text}<extra></extra>"))
-    fig.update_xaxes(title=x_title, type="category")
+                textfont={"color": GREY, "size": 11}, cliponaxis=False,
+                marker={"size": 12, "symbol": "circle-open",
+                        "color": TEXT, "line": {"width": 2}},
+                hovertemplate="%{x|%b %Y}: %{text}<extra></extra>"))
+    # One tick per month (or per 3, 6, 12 months on long ranges), so
+    # a month label is never repeated.
+    dtick = None
+    if freq == "MS" and table["period_date"].notna().any():
+        months = len(table)
+        dtick = ("M1" if months <= 12 else "M3" if months <= 36
+                 else "M6" if months <= 72 else "M12")
+    fig.update_xaxes(title=x_title, type="date", dtick=dtick,
+                     tickformat="%b %Y" if freq == "MS" else "%d %b %Y")
+    values = table["cost_per_tracked_action"].dropna()
+    top = float(values.max()) * 1.2 if len(values) else None
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
-                     rangemode="tozero")
-    return _layout(fig, height=360)
+                     rangemode="tozero",
+                     range=[0, top] if top else None)
+    return _layout(fig, height=height)
 
 
-def recent_vs_prior_bar(rows, currency):
-    """Prior and recent cost per tracked action per active campaign.
+def weekday_bar(table, currency, highlight=None, note=None):
+    """Cost per tracked action by weekday, Monday to Sunday.
 
-    rows: data.recent_trend_rows. Prior is grey, recent navy; the
-    legend names both, so colour is not the only cue.
+    All bars in the neutral colour with value labels; no good or bad
+    colours. highlight (a weekday) gets a dark outline and, when
+    given, the note written above it (for example "most pooled
+    clicks").
     """
-    fig = go.Figure()
-    for column, name, colour in (
-            ("prior_cost_per_tracked_action", "Prior window", GRID),
-            ("recent_cost_per_tracked_action", "Recent window", NAVY)):
-        values = rows[column]
-        fig.add_trace(go.Bar(
-            x=rows["campaign"], y=values, name=name,
-            marker_color=colour,
-            marker_line={"color": NAVY, "width": 1},
-            text=[f"{value:,.2f}" if value == value else ""
-                  for value in values],
-            textposition="outside", cliponaxis=False,
-            hovertemplate=(f"%{{x}}<br>{name}: %{{y:,.2f}} {currency}"
-                           "<extra></extra>")))
-    fig.update_layout(barmode="group")
-    fig.update_xaxes(title=None, type="category")
-    fig.update_yaxes(title=f"Cost per tracked action ({currency})",
-                     rangemode="tozero")
-    return _layout(fig, height=340)
-
-
-def weekday_bar(table, currency, highlight=None):
-    """Cost per tracked action by weekday, Monday to Sunday."""
-    short = str(highlight)[:3] if highlight else None
-    colours = [("#D55E00" if str(day)[:3] == short else NEUTRAL)
-               for day in table["weekday"]]
+    short = str(highlight)[:3] if highlight is not None else None
+    marked = [str(day)[:3] == short for day in table["weekday"]]
     fig = go.Figure(go.Bar(
         x=table["weekday"], y=table["cost_per_tracked_action"],
-        marker_color=colours,
+        marker={"color": NEUTRAL,
+                "line": {"color": [TEXT if mark else NEUTRAL
+                                   for mark in marked],
+                         "width": [2.5 if mark else 0
+                                   for mark in marked]}},
         text=[f"{value:,.2f}" for value in
               table["cost_per_tracked_action"]],
         textposition="outside", cliponaxis=False,
+        textfont={"color": TEXT},
         customdata=table[["tracked_actions", "clicks"]].values,
         hovertemplate=(f"%{{x}}: %{{y:,.2f}} {currency}<br>Tracked "
                        "actions: %{customdata[0]:,.0f}<br>Clicks: "
                        "%{customdata[1]:,.0f}<extra></extra>")))
+    if note and any(marked):
+        row = table.loc[marked].iloc[0]
+        fig.add_annotation(
+            x=row["weekday"], y=row["cost_per_tracked_action"],
+            text=note, showarrow=False, yshift=34,
+            font={"color": TEXT, "size": 11},
+            bgcolor="#FBF6EE", bordercolor=TEXT, borderwidth=1,
+            borderpad=3)
     fig.update_xaxes(title=None, type="category")
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
                      rangemode="tozero")
@@ -219,7 +236,7 @@ def share_bar(table, weekday):
     """Each campaign's share of the pooled clicks on one weekday."""
     table = table.sort_values("share_of_weekday_clicks")
     fig = go.Figure(go.Bar(
-        x=table["share_of_weekday_clicks"], y=table["campaign"],
+        x=table["share_of_weekday_clicks"], y=_safe(table["campaign"]),
         orientation="h", marker_color=NEUTRAL,
         text=[f"{value:.0%}" for value in
               table["share_of_weekday_clicks"]],
@@ -235,6 +252,8 @@ def share_bar(table, weekday):
                    legend=False)
 
 
+# Segment labels under this share are hidden (they do not fit).
+INTENT_LABEL_MIN = 0.05
 INTENT_COLOURS = {"Directions": "#0072B2", "Calls": "#E69F00",
                   "Store visits": "#009E73"}
 
@@ -247,9 +266,9 @@ def intent_stack(long):
         if part.empty:
             continue
         fig.add_trace(go.Bar(
-            x=part["share"], y=part["campaign"], orientation="h",
+            x=part["share"], y=_safe(part["campaign"]), orientation="h",
             name=intent, marker_color=colour,
-            text=[f"{value:.0%}" if value >= 0.08 else ""
+            text=[f"{value:.0%}" if value >= INTENT_LABEL_MIN else ""
                   for value in part["share"]],
             textposition="inside", insidetextanchor="middle",
             hovertemplate=f"%{{y}}<br>{intent}: %{{x:.1%}}<extra></extra>"))
