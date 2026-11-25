@@ -307,11 +307,13 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
   .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;
     font-size: var(--cc-small);}
   .stApp .cc-act th {letter-spacing: 0; font-size: var(--cc-th);}
-  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;}
+  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;
+    white-space: normal;}
 }
-.cc-table .act {width: 100%;}
-.cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical; overflow: hidden;}
+/* Ranked table: the Action column gets about a third of the width
+   and wraps; headers may wrap so the other columns can be narrower. */
+.stApp .cc-act th {white-space: normal; vertical-align: bottom;}
+.cc-table .act {width: 32%; white-space: normal; overflow-wrap: anywhere;}
 
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
@@ -401,8 +403,13 @@ def _card_title(text):
 
 
 def _pill(label):
-    """A label pill: tint, strong left border, symbol and text."""
+    """A label pill: tint, strong left border, symbol and text.
+
+    The symbol is joined to the first word by a no-break space, so a
+    pill that wraps never leaves the symbol on a line by itself.
+    """
     text = html.escape(dashboard_data.label_text(label) or "—")
+    text = text.replace(" ", "\u00a0", 1)
     return (f"<span class='cc-pill' style='background:"
             f"{dashboard_data.label_tint(label)};border-color:"
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
@@ -521,8 +528,8 @@ def _action_html(table):
     """The ranked action table as HTML.
 
     The label cell is a pill (tint, left border, symbol and text).
-    The Action column takes the spare width and wraps to at most two
-    lines; its full text is in an escaped tooltip.
+    The Action column is about a third of the table and shows its
+    full text, wrapped onto as many lines as it needs.
     """
     head = ("<tr><th>#</th><th>Campaign</th><th>Final label</th>"
             "<th>Status</th><th class='n'>Ratio</th>"
@@ -530,8 +537,7 @@ def _action_html(table):
             "<th class='act'>Action</th><th>Label period</th></tr>")
     body = []
     for _, row in table.iterrows():
-        action = html.escape(_readable(row["action"], keep=True),
-                             quote=True)
+        action = html.escape(_readable(row["action"], keep=True))
         body.append(
             "<tr>"
             f"<td class='n'>{int(row['rank'])}</td>"
@@ -541,8 +547,7 @@ def _action_html(table):
             f"<td class='n'>{_fmt(row['ratio_to_benchmark'], '{:.2f}x')}</td>"
             f"<td class='n'>{_fmt(row['tracked_actions'], '{:,.0f}')}</td>"
             f"<td>{html.escape(_readable(row['recent_trend']))}</td>"
-            f"<td class='act'><span class='cc-clamp' title=\"{action}\">"
-            f"{action}</span></td>"
+            f"<td class='act'>{action}</td>"
             f"<td class='per'>{_period_html(row['label_period'])}</td>"
             "</tr>")
     return (f"<div class='cc-scroll'><table class='cc-table cc-act'>"
