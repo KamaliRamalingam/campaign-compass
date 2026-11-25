@@ -77,7 +77,8 @@ def _branding(monkeypatch, tmp_path, mode):
 
 @pytest.mark.parametrize("client", CLIENTS)
 @pytest.mark.parametrize("mode", ["no_key", "missing_file", "logo"])
-@pytest.mark.parametrize("page", ["act", "context", "campaign_detail"])
+@pytest.mark.parametrize("page",
+                         ["act", "context", "campaign_detail", "method"])
 def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     if not _has_outputs(client):
         pytest.skip(f"no result tables for {client}: run bash run.sh")
@@ -90,17 +91,41 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     assert not script.exception, script.exception
     page = " ".join(block.value for block in script.markdown)
     assert ("<img class='cc-logo'" in page) == (mode == "logo")
-    # Wordmark in the header only without a logo. The heading always
-    # names the tool now: the brand is at the top-right, not beside
-    # the heading, so the heading cannot rely on it.
+    # Wordmark in the header only without a logo. With a logo the
+    # heading names the tool ("CampaignCompass · <page>:"); with the
+    # wordmark it is only "<page>: <question>".
     assert ("cc-wordmark'>CampaignCompass" in page) == (mode != "logo")
-    assert "CampaignCompass · " in page
-    # The brand sits at the far right, spanning both header rows, and
-    # comes after the data line in the page: the picker is above the
-    # tabs and the logo is centred on the header. (The style block
-    # also names these classes, so match the divs.)
-    assert page.index("class='cc-brand'") > page.index("class='cc-data'")
+    assert ("class='cc-tool'>CampaignCompass · " in page) == (mode == "logo")
+    # The brand is at the left of the heading row, before the
+    # heading, with the data line under the heading. (The style
+    # block also names these classes, so match the divs.)
+    assert page.index("class='cc-brand'") < page.index("class='cc-title'")
+    assert page.index("class='cc-title'") < page.index("class='cc-data'")
     assert "class='cc-page'>" in page and "class='cc-q'>" in page
+
+
+MOVED = ("Data completeness (lag check, monthly trend)", "Journey table",
+         "Method and definitions")
+
+
+@pytest.mark.parametrize("client", CLIENTS)
+def test_method_page_holds_the_moved_sections(client):
+    if not _has_outputs(client):
+        pytest.skip(f"no result tables for {client}: run bash run.sh")
+    labels = {}
+    for page in ("context", "method"):
+        script = AppTest.from_string(
+            f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+            f"CLIENT = {client!r}\nPAGE = {page!r}\n" + PAGE_SCRIPT,
+            default_timeout=60)
+        script.run()
+        assert not script.exception, script.exception
+        labels[page] = [block.label for block in script.expander]
+    method = [label for label in labels["method"] if label in MOVED]
+    assert method == list(MOVED)  # all three, in this order
+    assert not set(MOVED) & set(labels["context"])
+    assert any(label.startswith("Is one campaign distorting")
+               for label in labels["context"])
 
 
 def test_main_starts_with_top_navigation():
