@@ -107,9 +107,9 @@ def test_active_campaign_label_comes_from_recent_window():
     assert alpha["action_text"] == "keep running, but test changes"
     assert alpha["reason"].startswith(
         "last 30 days (2024-03-02 to 2024-03-31): cost per "
-        "conversion is 1.50 times the core benchmark")
+        "tracked action is 1.50 times the core benchmark")
     assert "latest run 1 (2024-01-01 to 2024-03-31" in alpha["reason"]
-    assert "was labelled continue" in alpha["reason"]
+    assert "was labelled Continue" in alpha["reason"]
 
 
 def test_ended_and_fixed_campaigns_keep_their_label():
@@ -132,7 +132,7 @@ def test_low_recent_volume_is_insufficient_data():
     alpha = recs.loc["Alpha"]
     assert alpha["label"] == "insufficient_data"
     assert alpha["run_label"] == "continue"
-    assert "not enough volume to judge: 5 tracked conversions over 5 " \
+    assert "not enough volume to judge: 5 tracked actions over 5 " \
         "active days" in alpha["reason"]
 
 

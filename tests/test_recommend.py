@@ -100,7 +100,7 @@ def test_recommend_runs_labels_and_reasons():
     assert beta["label"] == "pause_or_review"
     for _, row in recs.iterrows():
         assert row["reason"]
-        assert "tracked conversions" in row["reason"] or \
+        assert "tracked actions" in row["reason"] or \
             "core benchmark" in row["reason"]
         assert row["caveat"] == CAVEAT
         assert "extra customers" not in row["reason"]

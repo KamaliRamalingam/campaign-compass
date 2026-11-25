@@ -15,27 +15,27 @@ from src.groups import assign_group, assign_groups
 GROUPS = {
     "core": ["Alpha", "Beta"],
     "sep_2026_group": {
-        "exact": ["Super Sales"],
-        "prefix": "The South Indian Campaign",
+        "exact": ["Spring Offer"],
+        "prefix": "Brand Campaign",
     },
-    "exclude_pending_owner": ["DrTiwari"],
+    "exclude_pending_owner": ["Unrelated Event"],
 }
 
 
 def test_exact_match():
     assert assign_group("Alpha", GROUPS) == "core"
-    assert assign_group("Super Sales", GROUPS) == "sep_2026_group"
+    assert assign_group("Spring Offer", GROUPS) == "sep_2026_group"
 
 
 def test_prefix_match():
-    assert assign_group("The South Indian Campaign - Test",
+    assert assign_group("Brand Campaign - Test",
                         GROUPS) == "sep_2026_group"
 
 
 def test_prefix_does_not_match_similar_name():
-    # "The South Indian Sweden Campaign" does not start with the
-    # prefix "The South Indian Campaign", so it is ungrouped here.
-    assert assign_group("The South Indian Sweden Campaign",
+    # "Brand Sweden Campaign" does not start with the
+    # prefix "Brand Campaign", so it is ungrouped here.
+    assert assign_group("Brand Sweden Campaign",
                         GROUPS) == "ungrouped"
 
 
