@@ -67,13 +67,17 @@ h1, h2, h3, h4 {color: #3B2F2A !important;}
 p, li, td, th {font-size: 14px;}
 
 /* No header bar: Streamlit's header is transparent and empty except
-   for its menu (⋮), which is lined up with our top row. The top row
-   (logo, page tabs, client picker) is part of the page. */
+   for its menu (⋮), which is lined up with our tabs and picker. The
+   top row is part of the page: [logo | divider | heading] ...
+   [tabs, client picker, menu]. The heading band is 72px; the tabs
+   and picker sit in its middle (top 24px + 36px = 60px), and so does
+   the menu. Below 1500px the tabs, picker and menu move to their own
+   row under the logo and heading (centre 24 + 75 + 16 + 20 = 135px). */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
-  {background: transparent; border: 0; height: 104px;
+  {background: transparent; border: 0; height: 120px;
    pointer-events: none;}
 [data-testid="stDecoration"] {display: none;}
-[data-testid="stToolbar"] {height: 104px; align-items: center;
+[data-testid="stToolbar"] {height: 120px; align-items: center;
   max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
   box-sizing: border-box; left: 0; right: 0;}
 /* The empty header must not catch clicks meant for the top row;
@@ -84,16 +88,38 @@ p, li, td, th {font-size: 14px;}
   {pointer-events: auto;}
 [data-testid="stMainMenu"] {background: #FBF6EE; border-radius: 50%;}
 .st-key-cc_header {padding: 0; margin: 0 0 8px;}  /* + 16px gap = 24px */
-.st-key-cc_header [data-testid="stHorizontalBlock"] {min-height: 56px;
-  align-items: center; flex-wrap: nowrap; gap: 24px;}
-.st-key-cc_header [data-testid="stColumn"]:last-child {flex: 0 0 180px;
-  width: 180px; min-width: 180px; margin-right: 40px;}
+.st-key-cc_header [data-testid="stHorizontalBlock"]
+  {align-items: flex-start; flex-wrap: nowrap; gap: 24px;}
+.st-key-cc_header [data-testid="stColumn"]:nth-child(1)
+  {flex: 1 1 auto !important; width: auto !important; min-width: 0;}
+.st-key-cc_header [data-testid="stColumn"]:nth-child(2)
+  {flex: 0 0 auto !important; width: auto !important; min-width: 0;
+   margin-top: 12px;}
+.st-key-cc_header [data-testid="stColumn"]:nth-child(3)
+  {flex: 0 0 180px !important; width: 180px !important; min-width: 180px;
+   margin-right: 40px; margin-top: 16px;}
 .st-key-cc_header [data-testid="stMarkdownContainer"],
 .st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
-.cc-brand {display: flex; align-items: center; height: 56px;}
-.cc-logo {height: 56px; width: auto; display: block;}
+@media (max-width: 1500px) {
+  [data-testid="stHeader"], [data-testid="stAppHeader"],
+  [data-testid="stToolbar"] {height: 270px;}
+  .st-key-cc_header [data-testid="stHorizontalBlock"]
+    {flex-wrap: wrap; row-gap: 16px;}
+  .st-key-cc_header [data-testid="stColumn"]:nth-child(1)
+    {flex: 1 0 100% !important;}
+  .st-key-cc_header [data-testid="stColumn"]:nth-child(2)
+    {margin-left: auto; margin-top: -4px;}
+  .st-key-cc_header [data-testid="stColumn"]:nth-child(3)
+    {margin-top: 0;}
+}
+.cc-brand {display: flex; align-items: center; gap: 20px;
+  min-height: 72px;}
+.cc-logo {height: 56px; width: auto; display: block; flex: 0 0 auto;}
+.cc-divider {flex: 0 0 1px; width: 1px; height: 56px;
+  background: #EADFCF;}
 .cc-wordmark {font-size: 16px; font-weight: 600; letter-spacing: 0.25em;
-  text-transform: uppercase; color: #7A6B5F;}
+  text-transform: uppercase; color: #7A6B5F; flex: 0 0 auto;}
+.cc-brand .cc-head {min-width: 0; flex: 1 1 auto;}
 /* Page tabs: plain text; the active one has a 3px green underline. */
 .st-key-cc_nav {justify-content: flex-end; gap: 4px;}
 .st-key-cc_nav [data-testid="stPageLink"] a {background: transparent;
@@ -112,32 +138,44 @@ p, li, td, th {font-size: 14px;}
 .st-key-cc_picker [data-baseweb="select"] > div {min-height: 34px;
   font-size: 13px;}
 
-/* Heading block. */
+/* Heading block (in the top row, beside the logo). */
 .stApp .cc-page {font-size: 12px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.08em; color: #254C31; margin: 0;}
-.stApp .cc-q {font-size: 32px; font-weight: 600; color: #254C31;
-  margin: 4px 0; line-height: 1.2;}
-.stApp .cc-data {font-size: 14px; font-weight: 400; color: #7A6B5F; margin: 0;}
-.stApp .cc-head {margin-bottom: 24px;}
+.stApp .cc-q {font-size: 26px; font-weight: 600; color: #254C31;
+  margin: 2px 0; line-height: 1.2; overflow-wrap: break-word;}
+.stApp .cc-data {font-size: 13px; font-weight: 400; color: #7A6B5F; margin: 0;}
 
 /* Caveat banner: white, warm border, charcoal text. */
 [data-testid="stAlert"] > div {background: #FFFFFF; color: #3B2F2A;
   border: 1px solid #EADFCF;}
 [data-testid="stAlert"] p {color: #3B2F2A;}
 
-/* Cards. */
-[data-testid="stVerticalBlockBorderWrapper"],
-.st-key-cc_card, div[class*="st-key-card_"]
-  {background: #FFFFFF; border-color: #EADFCF !important;}
+/* Cards: white on the beige page, warm border. */
+div[class*="st-key-card_"] {background: #FFFFFF;
+  border: 1px solid #EADFCF !important; border-radius: 8px;}
+/* Expanders: white card, white header row with a thin line under it
+   when open. */
 [data-testid="stExpander"] details {background: #FFFFFF;
-  border-color: #EADFCF;}
+  border: 1px solid #EADFCF; border-radius: 8px;}
+[data-testid="stExpander"] summary {background: #FFFFFF;
+  border-radius: 8px;}
+[data-testid="stExpander"] summary:hover {background: #FFFFFF;}
+[data-testid="stExpander"] details[open] > summary
+  {border-bottom: 1px solid #EADFCF; border-radius: 8px 8px 0 0;}
+[data-testid="stExpanderDetails"] {border: 0 !important;
+  background: #FFFFFF;}
+/* Space after HTML blocks (Streamlit gives markdown a negative bottom
+   margin, so rows of HTML cards would touch the next row). */
+.cc-tiles, .cc-stat {margin-bottom: 16px;}
 .cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
   border-radius: 8px; padding: 14px 16px; min-height: 160px;}
 .cc-stat-title {font-size: 15px; font-weight: 600;}
 .cc-stat-v {font-size: 36px; font-weight: 300; line-height: 1.2;
   margin-top: 4px;}
-.cc-kpi {background: #FFFFFF; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: 10px 12px; height: 100%;}
+.cc-kpis {display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-bottom: 12px;}
+.cc-kpi {background: #FBF6EE; border: 1px solid #EADFCF;
+  border-radius: 8px; padding: 10px 12px;}
 .cc-kpi-l {font-size: 13px; font-weight: 600; color: #3B2F2A;}
 .cc-kpi-v {font-size: 22px; font-weight: 600; line-height: 1.25;
   margin: 4px 0; overflow-wrap: anywhere; color: #3B2F2A;}
@@ -166,9 +204,13 @@ p, li, td, th {font-size: 14px;}
   margin: 0 0 8px;}
 .cc-table th {text-align: left; color: #7A6B5F; font-size: 12px;
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  border-bottom: 1px solid #EADFCF; padding: 8px 8px; background: #FBF6EE;}
+  border-bottom: 1px solid #EADFCF; padding: 8px 8px; background: #F3EADB;}
 .cc-table td {border-bottom: 1px solid #EADFCF; padding: 8px 8px;
-  vertical-align: top;}
+  vertical-align: top; background: #FFFFFF;}
+.cc-table, .cc-table tr, .cc-table tr:nth-child(even) td
+  {background: #FFFFFF;}
+.cc-table {border: 1px solid #EADFCF;}
+.stApp .cc-table th, .stApp .cc-table td {border-left: 0; border-right: 0;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-scroll {overflow-x: auto; max-width: 100%;}
 .stApp .cc-tight th, .stApp .cc-tight td {padding: 5px 5px;
@@ -231,17 +273,34 @@ def _ckey(name):
     return f"{name}__{st.session_state.get('_client', '')}"
 
 
+# The top row's brand slot (logo or wordmark, then the page heading),
+# set by _header on every run and filled by the page's _heading.
+_TOP = {"slot": None, "brand": ""}
+
+
+def _brand_html(brand, head=""):
+    """Logo or wordmark, then (when given) a divider and the heading."""
+    if head:
+        return (f"<div class='cc-brand'>{brand}<span class='cc-divider'>"
+                f"</span>{head}</div>")
+    return f"<div class='cc-brand'>{brand}</div>"
+
+
 def _heading(page, question, ctx):
     """The heading block: page label (with the tool name), question,
-    data line."""
+    data line. Shown in the top row beside the logo when there is
+    one (the app); otherwise where the page is (a page run alone)."""
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
-    st.markdown(
-        f"<div class='cc-head'><div class='cc-page'>CampaignCompass · "
-        f"{html.escape(page)}</div>"
-        f"<div class='cc-q'>{html.escape(question)}</div>"
-        f"<div class='cc-data'>{html.escape(line)}</div></div>",
-        unsafe_allow_html=True)
+    head = (f"<div class='cc-head'><div class='cc-page'>CampaignCompass · "
+            f"{html.escape(page)}</div>"
+            f"<div class='cc-q'>{html.escape(question)}</div>"
+            f"<div class='cc-data'>{html.escape(line)}</div></div>")
+    if _TOP["slot"] is not None:
+        _TOP["slot"].markdown(_brand_html(_TOP["brand"], head),
+                              unsafe_allow_html=True)
+    else:
+        st.markdown(head, unsafe_allow_html=True)
 
 
 def _caveat(ctx):
@@ -263,13 +322,26 @@ def _pill(label):
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
 
 
-def _card(column, label, value, definition):
-    """A KPI card: label, value (wraps, never cut) and definition."""
-    column.markdown(
+_BOX_COUNT = [0]
+
+
+def _box(parent):
+    """A white bordered card. The key ("card_<n>") gives it a CSS
+    class, since a bordered container has no attribute of its own."""
+    _BOX_COUNT[0] += 1
+    return parent.container(border=True, key=f"card_{_BOX_COUNT[0]}")
+
+
+def _kpi_grid(cards):
+    """KPI cards (label, value, definition) in a 2-column grid with
+    12px gaps; values wrap, never cut."""
+    items = "".join(
         f"<div class='cc-kpi'><div class='cc-kpi-l'>{html.escape(label)}"
         f"</div><div class='cc-kpi-v'>{html.escape(value)}</div>"
-        f"<div class='cc-muted'>{html.escape(definition)}</div></div>",
-        unsafe_allow_html=True)
+        f"<div class='cc-muted'>{html.escape(definition)}</div></div>"
+        for label, value, definition in cards)
+    st.markdown(f"<div class='cc-kpis'>{items}</div>",
+                unsafe_allow_html=True)
 
 
 def _badge(label):
@@ -527,7 +599,7 @@ def _page_act(ctx):
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
     table = dashboard_data.action_table(view, tables["recent_trend"])
     left, right = st.columns([1.45, 1])
-    with left.container(border=True):
+    with _box(left):
         show_hidden = st.checkbox(
             "Also show insufficient data / not judged campaigns",
             value=False, key="act_show_hidden")
@@ -552,7 +624,7 @@ def _page_act(ctx):
                 dashboard_data.csv_bytes(table.drop(columns=["label"])),
                 file_name="actions.csv", mime="text/csv",
                 key="act_download", width="stretch")
-    with right.container(border=True):
+    with _box(right):
         _card_title("Ratio to benchmark (cost per tracked action)")
         bars = dashboard_data.ratio_bar_rows(table, recs,
                                              cap=charts.RATIO_CAP)
@@ -589,22 +661,20 @@ def _page_act(ctx):
     with below[1]:
         with st.expander("Totals and benchmark"):
             scope = _totals_scope(ctx, kpi)
-            cards = st.columns(2)
-            _card(cards[0], "Spend", f"{kpi['spend']:,.0f} {currency}",
-                  "Total spend of the campaigns in the totals.")
-            _card(cards[1], "Tracked actions",
-                  f"{kpi['tracked_actions']:,.0f}",
-                  "Directions requests and calls the account counts.")
-            cards = st.columns(2)
-            _card(cards[0], "Cost per tracked action",
-                  f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
-                  "Spend divided by tracked actions.")
             bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
                           f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
                           else "Pooled over the benchmark group(s).")
-            _card(cards[1], "Benchmark",
-                  f"{kpi['benchmark']:,.2f} {currency}",
-                  f"What a campaign is compared with. {bench_note}")
+            _kpi_grid([
+                ("Spend", f"{kpi['spend']:,.0f} {currency}",
+                 "Total spend of the campaigns in the totals."),
+                ("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+                 "Directions requests and calls the account counts."),
+                ("Cost per tracked action",
+                 f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+                 "Spend divided by tracked actions."),
+                ("Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
+                 f"What a campaign is compared with. {bench_note}"),
+            ])
             st.caption(f"{scope} Totals use the whole daily range "
                        f"(benchmarks.csv); the filters do not change "
                        f"them.")
@@ -944,7 +1014,7 @@ def _weekday_breakdown(mix, loo, top, focus):
 def _what_if(rows, span, currency):
     """Moving weekday spend to the weekend, per variant of the groups."""
     if span is not None:
-        with st.container(border=True):
+        with _box(st):
             st.metric("Change in tracked actions, range across variants",
                       span["display"])
     columns = [column for column in (
@@ -969,7 +1039,6 @@ def _context_method(ctx):
     """Benchmarks, sensitivity, rules and what counts, in an expander."""
     tables = ctx["tables"]
     config = ctx["config"]
-    st.write("")
     with st.expander("Method and definitions"):
         st.markdown("**Benchmarks**")
         benchmarks = tables["benchmarks"].copy()
@@ -1025,14 +1094,14 @@ def _page_context(ctx):
              "run campaigns?", ctx)
     pooled, rows, span = _weekday_parts(ctx)
     top = st.columns(2)
-    with top[0].container(border=True):
+    with _box(top[0]):
         campaign = _card_recent(ctx)
-    with top[1].container(border=True):
+    with _box(top[1]):
         _card_weekday(ctx, pooled)
     bottom = st.columns(2)
-    with bottom[0].container(border=True):
+    with _box(bottom[0]):
         _card_what_if(ctx, rows, span)
-    with bottom[1].container(border=True):
+    with _box(bottom[1]):
         _card_journey(ctx)
     below = st.columns(2)
     with below[0]:
@@ -1183,10 +1252,9 @@ def _page_detail(ctx):
     recs = ctx["all_recommendations"]
     ranked = list(dashboard_data.action_table(recs)["campaign"])
     options = ranked + sorted(set(recs["campaign"]) - set(ranked))
-    heading, picker = st.columns([3, 1], vertical_alignment="bottom")
-    with heading:
-        _heading("Campaign detail", "How has this campaign performed?",
-                 ctx)
+    _heading("Campaign detail", "How has this campaign performed?", ctx)
+    # The campaign picker sits in the filter area under the top row.
+    picker = st.columns([1, 2])[0]
     if not options:
         st.info("No campaigns.")
         return
@@ -1224,12 +1292,12 @@ def _page_detail(ctx):
                "benchmark.")
 
     action, why = st.columns([1, 1.6])
-    with action.container(border=True):
+    with _box(action):
         _card_title("Action")
         st.markdown(f"<p style='font-size:18px;font-weight:600;"
                     f"margin:0'>{html.escape(detail['action'] or '—')}</p>",
                     unsafe_allow_html=True)
-    with why.container(border=True):
+    with _box(why):
         _card_title("Why this label")
         st.markdown(f"<p class='cc-take'>{html.escape(detail['reason'])}"
                     "</p>", unsafe_allow_html=True)
@@ -1245,9 +1313,9 @@ def _page_detail(ctx):
                        "its group is not judged.")
 
     runs, trend = st.columns([1.2, 1])
-    with runs.container(border=True):
+    with _box(runs):
         _runs_card(ctx, campaign)
-    with trend.container(border=True):
+    with _box(trend):
         _card_title("Trend")
         st.caption(f"Cost per tracked action ({currency})")
         _detail_trend(ctx, campaign)
@@ -1397,8 +1465,9 @@ def _logo_img(path):
 
 def _header(clients, pages=None, current=None):
     """The top row, on the page background: the client's logo (or the
-    CAMPAIGNCOMPASS wordmark) at the left; page tabs and the client
-    picker at the right.
+    CAMPAIGNCOMPASS wordmark) at the left, followed by the page
+    heading (filled in by the page's _heading); page tabs and the
+    client picker at the right.
 
     The logo comes from branding.logo_path in the client config; when
     the key or the file is missing, the wordmark shows in its place.
@@ -1417,13 +1486,11 @@ def _header(clients, pages=None, current=None):
         except FileNotFoundError:
             config = {}
         logo = dashboard_data.logo_path(config)
-        if logo is not None:
-            brand.markdown(f"<div class='cc-brand'>{_logo_img(logo)}</div>",
-                           unsafe_allow_html=True)
-        else:
-            brand.markdown("<div class='cc-brand'><span class='cc-wordmark'>"
-                           "CampaignCompass</span></div>",
-                           unsafe_allow_html=True)
+        mark = (_logo_img(logo) if logo is not None else
+                "<span class='cc-wordmark'>CampaignCompass</span>")
+        _TOP["brand"] = mark
+        _TOP["slot"] = brand.empty()
+        _TOP["slot"].markdown(_brand_html(mark), unsafe_allow_html=True)
         if pages:
             with nav.container(key="cc_nav", horizontal=True):
                 for number, page in enumerate(pages):
