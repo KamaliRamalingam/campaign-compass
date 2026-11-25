@@ -184,6 +184,13 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   margin: 4px 0; overflow-wrap: anywhere; color: #254C31;}
 .cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
   color: #3B2F2A;}
+/* The Act-page filter labels (Campaign group, Status now, Minimum
+   tracked actions) match the card titles: 18px, weight 600. Only
+   the labels inside the filters container change. */
+.st-key-cc_filters [data-testid="stWidgetLabel"],
+.st-key-cc_filters [data-testid="stWidgetLabel"] p,
+.st-key-cc_filters [data-testid="stWidgetLabel"] span
+  {font-size: 18px; font-weight: 600; color: #3B2F2A;}
 
 /* Buttons. */
 .stButton button[kind="primary"], .stDownloadButton button,
@@ -618,19 +625,21 @@ def _page_act(ctx):
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
 
-    # Filters: display only, they hide table rows and bars.
-    filters = st.columns(3)
-    group = filters[0].selectbox(
-        "Campaign group", dashboard_data.group_options(recs),
-        key=_ckey("act_group"))
-    status = filters[1].selectbox(
-        "Status now", dashboard_data.status_options(recs),
-        key=_ckey("act_status"))
-    min_actions = filters[2].number_input(
-        "Minimum tracked actions", min_value=0, value=0, step=10,
-        key="act_min_actions",
-        help="Display filter only: hides campaigns with fewer tracked "
-             "actions in their label period. Labels do not change.")
+    # Filters: display only, they hide table rows and bars. Their
+    # labels match the card titles (18px, weight 600).
+    with st.container(key="cc_filters"):
+        filters = st.columns(3)
+        group = filters[0].selectbox(
+            "Campaign group", dashboard_data.group_options(recs),
+            key=_ckey("act_group"))
+        status = filters[1].selectbox(
+            "Status now", dashboard_data.status_options(recs),
+            key=_ckey("act_status"))
+        min_actions = filters[2].number_input(
+            "Minimum tracked actions", min_value=0, value=0, step=10,
+            key="act_min_actions",
+            help="Display filter only: hides campaigns with fewer tracked "
+                 "actions in their label period. Labels do not change.")
     view = dashboard_data.filter_view(recs, group, status, min_actions)
 
     # Decision tiles: all campaigns, never filtered.
