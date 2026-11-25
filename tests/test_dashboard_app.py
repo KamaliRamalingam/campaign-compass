@@ -95,6 +95,10 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     # the heading, so the heading cannot rely on it.
     assert ("cc-wordmark'>CampaignCompass" in page) == (mode != "logo")
     assert "CampaignCompass · " in page
+    # The brand sits in the tabs row, after the data line: it fills
+    # the space the tabs used to leave empty under the logo. (The
+    # style block also names these classes, so match the divs.)
+    assert page.index("class='cc-brand'") > page.index("class='cc-data'")
     assert "class='cc-page'>" in page and "class='cc-q'>" in page
 
 
