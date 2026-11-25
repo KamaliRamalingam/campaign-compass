@@ -1,5 +1,5 @@
 """Tests for the PR 5 dashboard data functions (dashboard/data.py):
-the three-page report (Act, Context, Campaign detail).
+the four-page report (Act, Context, Campaign detail, Method).
 
 All data is tiny and made up. No real data, no real campaign
 names. Only dashboard/data.py is imported, never app.py or

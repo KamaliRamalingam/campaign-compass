@@ -3,9 +3,10 @@
 Run it with: bash dashboard.sh (after bash run.sh). It listens
 on localhost only.
 
-Three pages (PR 5): Act (which campaigns to continue, test or
-pause), Context (can we trust this?) and Campaign detail (opened
-from the Act ranking or picked directly). Charts are Plotly,
+Four pages: Act (which campaigns to continue, test or pause),
+Context (can we trust this?), Campaign detail (opened from the Act
+ranking or picked directly) and Method (how the labels were built:
+data completeness, journey table, method and definitions). Charts are Plotly,
 built in dashboard/charts.py.
 
 Reads only the client's results and reports folders, never
@@ -38,7 +39,8 @@ NUM = st.column_config.NumberColumn
 DETAIL_KEY = "detail_campaign"
 # Widgets whose options depend on the client: reset on a switch.
 CLIENT_WIDGETS = ("act_group", "act_status", "act_pick", DETAIL_KEY,
-                  "ctx_trend_campaign", "ctx_weekday")
+                  "ctx_trend_campaign", "ctx_weekday",
+                  "method_trend_campaign")
 
 # Warm spice theme (redesign). Colours: text #3B2F2A, secondary
 # #7A6B5F (#6B5E54 inside tinted tiles, for 4.5:1), card border
@@ -49,41 +51,69 @@ GREEN = "#254C31"
 STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap');
+/* Scale: every size below comes from these variables, so the whole
+   dashboard can be tuned here. --cc-s is the overall scale (0.88 =
+   about 12% smaller than the original design); sizes keep a 12px
+   floor except footnotes. Streamlit sizes its own widgets (selects,
+   inputs, buttons, card padding) in rem, so the root font size
+   follows the same scale. */
+:root {
+  --cc-s: 0.88;
+  --cc-pad-k: calc(var(--cc-s) - 0.08);          /* padding: ~20% less */
+  --cc-root: calc(16px * var(--cc-s));
+  --cc-text: max(12px, calc(14.2px * var(--cc-s)));   /* body: 12.5px */
+  --cc-small: max(12px, calc(13px * var(--cc-s)));    /* 12px */
+  --cc-foot: calc(13px * var(--cc-s));                /* footnotes */
+  --cc-th: 12px;                                      /* table headers */
+  --cc-num: calc(34px * var(--cc-s));                 /* tile numbers: 30px */
+  --cc-kpi: calc(22px * var(--cc-s));
+  --cc-badge: calc(20px * var(--cc-s));
+  --cc-card-title: calc(18px * var(--cc-s));
+  --cc-label: calc(15px * var(--cc-s));
+  --cc-wordmark: calc(22px * var(--cc-s));
+  --cc-gap: calc(13.64px * var(--cc-s));             /* 12px */
+  --cc-pad-y: calc(14px * var(--cc-pad-k));
+  --cc-pad-x: calc(16px * var(--cc-pad-k));
+  --cc-tile-min: calc(150px * var(--cc-s));
+  --cc-page-max: 1500px;                              /* content width */
+  --cc-side: 24px;                                    /* side padding */
+  --cc-logo-h: 64px;
+  --cc-picker-w: 160px;
+}
+html {font-size: var(--cc-root);}
 html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 .stApp button, .stApp td, .stApp th, .stApp li, .stApp a {
   font-family: 'Open Sans', Helvetica, Arial, sans-serif;}
 [data-testid="stIconMaterial"], .material-symbols-rounded {
   font-family: 'Material Symbols Rounded' !important;}
 .stApp {background: #FBF6EE; color: #3B2F2A;}
-/* Page width: 32px side padding, at most 2200px of content; the
-   header row uses the same box so both share one left/right edge. */
-.block-container {padding: 4px 32px 3rem; max-width: 2200px;}
-/* (4px + the 16px gap after the style element = 20px above the row) */
+/* Page width: at most 1500px of content, centred, 24px side
+   padding; the header uses the same box so both share one edge. */
+.block-container {padding: 4px var(--cc-side) 3rem;
+  max-width: calc(var(--cc-page-max) + 2 * var(--cc-side));}
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]
   {display: none;}
-[data-testid="stVerticalBlock"] {gap: 16px;}
-[data-testid="stHorizontalBlock"] {gap: 16px;}
+[data-testid="stVerticalBlock"] {gap: var(--cc-gap);}
+[data-testid="stHorizontalBlock"] {gap: var(--cc-gap);}
 h1, h2, h3, h4 {color: #3B2F2A !important;}
-p, li, td, th {font-size: 14px;}
+p, li, td, th {font-size: var(--cc-text);}
 
 /* No header bar: Streamlit's header is transparent and empty except
-   for its menu (⋮), which is lined up with the tabs row. The header
-   is two rows on the left ([title | client picker] above, [data
-   line | tabs] below) and the logo at the far right, spanning both
-   rows and centred on the header, so the space above it is not
-   empty. The picker sits directly above the tabs, right-aligned
-   with them, so it is above the CAMPAIGN DETAIL tab. The rows run
-   20px above the title row, a 38px title row, 16px between the rows
-   and a 40px tabs row, so the tabs row's middle is 94px from the
-   top; the header overlay is 188px high to put the menu there. When
-   the title wraps to two lines the header grows to 266px: see
-   _top_row_css, which sets the window width for that per heading. */
+   for its menu (⋮). The header is two rows at every width: the
+   heading (one line, data line under it) at the left and the logo
+   (or the wordmark) at the right edge; then the page tabs at the
+   left, under the heading text, and the client picker at the right,
+   with room after it for the menu. The menu is centred in the
+   header overlay, and the tabs row's middle is about 112px from the
+   top (16px above the 64px heading row, a 12px gap, then the tabs
+   row), so the overlay is 225px high. */
 [data-testid="stHeader"], [data-testid="stAppHeader"]
-  {background: transparent; border: 0; height: 188px;
+  {background: transparent; border: 0; height: 225px;
    pointer-events: none;}
 [data-testid="stDecoration"] {display: none;}
-[data-testid="stToolbar"] {height: 188px; align-items: center;
-  max-width: 2200px; margin: 0 auto; padding: 0 16px 0 32px;
+[data-testid="stToolbar"] {height: 225px; align-items: center;
+  max-width: calc(var(--cc-page-max) + 2 * var(--cc-side));
+  margin: 0 auto; padding: 0 8px 0 var(--cc-side);
   box-sizing: border-box; left: 0; right: 0;}
 /* The empty header must not catch clicks meant for the top row;
    only its menu (⋮) stays clickable. */
@@ -92,71 +122,60 @@ p, li, td, th {font-size: 14px;}
 [data-testid="stHeader"] [data-testid="stMainMenu"] *
   {pointer-events: auto;}
 [data-testid="stMainMenu"] {background: #FBF6EE; border-radius: 50%;}
-.st-key-cc_header {padding: 0; margin: 0 0 4px;}  /* + 16px gap = 20px */
-.st-key-cc_header_main [data-testid="stHorizontalBlock"],
-.st-key-cc_header_top [data-testid="stHorizontalBlock"],
-.st-key-cc_header_tabs [data-testid="stHorizontalBlock"]
-  {align-items: center; flex-wrap: nowrap; gap: 24px;}
-/* The header's outer columns (left stack, logo) come first: they
-   match the inner columns too (same specificity), so the inner
-   rules below, which come later, win for the picker and the tabs.
-   The left stack takes the width; the logo column is as wide as
-   the logo and the 40px right margin leaves room for the menu (⋮).
-   The left stack holds two rows: the top row (title, picker) and
-   the tabs row (data line, tabs). The picker sits at the right of
-   the top row, directly above the tabs, so it is above the
-   CAMPAIGN DETAIL tab; the logo spans both rows, centred on the
-   header, so the space above it is not empty. */
-.st-key-cc_header_main [data-testid="stColumn"]:nth-child(1)
-  {flex: 1 1 auto !important; width: auto !important; min-width: 0;}
-.st-key-cc_header_main [data-testid="stColumn"]:nth-child(2)
-  {flex: 0 0 auto !important; width: auto !important; min-width: 0;
-   margin-right: 40px;}
-.st-key-cc_header_top [data-testid="stColumn"]:nth-child(1),
-.st-key-cc_header_tabs [data-testid="stColumn"]:nth-child(1)
-  {flex: 1 1 auto !important; width: auto !important; min-width: 0;}
-.st-key-cc_header_top [data-testid="stColumn"]:nth-child(2)
-  {flex: 0 0 180px !important; width: 180px !important; min-width: 180px;}
-.st-key-cc_header_tabs [data-testid="stColumn"]:nth-child(2)
-  {flex: 0 0 340px !important; width: 340px !important; min-width: 340px;}
-.st-key-cc_header_main [data-testid="stMarkdownContainer"],
-.st-key-cc_header_main [data-testid="stElementContainer"],
-.st-key-cc_header_top [data-testid="stMarkdownContainer"],
-.st-key-cc_header_top [data-testid="stElementContainer"],
-.st-key-cc_header_tabs [data-testid="stMarkdownContainer"],
-.st-key-cc_header_tabs [data-testid="stElementContainer"] {margin: 0;}
-.cc-brand {display: flex; align-items: center; min-height: 72px;}
-.cc-logo {height: 72px; width: auto; display: block; flex: 0 0 auto;}
-.cc-wordmark {font-size: 22px; font-weight: 600; letter-spacing: 0.2em;
-  text-transform: uppercase; color: #7A6B5F; flex: 0 0 auto;}
-/* Page tabs: plain text; the active one has a 3px green underline. */
-.st-key-cc_nav {justify-content: flex-end; gap: 4px;}
+.st-key-cc_header {padding: 0; margin: 0;}
+.st-key-cc_header [data-testid="stMarkdownContainer"],
+.st-key-cc_header [data-testid="stElementContainer"] {margin: 0;}
+/* Tabs row: tabs at the left, picker at the right; the 40px right
+   margin leaves room for the menu (⋮). */
+.st-key-cc_controls {justify-content: space-between; align-items: center;
+  gap: var(--cc-gap); flex-wrap: nowrap; padding-right: 40px;
+  box-sizing: border-box;}
+/* Heading row: heading at the left, brand at the right edge. */
+.cc-head {display: flex; align-items: center; gap: 24px;
+  min-height: var(--cc-logo-h); min-width: 0;}
+.cc-headtext {flex: 1 1 auto; min-width: 0;}
+.cc-brand {display: flex; align-items: center; justify-content: flex-end;
+  min-height: var(--cc-logo-h); flex: 0 0 auto; margin-left: auto;}
+.cc-logo {height: var(--cc-logo-h); width: auto; display: block;
+  flex: 0 0 auto;}
+.cc-wordmark {font-size: var(--cc-wordmark); font-weight: 600;
+  letter-spacing: 0.2em; text-transform: uppercase; color: #7A6B5F;
+  flex: 0 0 auto; white-space: nowrap;}
+/* Page tabs: plain text; the active one has a 3px green underline.
+   The first tab's text starts at the heading's left edge. */
+.st-key-cc_nav {justify-content: flex-start; gap: 4px; flex-wrap: nowrap;
+  width: auto; margin-left: -12px;}
 .st-key-cc_nav [data-testid="stPageLink"] a {background: transparent;
-  border-radius: 0; padding: 8px 12px 6px; border-bottom: 3px solid
+  border-radius: 0; padding: 6px 12px 5px; border-bottom: 3px solid
   transparent;}
 .st-key-cc_nav [data-testid="stPageLink"] a:hover
   {background: transparent; border-bottom-color: #D9CFC0;}
-.st-key-cc_nav [data-testid="stPageLink"] p {font-size: 13px;
+.st-key-cc_nav [data-testid="stPageLink"] p {font-size: var(--cc-small);
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
-  color: #3B2F2A;}
+  color: #3B2F2A; white-space: nowrap;}
 .st-key-cc_nav_on [data-testid="stPageLink"] a
   {border-bottom-color: #254C31;}
 .st-key-cc_nav_on [data-testid="stPageLink"] a:hover
   {border-bottom-color: #254C31;}
 .st-key-cc_nav_on [data-testid="stPageLink"] p {color: #254C31;}
-.st-key-cc_picker [data-baseweb="select"] > div {min-height: 34px;
-  font-size: 13px;}
 
-/* Heading: title in the top row, data line in the tabs row, both
-   at the left. One 32px deep green line, tool and page name in 600
-   weight, the question in 400; it wraps rather than overlap. Data
-   line 14px grey under it. */
-.stApp .cc-title {font-size: 32px; line-height: 1.2; color: #254C31;
-  margin: 0; overflow-wrap: break-word;}
+/* Heading: always one deep green line, tool and page name in 600
+   weight, the question in 400; never wraps. The size follows the
+   window (18px up to about 28px at the 1500px content cap) so the
+   longest heading (Context) fits beside the brand. Below 1150px the
+   "CampaignCompass · " part is hidden (the logo already names the
+   tool) and the wordmark is smaller. Data line grey under it. */
+.stApp .cc-title {font-size:
+    clamp(18px, calc((min(100vw, 1548px) - 260px) / 46), 32px);
+  line-height: 1.2; color: #254C31; margin: 0; white-space: nowrap;}
+@media (max-width: 1149px) {
+  .stApp .cc-tool {display: none;}
+  .cc-wordmark {font-size: 16px;}
+}
 .stApp .cc-page {font-weight: 600; color: #254C31;}
 .stApp .cc-q {font-weight: 400; color: #254C31;}
-.stApp .cc-data {font-size: 14px; font-weight: 400; color: #7A6B5F;
-  margin: 4px 0 0;}
+.stApp .cc-data {font-size: var(--cc-text); font-weight: 400;
+  color: #7A6B5F; margin: 4px 0 0; white-space: nowrap;}
 
 /* Caveat banner: white, warm border, charcoal text. */
 [data-testid="stAlert"] > div {background: #FFFFFF; color: #3B2F2A;
@@ -179,28 +198,69 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   background: #FFFFFF;}
 /* Space after HTML blocks (Streamlit gives markdown a negative bottom
    margin, so rows of HTML cards would touch the next row). */
-.cc-tiles, .cc-stat {margin-bottom: 16px;}
+.cc-tiles, .cc-stat {margin-bottom: var(--cc-gap);}
 .cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: 14px 16px; min-height: 160px;}
-.cc-stat-title {font-size: 15px; font-weight: 600;}
-.cc-stat-v {font-size: 36px; font-weight: 300; line-height: 1.2;
+  border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
+  box-sizing: border-box;}
+.cc-stat-title {font-size: var(--cc-label); font-weight: 600;}
+.cc-stat-v {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;
   margin-top: 4px; color: #254C31;}
-.cc-kpis {display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-  margin-bottom: 12px;}
+.cc-kpis {display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--cc-gap); margin-bottom: var(--cc-gap);}
 .cc-kpi {background: #FBF6EE; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: 10px 12px;}
-.cc-kpi-l {font-size: 13px; font-weight: 600; color: #3B2F2A;}
-.cc-kpi-v {font-size: 22px; font-weight: 600; line-height: 1.25;
+  border-radius: 8px; padding: calc(10px * var(--cc-pad-k))
+  calc(12px * var(--cc-pad-k));}
+.cc-kpi-l {font-size: var(--cc-small); font-weight: 600; color: #3B2F2A;}
+.cc-kpi-v {font-size: var(--cc-kpi); font-weight: 600; line-height: 1.25;
   margin: 4px 0; overflow-wrap: anywhere; color: #254C31;}
-.cc-card-title {font-size: 18px; font-weight: 600; margin: 0 0 4px;
-  color: #3B2F2A;}
+.cc-card-title {font-size: var(--cc-card-title); font-weight: 600;
+  margin: 0 0 4px; color: #3B2F2A;}
 /* The Act-page filter labels (Campaign group, Status now, Minimum
-   tracked actions) match the card titles: 18px, weight 600. Only
-   the labels inside the filters container change. */
+   tracked actions) match the card titles. Only the labels inside
+   the filters container change. */
 .st-key-cc_filters [data-testid="stWidgetLabel"],
 .st-key-cc_filters [data-testid="stWidgetLabel"] p,
 .st-key-cc_filters [data-testid="stWidgetLabel"] span
-  {font-size: 18px; font-weight: 600; color: #3B2F2A;}
+  {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
+
+/* Campaign detail rows (cc_detail_*): the columns of a row are one
+   height, and the card, tile or expander in each column fills it, so
+   the shorter side has no blank area under it. Content stays at the
+   top, except the acquisition journey, which is centred when it is
+   the shorter side. The space between rows is the one --cc-gap. */
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] {align-items: stretch;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  {display: flex; flex-direction: column;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] {flex: 1 1 auto;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] > *:only-child {flex: 1 1 auto;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]
+  > div[class*="st-key-card_"] {height: 100%;}
+.st-key-cc_detail_tiles [data-testid="stElementContainer"],
+.st-key-cc_detail_tiles .stMarkdown, .st-key-cc_detail_tiles
+  [data-testid="stMarkdownContainer"] {height: 100%; margin-bottom: 0;}
+.st-key-cc_detail_tiles .cc-stat {height: 100%; margin-bottom: 0;}
+/* Runs card: the trend table (last block) takes the height left
+   beside the trend chart and scrolls inside it when longer. */
+.st-key-cc_detail_main [data-testid="stColumn"]:first-child
+  div[class*="st-key-card_"] > :last-child:has([data-testid="stExpander"])
+  {flex: 1 1 0; min-height: 220px; overflow-y: auto;}
+.st-key-cc_detail_more [data-testid="stExpander"],
+.st-key-cc_detail_more [data-testid="stExpander"] > details[open]
+  {height: 100%;}
+.st-key-cc_detail_more [data-testid="stExpander"] > details[open]
+  {display: flex; flex-direction: column;}
+.st-key-cc_detail_more [data-testid="stColumn"]:nth-child(2)
+  [data-testid="stExpander"] > details[open] > [data-testid="stExpanderDetails"]
+  {flex: 1 1 auto; display: flex; flex-direction: column;
+   justify-content: center;}
 
 /* Buttons. */
 .stButton button[kind="primary"], .stDownloadButton button,
@@ -210,22 +270,23 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   {background: #1C3A25; color: #FFFFFF; border-color: #1C3A25;}
 
 /* Labels: soft tint, coloured left border, symbol and dark text. */
-.cc-pill {display: inline-block; padding: 2px 10px; border-radius: 4px;
-  font-weight: 600; font-size: 13px; color: #3B2F2A; white-space: nowrap;
-  border-left: 3px solid;}
-.cc-badge {display: inline-block; padding: 6px 14px; border-radius: 6px;
-  font-weight: 600; font-size: 20px; color: #3B2F2A; border-left: 5px solid;}
-.cc-foot {color: #7A6B5F; font-size: 13px; line-height: 1.5;}
-.cc-take {font-size: 14px; color: #3B2F2A; margin: 0 0 8px;}
-.cc-muted {color: #7A6B5F; font-size: 13px;}
+.cc-pill {display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; font-size: var(--cc-small); color: #3B2F2A;
+  white-space: nowrap; border-left: 3px solid;}
+.cc-badge {display: inline-block; padding: 5px 12px; border-radius: 6px;
+  font-weight: 600; font-size: var(--cc-badge); color: #3B2F2A;
+  border-left: 5px solid;}
+.cc-foot {color: #7A6B5F; font-size: var(--cc-foot); line-height: 1.5;}
+.cc-take {font-size: var(--cc-text); color: #3B2F2A; margin: 0 0 8px;}
+.cc-muted {color: #7A6B5F; font-size: var(--cc-small);}
 
 /* Tables. */
-.cc-table {width: 100%; border-collapse: collapse; font-size: 14px;
-  margin: 0 0 8px;}
-.cc-table th {text-align: left; color: #7A6B5F; font-size: 12px;
+.cc-table {width: 100%; border-collapse: collapse;
+  font-size: var(--cc-text); margin: 0 0 8px;}
+.cc-table th {text-align: left; color: #7A6B5F; font-size: var(--cc-th);
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  border-bottom: 1px solid #EADFCF; padding: 8px 8px; background: #F3EADB;}
-.cc-table td {border-bottom: 1px solid #EADFCF; padding: 8px 8px;
+  border-bottom: 1px solid #EADFCF; padding: 6px; background: #F3EADB;}
+.cc-table td {border-bottom: 1px solid #EADFCF; padding: 6px;
   vertical-align: top; background: #FFFFFF;}
 .cc-table, .cc-table tr, .cc-table tr:nth-child(even) td
   {background: #FFFFFF;}
@@ -233,20 +294,20 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .stApp .cc-table th, .stApp .cc-table td {border-left: 0; border-right: 0;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-scroll {overflow-x: auto; max-width: 100%;}
-.stApp .cc-tight th, .stApp .cc-tight td {padding: 5px 5px;
-  font-size: 12px;}
+.stApp .cc-tight th, .stApp .cc-tight td {padding: 4px;
+  font-size: var(--cc-small);}
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
-.cc-table .per {font-size: 13px;}
+.cc-table .per {font-size: var(--cc-small);}
 .cc-table .cmp {min-width: 7.5em;}
 /* Narrower windows: the ranked table gets compact so it fits its
    card (the 2-column layout stays). */
 @media (max-width: 1500px) {
-  .stApp .cc-act th, .stApp .cc-act td {padding: 6px 5px;
-    font-size: 12.5px;}
-  .stApp .cc-act th {letter-spacing: 0; font-size: 11px;}
-  .stApp .cc-act .cc-pill {font-size: 12px; padding: 2px 6px;}
+  .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;
+    font-size: var(--cc-small);}
+  .stApp .cc-act th {letter-spacing: 0; font-size: var(--cc-th);}
+  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;}
 }
 .cc-table .act {width: 100%;}
 .cc-clamp {display: -webkit-box; -webkit-line-clamp: 2;
@@ -254,26 +315,27 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 16px; align-items: stretch;}
-.cc-tile {border-radius: 8px; padding: 14px 16px; border-left: 5px solid;
-  color: #3B2F2A; min-height: 150px;}
-.cc-tile-head {display: flex; align-items: baseline; gap: 12px;}
-.cc-tile-count {font-size: 36px; font-weight: 300; line-height: 1;}
-.cc-tile-label {font-size: 15px; font-weight: 600;}
-.cc-tile-line {font-size: 13px; font-weight: 400; line-height: 1.4;
-  margin-top: 6px;}
-.cc-tile-more {font-size: 13px; color: #6B5E54; margin-top: 6px;}
+  gap: var(--cc-gap); align-items: stretch;}
+.cc-tile {border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
+  border-left: 5px solid; color: #3B2F2A; min-height: var(--cc-tile-min);}
+.cc-tile-head {display: flex; align-items: baseline; gap: 10px;}
+.cc-tile-count {font-size: var(--cc-num); font-weight: 300; line-height: 1;}
+.cc-tile-label {font-size: var(--cc-label); font-weight: 600;}
+.cc-tile-line {font-size: var(--cc-small); font-weight: 400;
+  line-height: 1.4; margin-top: 5px;}
+.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 5px;}
 .cc-run {color: #6B5E54; white-space: nowrap;}
 @media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
 
 /* Context: recent-window rows, what-if tile, tags. */
 .cc-tag {display: inline-block; border: 1px solid #3B2F2A;
-  border-radius: 4px; padding: 0 6px; font-size: 12px; font-weight: 600;
-  color: #3B2F2A; background: #FFFFFF; white-space: nowrap;}
-.cc-big {background: #FBF6EE; border-radius: 8px; padding: 20px;
-  text-align: center;}
-.cc-big-n {font-size: 36px; font-weight: 300; line-height: 1.2;}
-.cc-rt {width: 100%; border-collapse: collapse; font-size: 13px;}
+  border-radius: 4px; padding: 0 6px; font-size: var(--cc-th);
+  font-weight: 600; color: #3B2F2A; background: #FFFFFF;
+  white-space: nowrap;}
+.cc-big {background: #FBF6EE; border-radius: 8px;
+  padding: calc(20px * var(--cc-pad-k)); text-align: center;}
+.cc-big-n {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;}
+.cc-rt {width: 100%; border-collapse: collapse; font-size: var(--cc-small);}
 .cc-rt td {padding: 4px 6px; vertical-align: middle;
   border-bottom: 1px solid #EADFCF;}
 .cc-bar {display: inline-block; height: 12px; vertical-align: middle;
@@ -293,76 +355,36 @@ def _ckey(name):
     return f"{name}__{st.session_state.get('_client', '')}"
 
 
-# The header's heading slots (title in the top row, data line in
-# the tabs row) and the brand width in px (logo, or the wordmark),
-# set by _header on every run; the heading is filled by the page's
-# _heading, and the brand width feeds _top_row_css.
-_TOP = {"slot": None, "data_slot": None, "mark_px": 0}
-
-
-def _brand_html(brand):
-    """Logo or wordmark, at the far right of the header, spanning
-    both rows and centred on it."""
-    return f"<div class='cc-brand'>{brand}</div>"
-
-
-# Widths (px) for the header: Open Sans at 32px averages about
-# 18.5px per character in 600 weight and 15.8px in 400 (measured, then
-# rounded up so the estimate errs towards the two-line title); the
-# picker 180, the tabs 340, the wordmark 290, one 24px gap between
-# the title and the picker and one between the left stack and the
-# logo, the 40px right margin for the menu and the page padding
-# of 32px on each side.
-HEAD_CHAR_BOLD, HEAD_CHAR, NAV_PX = 18.5, 15.8, 340
-PICKER_PX = 180
-WORDMARK_PX = 290
-PAGE_MAX_PX = 2200 + 64  # widest window before the content stops growing
-
-
-def _top_row_css(name, question):
-    """Media query for the top row, from this heading's length.
-
-    The header is two rows on the left ([title | picker] above,
-    [data line | tabs] below) and the logo at the far right,
-    spanning both rows. The menu (⋮) is centred on the tabs row by
-    the 188px header height in STYLE. When the window is too narrow
-    for the title beside the picker on one line, the title wraps to
-    two lines and the header grows to 266px so the menu stays
-    centred on the tabs row. A title that never fits beside the
-    picker within the 2200px page always uses the taller header.
-    """
-    text = (len(name) + 1) * HEAD_CHAR_BOLD + (len(question) + 1) * HEAD_CHAR
-    # 64px page padding, one 24px gap between title and picker, the
-    # 180px picker, the brand width, one 24px gap between the left
-    # stack and the logo and the 40px right margin for the menu.
-    one_line = round(64 + text + 24 + PICKER_PX + _TOP["mark_px"] + 24 + 40)
-    if one_line > PAGE_MAX_PX:
-        one_line = 100000
-    return (f"<style>@media (max-width: {one_line}px) {{"
-            "[data-testid='stHeader'], [data-testid='stAppHeader'],"
-            "[data-testid='stToolbar'] {height: 266px;}"
-            "}</style>")
+# The header's heading slot and brand (logo, or the wordmark), set
+# by _header on every run; the slot is filled by the page's _heading.
+_TOP = {"slot": None, "brand": ""}
+WORDMARK = "<span class='cc-wordmark'>CampaignCompass</span>"
 
 
 def _heading(page, question, ctx):
-    """The heading: one heading line ("CampaignCompass · <page>:"
-    in 600 weight, then the question in 400 weight) in the top row,
-    and the data line in the tabs row, both at the left. The logo
-    or wordmark is at the far right, spanning both rows, so the
-    heading always names the tool. When the page runs alone (a page
-    run without the header), the heading is shown where the page is.
+    """The heading row: one heading line ("CampaignCompass · <page>:"
+    in 600 weight, then the question in 400 weight) with the data
+    line under it at the left, and the brand (logo or wordmark) at
+    the right edge. Without a logo the wordmark names the tool, so
+    the heading is only "<page>: <question>". When the page runs
+    alone (a page run without the header), the heading is shown
+    where the page is, without a brand.
     """
     first, last = ctx["date_range"]
     line = dashboard_data.data_line((first, last), ctx["updated"])
-    name = f"CampaignCompass · {page}"
+    brand = _TOP["brand"]
+    tool = ("" if brand == WORDMARK else
+            "<span class='cc-tool'>CampaignCompass · </span>")
     title = (f"<div class='cc-title'>"
-             f"<span class='cc-page'>{html.escape(name)}:</span> "
+             f"<span class='cc-page'>{tool}{html.escape(page)}:</span> "
              f"<span class='cc-q'>{html.escape(question)}</span></div>")
     data = f"<div class='cc-data'>{html.escape(line)}</div>"
     if _TOP["slot"] is not None:
-        _TOP["slot"].markdown(_top_row_css(name, question) + title,
-                              unsafe_allow_html=True)
-        _TOP["data_slot"].markdown(data, unsafe_allow_html=True)
+        _TOP["slot"].markdown(
+            f"<div class='cc-head'>"
+            f"<div class='cc-headtext'>{title}{data}</div>"
+            f"<div class='cc-brand'>{brand}</div></div>",
+            unsafe_allow_html=True)
     else:
         st.markdown(title + data, unsafe_allow_html=True)
 
@@ -815,8 +837,12 @@ def _recent_html(rows, currency):
     return f"<table class='cc-rt'>{''.join(out)}</table>"
 
 
-def _trend_campaign(ctx):
-    """The campaign for the monthly trend: first active, or chosen."""
+def _trend_campaign(ctx, key="ctx_trend_campaign"):
+    """The campaign for the monthly trend: first active, or chosen.
+
+    The pick is remembered in a plain session key, so the Method
+    page's picker starts on the campaign last picked on Context.
+    """
     tables = ctx["tables"]
     campaigns = sorted(set(tables["timeline_by_campaign"]["campaign"]))
     if not campaigns:
@@ -825,9 +851,13 @@ def _trend_campaign(ctx):
         tables["recent_trend"], ctx["all_recommendations"])
     active = [name for name in rows["campaign"] if name in campaigns]
     default = active[0] if active else campaigns[0]
-    return st.selectbox("Campaign for the monthly trend", campaigns,
-                        index=campaigns.index(default),
-                        key=_ckey("ctx_trend_campaign"))
+    remembered = st.session_state.get(_ckey("_trend_pick"))
+    if remembered in campaigns:
+        default = remembered
+    picked = st.selectbox("Campaign for the monthly trend", campaigns,
+                          index=campaigns.index(default), key=_ckey(key))
+    st.session_state[_ckey("_trend_pick")] = picked
+    return picked
 
 
 def _card_recent(ctx):
@@ -958,12 +988,12 @@ def _card_journey(ctx):
                         key="ctx_journey_chart")
 
 
-def _journey_tables(ctx):
+def _journey_tables(ctx, expanded=False):
     """Journey table and break-even, full width (too many columns
     for a half-width card)."""
     tables = ctx["tables"]
     journey_raw = tables["journey_by_campaign"]
-    with st.expander("Journey table"):
+    with st.expander("Journey table", expanded=expanded):
         journey = dashboard_data.display_table(
             dashboard_data.journey_display(journey_raw)).rename(columns={
                 "directions share": "directions share (%)",
@@ -1101,11 +1131,11 @@ def _what_if(rows, span, currency):
         "display": WIDE("Change")})
 
 
-def _context_method(ctx):
+def _context_method(ctx, expanded=False):
     """Benchmarks, sensitivity, rules and what counts, in an expander."""
     tables = ctx["tables"]
     config = ctx["config"]
-    with st.expander("Method and definitions"):
+    with st.expander("Method and definitions", expanded=expanded):
         st.markdown("**Benchmarks**")
         benchmarks = tables["benchmarks"].copy()
         benchmarks.insert(0, "what", benchmarks["variant"].map(
@@ -1162,14 +1192,15 @@ def _page_context(ctx):
     """Can we trust these labels, and when should we run campaigns?
 
     A 2x2 grid of cards, each a question, a takeaway and a chart;
-    then data completeness, the weekday breakdown and the method.
+    then the weekday breakdown. Data completeness, the journey table
+    and the method are on the Method page.
     """
     _heading("Context", "Can we trust these labels, and when should we "
              "run campaigns?", ctx)
     pooled, rows, span = _weekday_parts(ctx)
     top = st.columns(2)
     with _box(top[0]):
-        campaign = _card_recent(ctx)
+        _card_recent(ctx)
     with _box(top[1]):
         _card_weekday(ctx, pooled)
     bottom = st.columns(2)
@@ -1177,14 +1208,25 @@ def _page_context(ctx):
         _card_what_if(ctx, rows, span)
     with _box(bottom[1]):
         _card_journey(ctx)
-    below = st.columns(2)
-    with below[0]:
-        with st.expander("Data completeness (lag check, monthly trend)"):
-            _completeness(ctx, campaign)
-    with below[1]:
-        _distorting(ctx)
-    _journey_tables(ctx)
-    _context_method(ctx)
+    _distorting(ctx)
+
+
+def _page_method(ctx):
+    """How were these labels built?
+
+    The reference sections moved from Context, unchanged and open:
+    data completeness (lag check, monthly trend), the journey table
+    (and break-even) and the method and definitions. The monthly
+    trend has its own campaign picker here; it starts on the
+    campaign last picked on Context.
+    """
+    _heading("Method", "How were these labels built?", ctx)
+    with st.expander("Data completeness (lag check, monthly trend)",
+                     expanded=True):
+        campaign = _trend_campaign(ctx, key="method_trend_campaign")
+        _completeness(ctx, campaign)
+    _journey_tables(ctx, expanded=True)
+    _context_method(ctx, expanded=True)
 
 
 # --- Campaign detail ----------------------------------------------
@@ -1207,7 +1249,9 @@ def _detail_trend(ctx, campaign):
     """Monthly or weekly cost per tracked action for one campaign.
 
     The period slider limits the rows shown (a filter, not a
-    recalculation). Partial and lagged months are marked.
+    recalculation). Partial and lagged months are marked. Returns
+    (view, rows shown, file key) for the table under the runs, or
+    None when there are no rows.
     """
     tables = ctx["tables"]
     currency = ctx["currency"]
@@ -1224,7 +1268,7 @@ def _detail_trend(ctx, campaign):
     if table.empty:
         st.caption("No monthly or weekly rows: the trend tables cover "
                    "the time groups in the config.")
-        return
+        return None
     default = None
     if view == "Monthly" and "source" in table.columns:
         # Open on the daily range, not the monthly-history range: the
@@ -1245,7 +1289,18 @@ def _detail_trend(ctx, campaign):
         st.caption("Hollow ring = partial or lagged month. Monthly "
                    "source: day is the daily export, month is the "
                    "monthly-history export.")
-    with st.expander(f"{view} table"):
+    return view, table, key
+
+
+def _trend_table(trend, campaign):
+    """The monthly or weekly table of the trend card, in an expander
+    under the runs, open: it fills the space beside the trend chart
+    and scrolls inside it when it is longer (see STYLE), so the two
+    columns end level."""
+    if trend is None:
+        return
+    view, table, key = trend
+    with st.expander(f"{view} table", expanded=True):
         _table(dashboard_data.display_table(table),
                f"{key}ly_{campaign}.csv", key=f"detail_trend_table_{key}",
                column_config={"month note": WIDE("Month note",
@@ -1334,7 +1389,10 @@ def _runs_card(ctx, campaign):
 
 def _page_detail(ctx):
     """How has this campaign performed? Tiles, action and reasons,
-    runs and trend, then weekday pattern and journey."""
+    runs (with the trend table) and the trend chart, then weekday
+    pattern and journey. Each row is a keyed container whose columns
+    are equal height (see STYLE), so no column leaves a large blank
+    area beside the other."""
     tables = ctx["tables"]
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
@@ -1356,7 +1414,7 @@ def _page_detail(ctx):
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
-    tiles = st.columns(4)
+    tiles = st.container(key="cc_detail_tiles").columns(4)
     _stat_tile(tiles[0], "Final label",
                f"<div style='margin-top:6px'>{_badge(detail['label'])}"
                "</div>",
@@ -1379,7 +1437,7 @@ def _page_detail(ctx):
                "Cost per tracked action in the label period / its "
                "benchmark.")
 
-    action, why = st.columns([1, 1.6])
+    action, why = st.container(key="cc_detail_reasons").columns([1, 1.6])
     with _box(action):
         _card_title("Action")
         st.markdown(f"<p style='font-size:18px;font-weight:600;"
@@ -1400,15 +1458,20 @@ def _page_detail(ctx):
             st.caption("No recent trend: the campaign is not active or "
                        "its group is not judged.")
 
-    runs, trend = st.columns([1.2, 1])
-    with _box(runs):
-        _runs_card(ctx, campaign)
+    # Runs with the trend table under them | the trend chart. The
+    # right column is filled first: the table follows its view and
+    # period.
+    runs, trend = st.container(key="cc_detail_main").columns([1.2, 1])
     with _box(trend):
         _card_title("Trend")
         st.caption(f"Cost per tracked action ({currency})")
-        _detail_trend(ctx, campaign)
+        shown = _detail_trend(ctx, campaign)
+    with _box(runs):
+        _runs_card(ctx, campaign)
+        _trend_table(shown, campaign)
 
-    weekday_col, journey_col = st.columns(2)
+    weekday_col, journey_col = st.container(
+        key="cc_detail_more").columns(2)
     with weekday_col:
         with st.expander("Weekday pattern"):
             by_campaign = tables["weekday_by_campaign"]
@@ -1423,9 +1486,10 @@ def _page_detail(ctx):
                 st.plotly_chart(charts.weekday_bar(weekday, currency),
                                 width="stretch", key="detail_weekday",
                                 config={"displayModeBar": False})
-                _table(dashboard_data.display_table(weekday),
-                       f"weekday_{campaign}.csv",
-                       key="detail_weekday_table", hide=("campaign",))
+                with st.expander("Weekday table"):
+                    _table(dashboard_data.display_table(weekday),
+                           f"weekday_{campaign}.csv",
+                           key="detail_weekday_table", hide=("campaign",))
     with journey_col:
         with st.expander("Acquisition journey"):
             journey = dashboard_data.journey_row(
@@ -1461,7 +1525,7 @@ def _page_detail(ctx):
                                format="%.2f")})
 
 
-PAGE_TITLES = ("Act", "Context", "Campaign detail")
+PAGE_TITLES = ("Act", "Context", "Campaign detail", "Method")
 PAGE_OBJECTS = {}
 _CTX = {}
 
@@ -1481,6 +1545,12 @@ def context():
 def campaign_detail():
     """Campaign detail page (st.navigation entry)."""
     _page_detail(_CTX)
+    _caveat(_CTX)
+
+
+def method():
+    """Method page (st.navigation entry)."""
+    _page_method(_CTX)
     _caveat(_CTX)
 
 
@@ -1549,83 +1619,64 @@ def _logo_data(path_text, mtime):
 
 
 def _logo_img(path):
-    """The logo as an inline <img> (read locally, never uploaded),
-    and its width in px at 72px high."""
-    kind, data, ratio = _logo_data(str(path), path.stat().st_mtime)
+    """The logo as an inline <img> (read locally, never uploaded)."""
+    kind, data, _ratio = _logo_data(str(path), path.stat().st_mtime)
     return (f"<img class='cc-logo' alt='Logo' "
-            f"src='data:{kind};base64,{data}'>",
-            round(72 * ratio))
+            f"src='data:{kind};base64,{data}'>")
 
 
 def _header(clients, pages=None, current=None):
-    """The header: two rows on the left and the logo at the far
-    right, spanning both rows and centred on the header, so the
-    space above it is not empty. The top row is the page title at
-    the left and the client picker at the right; the picker sits
-    directly above the tabs, right-aligned with them, so it is
-    above the CAMPAIGN DETAIL tab. The row below is the data line
-    at the left and the page tabs at the right. The menu (⋮) is
-    lined up with the tabs row.
+    """The header, two rows at every width: the heading row (the
+    one-line heading and the data line under it at the left, the
+    logo or wordmark at the right edge) and the tabs row (the page
+    tabs at the left, under the heading text; the client picker at
+    the right, then the menu).
 
     The logo comes from branding.logo_path in the client config; when
     the key or the file is missing, the wordmark shows in its place.
-    The logo follows the picked client, so the brand is filled in
-    after the picker, into a placeholder in the logo column. pages:
-    the st.Page objects for the tabs (none in tests that run one
-    page); current: the page being shown, whose tab is underlined.
+    The logo follows the picked client, so the heading row is a
+    placeholder filled by the page's _heading after the picker has
+    run. pages: the st.Page objects for the tabs (none in tests that
+    run one page); current: the page being shown, whose tab is
+    underlined.
     """
     with st.container(key="cc_header"):
-        with st.container(key="cc_header_main"):
-            left_col, brand_col = st.columns(
-                2, vertical_alignment="center")
-            brand_slot = brand_col.empty()
-            with left_col:
-                with st.container(key="cc_header_top"):
-                    title_col, picker_col = st.columns(
-                        2, vertical_alignment="center")
-                    _TOP["slot"] = title_col.empty()
-                    with picker_col.container(key="cc_picker"):
-                        client = st.selectbox("Client", clients, index=0,
-                                              key="client",
-                                              label_visibility="collapsed")
-                try:
-                    config = dashboard_data.load_config(
-                        dashboard_data.client_config_path(client))
-                except FileNotFoundError:
-                    config = {}
-                logo = dashboard_data.logo_path(config)
-                if logo is not None:
-                    mark, _TOP["mark_px"] = _logo_img(logo)
-                else:
-                    mark = "<span class='cc-wordmark'>CampaignCompass</span>"
-                    _TOP["mark_px"] = WORDMARK_PX
-                brand_slot.markdown(_brand_html(mark),
-                                    unsafe_allow_html=True)
-                with st.container(key="cc_header_tabs"):
-                    data_col, nav_col = st.columns(
-                        2, vertical_alignment="center")
-                    _TOP["data_slot"] = data_col.empty()
-                if pages:
-                    with nav_col.container(key="cc_nav", horizontal=True):
-                        for number, page in enumerate(pages):
-                            active = current is not None and \
-                                page.url_path == current.url_path
-                            state = "on" if active else f"off_{number}"
-                            with st.container(key=f"cc_nav_{state}",
-                                             width="content"):
-                                st.page_link(page, label=page.title)
+        _TOP["slot"] = st.empty()
+        with st.container(key="cc_controls", horizontal=True, wrap=False,
+                          vertical_alignment="center"):
+            with st.container(key="cc_nav", horizontal=True, wrap=False,
+                              width="content"):
+                for number, page in enumerate(pages or ()):
+                    active = current is not None and \
+                        page.url_path == current.url_path
+                    state = "on" if active else f"off_{number}"
+                    with st.container(key=f"cc_nav_{state}",
+                                      width="content"):
+                        st.page_link(page, label=page.title)
+            with st.container(key="cc_picker", width=160):
+                client = st.selectbox("Client", clients, index=0,
+                                      key="client",
+                                      label_visibility="collapsed")
+    try:
+        config = dashboard_data.load_config(
+            dashboard_data.client_config_path(client))
+    except FileNotFoundError:
+        config = {}
+    logo = dashboard_data.logo_path(config)
+    _TOP["brand"] = _logo_img(logo) if logo is not None else WORDMARK
     return client
 
 
 def main():
-    """Header (title and picker above the tabs; logo spanning both
-    rows at the far right), load the tables, run a page."""
+    """Header (heading with the logo at the right; tabs and picker
+    below), load the tables, run a page."""
     st.set_page_config(page_title="CampaignCompass", layout="wide",
                        initial_sidebar_state="collapsed")
     st.markdown(STYLE, unsafe_allow_html=True)
     pages = [st.Page(act, title="Act", default=True),
              st.Page(context, title="Context"),
-             st.Page(campaign_detail, title="Campaign detail")]
+             st.Page(campaign_detail, title="Campaign detail"),
+             st.Page(method, title="Method")]
     PAGE_OBJECTS.update(zip(PAGE_TITLES, pages))
     page = st.navigation(pages, position="hidden")
     client = _header(dashboard_data.list_clients(), pages, page)
