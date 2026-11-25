@@ -197,12 +197,18 @@ def weekday_bar(table, currency, highlight=None, note=None):
     """Cost per tracked action by weekday, Monday to Sunday.
 
     All bars in the neutral colour with value labels; no good or bad
-    colours. highlight (a weekday) gets a dark outline and, when
-    given, the note written above it (for example "most pooled
-    clicks").
+    colours. The busiest weekday (highlight), and the cheapest and
+    most expensive weekdays, get a dark outline; when given, the note
+    is written above the highlighted weekday (for example "most
+    pooled clicks").
     """
     short = str(highlight)[:3] if highlight is not None else None
-    marked = [str(day)[:3] == short for day in table["weekday"]]
+    highlighted = [str(day)[:3] == short for day in table["weekday"]]
+    costs = table["cost_per_tracked_action"]
+    cheapest = costs == costs.min()
+    dearest = costs == costs.max()
+    marked = [h or lo or hi for h, lo, hi in
+              zip(highlighted, cheapest, dearest)]
     fig = go.Figure(go.Bar(
         x=table["weekday"], y=table["cost_per_tracked_action"],
         marker={"color": NEUTRAL,
@@ -218,8 +224,8 @@ def weekday_bar(table, currency, highlight=None, note=None):
         hovertemplate=(f"%{{x}}: %{{y:,.2f}} {currency}<br>Tracked "
                        "actions: %{customdata[0]:,.0f}<br>Clicks: "
                        "%{customdata[1]:,.0f}<extra></extra>")))
-    if note and any(marked):
-        row = table.loc[marked].iloc[0]
+    if note and any(highlighted):
+        row = table.loc[highlighted].iloc[0]
         fig.add_annotation(
             x=row["weekday"], y=row["cost_per_tracked_action"],
             text=note, showarrow=False, yshift=34,

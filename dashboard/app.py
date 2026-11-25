@@ -982,8 +982,8 @@ def _completeness(ctx, campaign):
                    "lag": NUM("Lag (days)", format="%d"),
                    "trend_changes": NUM("Trend changes", format="%d"),
                    "label_changes": NUM("Label changes", format="%d")})
-        st.markdown("**All lag-check counts**")
-        _table(lag_check, "lag_check.csv", key="ctx_lag_all")
+        with st.expander("All lag-check counts"):
+            _table(lag_check, "lag_check.csv", key="ctx_lag_all")
     if campaign is not None:
         st.markdown(f"**Monthly trend: {campaign}**")
         st.caption("month note: partial (the campaign ran only part of "
@@ -1100,10 +1100,18 @@ def _context_method(ctx):
         st.caption(f"{int(stable.sum())} of {len(stable)} campaigns keep "
                    f"the same label in every threshold combination "
                    f"(labels before the trend override).")
-        _table(sensitivity, "recommendation_sensitivity.csv",
-               key="ctx_sensitivity", column_config={
-                   "campaign": WIDE("Campaign", width="large",
-                                    pinned=True)})
+        unstable = sensitivity[~sensitivity["label_stable"].astype(bool)]
+        if not unstable.empty:
+            st.markdown("**Labels that move**")
+            _table(unstable, None, key="ctx_sensitivity_unstable",
+                   column_config={
+                       "campaign": WIDE("Campaign", width="large",
+                                        pinned=True)})
+        with st.expander(f"Show all {len(sensitivity)} rows"):
+            _table(sensitivity, "recommendation_sensitivity.csv",
+                   key="ctx_sensitivity", column_config={
+                       "campaign": WIDE("Campaign", width="large",
+                                        pinned=True)})
 
         st.markdown("**Volume rule and thresholds (from the config)**")
         _table(dashboard_data.rules_table(config), "rules.csv",
@@ -1159,13 +1167,18 @@ def _page_context(ctx):
 
 # --- Campaign detail ----------------------------------------------
 
-def _period_slider(values, label, key):
-    """A from-to slider over the sorted periods; returns (start, end)."""
+def _period_slider(values, label, key, default=None):
+    """A from-to slider over the sorted periods; returns (start, end).
+
+    default is the (start, end) the slider opens on; without it the
+    whole range is shown.
+    """
     options = sorted(set(str(value) for value in values))
     if len(options) < 2:
         return None, None
+    value = default or (options[0], options[-1])
     return st.select_slider(label, options=options,
-                            value=(options[0], options[-1]), key=key)
+                            value=value, key=key)
 
 
 def _detail_trend(ctx, campaign):
@@ -1190,8 +1203,17 @@ def _detail_trend(ctx, campaign):
         st.caption("No monthly or weekly rows: the trend tables cover "
                    "the time groups in the config.")
         return
+    default = None
+    if view == "Monthly" and "source" in table.columns:
+        # Open on the daily range, not the monthly-history range: the
+        # history months are still there if the slider is widened.
+        day_months = sorted(str(month) for month, source in
+                            zip(table["month"], table["source"])
+                            if source == "day")
+        if len(day_months) >= 2:
+            default = (day_months[0], day_months[-1])
     start, end = _period_slider(table[x_field], "Period",
-                                f"detail_period_{key}")
+                                f"detail_period_{key}", default=default)
     table = dashboard_data.filter_period(table, x_field, start, end)
     st.plotly_chart(charts.trend_line(
         table, x_field, x_title, currency,

@@ -78,7 +78,7 @@ def test_trend_line_flagged_months_are_hollow():
     assert fig.layout.yaxis.type != "log"
 
 
-def test_weekday_bar_outlines_only_the_busiest_weekday():
+def test_weekday_bar_outlines_busiest_cheapest_and_dearest():
     table = pd.DataFrame({
         "weekday": ["Mon", "Tue", "Fri"],
         "cost_per_tracked_action": [5.0, 6.0, 5.8],
@@ -89,11 +89,14 @@ def test_weekday_bar_outlines_only_the_busiest_weekday():
     fig = charts.weekday_bar(table, "SEK", highlight=busiest,
                              note="most pooled clicks")
     bar = fig.data[0]
-    # One neutral colour for every bar; only Fri has an outline.
+    # One neutral colour for every bar; Mon (cheapest), Tue (dearest)
+    # and Fri (busiest) all have an outline.
     assert bar.marker.color == charts.NEUTRAL
-    assert list(bar.marker.line.width) == [0, 0, 2.5]
+    assert list(bar.marker.line.width) == [2.5, 2.5, 2.5]
     assert [note.text for note in fig.layout.annotations] == [
         "most pooled clicks"]
+    # The note still sits above the busiest weekday, not the cheapest.
+    assert fig.layout.annotations[0].x == "Fri"
 
 
 def test_intent_stack_hides_labels_under_five_percent():
