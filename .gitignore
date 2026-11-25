@@ -1,6 +1,16 @@
-# Client data: never commit raw exports (even in a private repo)
-data/raw/*
-!data/raw/.gitkeep
+# Client data: never commit raw exports (even in a private repo).
+# Everything under data/ is ignored; only the folder .gitkeep files
+# are tracked.
+data/**
+!data/*/
+!data/*/.gitkeep
+
+# Data exports anywhere in the repo
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
 
 # Secrets and credentials
 .env
@@ -33,3 +43,9 @@ config/local/
 data/interim/
 notebooks/
 evidence/
+
+# Local scratch files and copies (not part of the project)
+/campaign-compass/
+/pr*-diff.txt
+/Logo-*.png
+/assets/logo.png

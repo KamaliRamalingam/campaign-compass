@@ -50,6 +50,8 @@ bash run.sh --client synthetic_b   # whole pipeline on the synthetic Company B t
 
 `bash run.sh` creates `.venv` if needed, installs `requirements.txt`, and runs every stage. Outputs go to the ignored `outputs/` folder (`outputs/synthetic_b/` for the synthetic client) and never go to GitHub. The dashboard has a sidebar Client selector; the default is the restaurant.
 
+The header logo is local only: place it at `config/local/logo.png` (git-ignored, not in the repo). Without it the dashboard shows the text name.
+
 Muse builds on branches, and CI checks every pull request. I merge in the GitHub web UI.
 
 ## 6. How to refresh
