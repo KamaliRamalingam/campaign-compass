@@ -22,16 +22,32 @@ import make_synthetic  # noqa: E402
 sys.path.insert(0, str(REPO / "dashboard"))
 import data as dashboard_data  # noqa: E402
 
-RESTAURANT_CAMPAIGNS = [
-    "The South Indian Stockholm",
-    "Authentic Indian Restaurant",
-    "Restaurang The South Indian",
-    "South Indian Restaurant",
-    "Indisk Mat i Södertälje",
-    "Website traffic-Performance Max-2",
-    "DrTiwari",
-    "Lorry booking",
-]
+def _restaurant_campaigns():
+    """Every campaign name and prefix in the restaurant config.
+
+    Read at test time so no real campaign name is written in the
+    tests; the synthetic outputs must contain none of them.
+    """
+    config = yaml.safe_load(
+        (REPO / "config" / "restaurant.yaml").read_text(encoding="utf-8"))
+    groups = config["analysis"]["campaign_groups"]
+    names = []
+    for members in groups.values():
+        if isinstance(members, dict):
+            names += list(members.get("exact") or [])
+            if members.get("prefix"):
+                names.append(members["prefix"])
+        else:
+            names += list(members or [])
+    # Generic words also appear in the synthetic export headers
+    # ("Campaign name"), so they are not a sign of leaked names.
+    names = [name for name in names
+             if str(name).strip().lower() not in {"campaign"}]
+    assert names, "no campaign names found in config/restaurant.yaml"
+    return names
+
+
+RESTAURANT_CAMPAIGNS = _restaurant_campaigns()
 
 
 def _make_project(tmp_path):

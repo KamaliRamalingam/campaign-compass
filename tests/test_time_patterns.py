@@ -20,7 +20,7 @@ from src.time_patterns import (monthly_table, pooled_weekday_table,
 
 GROUPS = {
     "core": ["Alpha"],
-    "sep_2026_group": {"exact": ["Super Sales"], "prefix": "The S"},
+    "sep_2026_group": {"exact": ["Spring Offer"], "prefix": "Brand C"},
 }
 VOLUME = {"min_conversions": 10, "min_days_active": 14}
 
@@ -108,14 +108,14 @@ def test_runs_table_counts_and_flags():
 
 def test_runs_include_sep_2026_group():
     df = _day_df([
-        ("2024-01-01", "Super Sales", 10, 10.0, 6.0),
+        ("2024-01-01", "Spring Offer", 10, 10.0, 6.0),
         ("2024-01-01", "Other", 10, 10.0, 6.0),
     ])
     # Without analysis.run_groups the default still adds
     # sep_2026_group to the time groups (old behaviour).
     run_groups = resolve_run_groups({"time_groups": ["core"]})
     table = runs_table(df, GROUPS, run_groups, 14, VOLUME)
-    assert table["campaign"].tolist() == ["Super Sales"]
+    assert table["campaign"].tolist() == ["Spring Offer"]
 
 
 def test_timeline_appends_monthly_data_with_right_source():

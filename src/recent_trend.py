@@ -58,11 +58,11 @@ import pandas as pd
 try:
     from src.paths import apply_output_root
     from src.clean import load_config
-    from src.recommend import ACTION_TEXT, action_text
+    from src.recommend import ACTION_TEXT, action_text, label_words
 except ImportError:  # running as `python src/recent_trend.py`
     from clean import load_config
     from paths import apply_output_root
-    from recommend import ACTION_TEXT, action_text
+    from recommend import ACTION_TEXT, action_text, label_words
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "restaurant.yaml"
 TREND_WORSENING = "worsening"
@@ -438,7 +438,8 @@ def _override(row, trend, window, overrides):
     text = action_text(new, row["status_now"], repeat,
                        _best_run(row), latest)
     note = f"{label} -> {new}"
-    reason = (f"{reason}; label changed {label} -> {new} because "
+    reason = (f"{reason}; label changed {label_words(label)} -> "
+              f"{label_words(new)} because "
               f"the recent trend is {trend} ({window})")
     return new, text, reason, note
 

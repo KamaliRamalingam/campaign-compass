@@ -7,7 +7,7 @@ Reads outputs/results/runs.csv and
 outputs/results/campaign_summary_day.csv (their paths come from
 the config) and writes, all git-ignored:
 - outputs/results/recommendations_by_run.csv: per run, ratio
-  (run cost per conversion / benchmark), label, reason, caveat.
+  (run cost per tracked action / benchmark), label, reason, caveat.
 - outputs/results/recommendations_by_campaign.csv: per campaign,
   the label of its latest run with enough volume, number of runs
   with enough volume, repeat_eligible, last active date and
@@ -74,7 +74,7 @@ repeat_min_runs runs with enough volume.
 Every row gets a plain-language reason built from the numbers
 and a caveat column holding the caveat text from
 analysis.caveat_text in the config. No claim of extra customers
-is made anywhere; the wording is always "tracked conversions".
+is made anywhere; the wording is always "tracked actions".
 
 Only counts per label are printed, never campaign names or rows.
 """
@@ -101,6 +101,22 @@ LABEL_TEST = "test"
 LABEL_PAUSE = "pause_or_review"
 LABEL_NOT_COMPARABLE = "not_comparable"
 LABEL_NOT_JUDGED = "not_judged"
+
+# Readable label words for reason text (the label columns keep the
+# keys above; the dashboard has its own display text with symbols).
+LABEL_WORDS = {
+    LABEL_CONTINUE: "Continue",
+    LABEL_TEST: "Test",
+    LABEL_PAUSE: "Pause or review",
+    LABEL_INSUFFICIENT: "Insufficient data",
+    LABEL_NOT_COMPARABLE: "Not comparable",
+    LABEL_NOT_JUDGED: "Not judged",
+}
+
+
+def label_words(label):
+    """"Pause or review" for pause_or_review; unknown labels as is."""
+    return LABEL_WORDS.get(label, str(label))
 DEFAULT_BENCHMARK_GROUPS = ("core",)
 BASE_COLUMNS = ("label", "action_text", "reason")
 BASIS_POOLED = "pooled"
@@ -110,7 +126,7 @@ BASIS_LOO_FALLBACK = "pooled (leave-one-out not possible)"
 
 def compute_benchmark(day_summary, groups=DEFAULT_BENCHMARK_GROUPS,
                       exclude=None):
-    """Pooled cost per conversion of the campaigns in groups.
+    """Pooled cost per tracked action of the campaigns in groups.
 
     Sum of spend / sum of conversions over the campaigns whose
     group is in groups, leaving out the campaign named in
@@ -197,7 +213,7 @@ def _fixed_reason(label, group, cost_per_conversion, name):
     """Reason text for a not_comparable or not_judged row."""
     if label == LABEL_NOT_JUDGED:
         return f"group {group} not evaluated"
-    cost = (f"cost per conversion is {cost_per_conversion:.2f}; "
+    cost = (f"cost per tracked action is {cost_per_conversion:.2f}; "
             if cost_per_conversion is not None
             and not pd.isna(cost_per_conversion) else "")
     return (f"group {group} is not comparable with the {name}; "
@@ -257,13 +273,13 @@ def recommend_runs(runs_df, benchmark, rules, caveat,
             elif label == LABEL_INSUFFICIENT:
                 reason = (
                     f"not enough volume to judge: "
-                    f"{run['conversions']:.0f} tracked conversions "
+                    f"{run['conversions']:.0f} tracked actions "
                     f"over {int(run['active_days'])} active days; "
                     f"{run_text}"
                 )
             else:
                 reason = (
-                    f"cost per conversion is {ratio:.2f} times the "
+                    f"cost per tracked action is {ratio:.2f} times the "
                     f"{name}; {run_text}"
                 )
             rows.append({
@@ -385,13 +401,14 @@ def _recent_reason(result, name, run_label, run_text):
               f"({result['start']} to {result['end']})")
     if result["label"] == LABEL_INSUFFICIENT:
         signal = (f"not enough volume to judge: "
-                  f"{result['conversions']:.0f} tracked conversions "
+                  f"{result['conversions']:.0f} tracked actions "
                   f"over {result['active_days']} active days")
     else:
-        signal = (f"cost per conversion is {result['ratio']:.2f} "
+        signal = (f"cost per tracked action is {result['ratio']:.2f} "
                   f"times the {name}")
     return (f"{period}: {signal}; label from the recent window, "
-            f"not the run: {run_text} was labelled {run_label}")
+            f"not the run: {run_text} was labelled "
+            f"{label_words(run_label)}")
 
 
 def recommend_campaigns(run_recs, day_summary, rules, caveat,
@@ -407,7 +424,7 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
     Adds last_active_date and status_now (active if the last
     active date is within active_window_days of the latest date
     in the daily data, otherwise ended), the best run with enough
-    volume (lowest cost per conversion) and action_text.
+    volume (lowest cost per tracked action) and action_text.
 
     recent_windows, from recent_window_results, switches active
     campaigns without a fixed label to the recent-window label
@@ -497,7 +514,8 @@ def recommend_campaigns(run_recs, day_summary, rules, caveat,
                 f"latest run with enough volume (run "
                 f"{latest_run_number}, {latest['start']} to "
                 f"{latest['end']}) is labelled "
-                f"{label}; cost per conversion is {ratio:.2f} "
+                f"{label_words(label)}; cost per tracked action is "
+                f"{ratio:.2f} "
                 f"times the {name}; {runs_with_volume} "
                 f"of {total_runs} runs had enough volume"
             )
@@ -723,7 +741,7 @@ def write_recommend_report(report_path, run_recs, campaign_recs,
     """
     lines = ["# Recommend report", ""]
     lines.append(
-        f"- Core benchmark cost per conversion: {benchmark:.2f}"
+        f"- Core benchmark cost per tracked action: {benchmark:.2f}"
     )
     lines.append(f"- Runs: {len(run_recs)}")
     lines.append(f"- Campaigns: {len(campaign_recs)}")

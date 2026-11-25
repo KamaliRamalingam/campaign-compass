@@ -1330,7 +1330,7 @@ RUN_COLUMNS = (
     ("active_days", "Days", "{:.0f}", True),
     ("spend", "Spend ({currency})", "{:,.0f}", True),
     ("conversions", "Tracked actions", "{:,.0f}", True),
-    ("cost_per_conversion", "Cost per action ({currency})", "{:,.2f}",
+    ("cost_per_conversion", "Cost per tracked action ({currency})", "{:,.2f}",
      True),
     ("ratio_to_benchmark", "Ratio", "{:.2f}x", True),
 )

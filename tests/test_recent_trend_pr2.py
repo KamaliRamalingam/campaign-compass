@@ -180,7 +180,7 @@ def test_worsening_continue_becomes_test():
     assert row["trend_override"] == "continue -> test"
     assert row["action_text"] == (
         "keep running, but test changes" + WORSENING_SUFFIX)
-    assert ("label changed continue -> test because the recent "
+    assert ("label changed Continue -> Test because the recent "
             "trend is worsening (recent window 2026-01-15 to "
             "2026-02-11)") in row["reason"]
 
