@@ -6,7 +6,7 @@ Google Ads campaign performance analysis for a restaurant chain in Sweden, built
 
 ## 2. The problem
 
-The owner spends on Google Ads and on offers without knowing which campaigns bring extra tracked conversions, where, or when. This project supports one decision: which campaigns to continue, test or pause, and when to run them.
+The owner spends on Google Ads and on offers without knowing which campaigns bring extra tracked actions, where, or when. This project supports one decision: which campaigns to continue, test or pause, and when to run them.
 
 It can answer: which campaigns have the lowest cost per tracked action, how performance varies by weekday and over time, which campaigns have too little data to judge, and which campaigns are getting worse recently.
 
@@ -36,23 +36,23 @@ The pipeline runs in order, from one command. Each stage reads only the config a
 9. **Recent trend** (`src/recent_trend.py`): for each active campaign, compares the recent 28 days with the prior 28 days and with the current run's average, and labels the trend worsening, improving, stable or insufficient_data, with a plain-language reason. Config: `analysis.recent_trend`.
 9b. **Lag check** (`src/lag_check.py`): reruns the recent-window label, the recent trend and the trend overrides with each lag in `analysis.recent_trend.lag_check_days` and reports how many change. The configured lag is not changed. Config: `analysis.recent_trend`.
 10. **Acquisition journey, what-if and break-even** (`src/journey.py`, `src/what_if.py`, `src/break_even.py`): the journey table per core campaign and the core group, the what-if weekday shift (two variants, a linear estimate, not a bound), and the break-even table, written only when an average revenue per visit is set. Config: `analysis.what_if`, `analysis.break_even`, `conversion_breakdown.intent_categories`.
-11. **Dashboard** (`dashboard/app.py`, `dashboard/data.py`, `dashboard/charts.py`): a local Streamlit report with three pages. **Act** asks which campaigns to continue, test or pause. It has a filter row (group, status, minimum tracked actions as a display filter), KPI cards with definitions, a bubble chart against the benchmark and the 1.0x / 2.0x ratio lines from the config, judged-only label counts, a ranked action table and a Not comparable box. **Context** asks whether we can trust the labels: recent change with partial or lagged months marked, the lag check, weekday differences and the decomposition, the what-if range and the acquisition journey, with method details in an expander. **Campaign detail** shows one campaign and opens from the Act ranking. Colours are colour-blind safe, and every label is also named in text. The dashboard reads only the result tables, never the raw exports, and recomputes nothing. Config: `analysis.outputs`, `analysis.caveat_text`, `analysis.footnote_text`.
+11. **Dashboard** (`dashboard/app.py`, `dashboard/data.py`, `dashboard/charts.py`): a local Streamlit report with four pages, reached from the tabs in the header (the Client picker sits beside them). **Act** asks which campaigns to continue, test or pause. It has a filter row (group, status, minimum tracked actions as a display filter), four decision tiles with label counts for judged campaigns, a ranked action table, a ratio-to-benchmark bar chart with the 1.0x / 2.0x lines from the config, a Not comparable box and a Totals and benchmark section. **Context** asks whether we can trust the labels and when to run campaigns: four cards (recent change, weekday pattern, what-if range, acquisition journey), then a check of whether one campaign distorts a weekday. **Campaign detail** shows one campaign (tiles, action and reasons, runs and monthly or weekly trend) and opens from the Act ranking or its own picker. **Method** shows how the labels were built: data completeness (lag check, monthly trend), the journey and break-even tables, and the method and definitions. Colours are colour-blind safe, and every label is also named in text. The dashboard reads only the result tables, never the raw exports, and recomputes nothing. Config: `analysis.outputs`, `analysis.caveat_text`, `analysis.footnote_text`.
 
 ## 5. How to run
 
 Local only. Nothing is hosted, and no account is needed to run the pipeline once the exports are in place.
 
 ```bash
-bash run.sh              # whole pipeline: validation to journey
+bash run.sh              # whole pipeline, every stage in order
 bash dashboard.sh        # local dashboard, after bash run.sh
 bash run.sh --client synthetic_b   # whole pipeline on the synthetic Company B test data
 ```
 
-`bash run.sh` creates `.venv` if needed, installs `requirements.txt`, and runs every stage. Outputs go to the ignored `outputs/` folder (`outputs/synthetic_b/` for the synthetic client) and never go to GitHub. The dashboard has a sidebar Client selector; the default is the restaurant.
+`bash run.sh` creates `.venv` if needed, installs `requirements.txt`, and runs every stage. Outputs go to the ignored `outputs/` folder (`outputs/synthetic_b/` for the synthetic client) and never go to GitHub. The dashboard has a Client picker in the header; the default is the restaurant.
 
 The header logo is local only: place it at `config/local/logo.png` (git-ignored, not in the repo). Without it the dashboard shows the text name.
 
-Muse builds on branches, and CI checks every pull request. I merge in the GitHub web UI.
+Work happens on branches, and CI checks every pull request. I merge in the GitHub web UI.
 
 ## 6. How to refresh
 
@@ -98,17 +98,17 @@ All numbers below come from the synthetic Company B test data (`bash run.sh --cl
 4. **Which campaigns lack enough data?** — Red Kettle. It has 10 active days and 5 tracked actions in total, below the minimum of 10 tracked actions and 14 active days, so it is labelled insufficient_data and is not ranked. Its recent trend is also insufficient_data (0 tracked actions in both the recent and the prior window).
 5. **What should we do with Green Fork?** — It is labelled continue, and its action is "worked well when it ran; candidate to restart". It stopped on 2026-04-15, so its status is ended, and its latest run cost €26.85 per tracked action, 0.92 times the core benchmark — the cheapest of the campaigns with enough data.
 
-## 11. Repository structure and AI use
+## 11. Repository structure
 
 - `config/`: client-specific settings — `restaurant.yaml` (the restaurant), `synthetic_b.yaml` (the synthetic test client), `validation.yaml` and `validation_synthetic_b.yaml` (UI totals to check exports against).
 - `src/`: pipeline code — validation, load, clean, overview, groups, metrics, time patterns, recommendations, conversion mix, recent trend, synthetic data generator, skip and reuse-report stages.
 - `dashboard/`: local Streamlit dashboard — `data.py` (all data preparation, testable), `charts.py` (Plotly figures, display only) and `app.py` (display only). Theme in `.streamlit/config.toml`.
 - `tests/`: checks, all with made-up data. Run them with `pytest -q`.
-- `docs/`: method, decision log, AI usage log.
+- `docs/`: method, decision log, data dictionary.
 - `scripts/`: CI guard that blocks data files from tracked files.
 - `data/raw/`, `outputs/`, `config/local/`: git-ignored. Client data and outputs live here and never go to GitHub.
 
-Claude Code implemented the pipeline and dashboard code through reviewed pull requests: tasks T0b–T12 and PRs #41–#45 (benchmark change, recent signals, what-if and weekday work, dashboard rebuild and restyle). For each pull request I read the diff, ran the tests and the pipeline, checked the dashboard pages by eye, and merged only after a green CI run. Claude (chat) supported planning, explanations and review. The decisions are mine: I chose the problem, the groups and the wording, and I approved the thresholds, which are provisional and not validated with the owner. See [docs/ai-usage-log.md](docs/ai-usage-log.md).
+AI-assisted development.
 
 ## 12. Data and privacy
 
