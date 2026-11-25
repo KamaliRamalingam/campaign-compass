@@ -155,3 +155,25 @@ def test_open_detail_drills_through_to_campaign_detail():
     text = " ".join(block.value for block in script.markdown)
     assert "How has this campaign performed?" in text
     assert script.selectbox(key="detail_campaign__restaurant").value == choice
+
+
+def test_campaign_detail_table_expanders_sit_under_their_charts():
+    """Campaign detail: the trend table is under the runs (left), the
+    weekday table is an expander under the weekday chart, and the
+    trend card holds only the chart."""
+    if not _has_outputs("restaurant"):
+        pytest.skip("no result tables: run bash run.sh")
+    script = AppTest.from_string(
+        f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+        "CLIENT = 'restaurant'\nPAGE = 'campaign_detail'\n" + PAGE_SCRIPT,
+        default_timeout=60)
+    script.run()
+    assert not script.exception, script.exception
+    labels = [block.label for block in script.expander]
+    wanted = ["Monthly table", "Weekday pattern", "Weekday table",
+              "Acquisition journey"]
+    assert [label for label in labels if label in wanted] == wanted
+    # The weekday table is inside the weekday pattern expander.
+    pattern = next(block for block in script.expander
+                   if block.label == "Weekday pattern")
+    assert [block.label for block in pattern.expander] == ["Weekday table"]

@@ -201,7 +201,7 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .cc-tiles, .cc-stat {margin-bottom: var(--cc-gap);}
 .cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
   border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
-  min-height: calc(160px * var(--cc-s));}
+  box-sizing: border-box;}
 .cc-stat-title {font-size: var(--cc-label); font-weight: 600;}
 .cc-stat-v {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;
   margin-top: 4px; color: #254C31;}
@@ -222,6 +222,45 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .st-key-cc_filters [data-testid="stWidgetLabel"] p,
 .st-key-cc_filters [data-testid="stWidgetLabel"] span
   {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
+
+/* Campaign detail rows (cc_detail_*): the columns of a row are one
+   height, and the card, tile or expander in each column fills it, so
+   the shorter side has no blank area under it. Content stays at the
+   top, except the acquisition journey, which is centred when it is
+   the shorter side. The space between rows is the one --cc-gap. */
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] {align-items: stretch;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  {display: flex; flex-direction: column;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] {flex: 1 1 auto;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] > *:only-child {flex: 1 1 auto;}
+div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
+  > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]
+  > div[class*="st-key-card_"] {height: 100%;}
+.st-key-cc_detail_tiles [data-testid="stElementContainer"],
+.st-key-cc_detail_tiles .stMarkdown, .st-key-cc_detail_tiles
+  [data-testid="stMarkdownContainer"] {height: 100%; margin-bottom: 0;}
+.st-key-cc_detail_tiles .cc-stat {height: 100%; margin-bottom: 0;}
+/* Runs card: the trend table (last block) takes the height left
+   beside the trend chart and scrolls inside it when longer. */
+.st-key-cc_detail_main [data-testid="stColumn"]:first-child
+  div[class*="st-key-card_"] > :last-child:has([data-testid="stExpander"])
+  {flex: 1 1 0; min-height: 220px; overflow-y: auto;}
+.st-key-cc_detail_more [data-testid="stExpander"],
+.st-key-cc_detail_more [data-testid="stExpander"] > details[open]
+  {height: 100%;}
+.st-key-cc_detail_more [data-testid="stExpander"] > details[open]
+  {display: flex; flex-direction: column;}
+.st-key-cc_detail_more [data-testid="stColumn"]:nth-child(2)
+  [data-testid="stExpander"] > details[open] > [data-testid="stExpanderDetails"]
+  {flex: 1 1 auto; display: flex; flex-direction: column;
+   justify-content: center;}
 
 /* Buttons. */
 .stButton button[kind="primary"], .stDownloadButton button,
@@ -1210,7 +1249,9 @@ def _detail_trend(ctx, campaign):
     """Monthly or weekly cost per tracked action for one campaign.
 
     The period slider limits the rows shown (a filter, not a
-    recalculation). Partial and lagged months are marked.
+    recalculation). Partial and lagged months are marked. Returns
+    (view, rows shown, file key) for the table under the runs, or
+    None when there are no rows.
     """
     tables = ctx["tables"]
     currency = ctx["currency"]
@@ -1227,7 +1268,7 @@ def _detail_trend(ctx, campaign):
     if table.empty:
         st.caption("No monthly or weekly rows: the trend tables cover "
                    "the time groups in the config.")
-        return
+        return None
     default = None
     if view == "Monthly" and "source" in table.columns:
         # Open on the daily range, not the monthly-history range: the
@@ -1248,7 +1289,18 @@ def _detail_trend(ctx, campaign):
         st.caption("Hollow ring = partial or lagged month. Monthly "
                    "source: day is the daily export, month is the "
                    "monthly-history export.")
-    with st.expander(f"{view} table"):
+    return view, table, key
+
+
+def _trend_table(trend, campaign):
+    """The monthly or weekly table of the trend card, in an expander
+    under the runs, open: it fills the space beside the trend chart
+    and scrolls inside it when it is longer (see STYLE), so the two
+    columns end level."""
+    if trend is None:
+        return
+    view, table, key = trend
+    with st.expander(f"{view} table", expanded=True):
         _table(dashboard_data.display_table(table),
                f"{key}ly_{campaign}.csv", key=f"detail_trend_table_{key}",
                column_config={"month note": WIDE("Month note",
@@ -1337,7 +1389,10 @@ def _runs_card(ctx, campaign):
 
 def _page_detail(ctx):
     """How has this campaign performed? Tiles, action and reasons,
-    runs and trend, then weekday pattern and journey."""
+    runs (with the trend table) and the trend chart, then weekday
+    pattern and journey. Each row is a keyed container whose columns
+    are equal height (see STYLE), so no column leaves a large blank
+    area beside the other."""
     tables = ctx["tables"]
     currency = ctx["currency"]
     recs = ctx["all_recommendations"]
@@ -1359,7 +1414,7 @@ def _page_detail(ctx):
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
-    tiles = st.columns(4)
+    tiles = st.container(key="cc_detail_tiles").columns(4)
     _stat_tile(tiles[0], "Final label",
                f"<div style='margin-top:6px'>{_badge(detail['label'])}"
                "</div>",
@@ -1382,7 +1437,7 @@ def _page_detail(ctx):
                "Cost per tracked action in the label period / its "
                "benchmark.")
 
-    action, why = st.columns([1, 1.6])
+    action, why = st.container(key="cc_detail_reasons").columns([1, 1.6])
     with _box(action):
         _card_title("Action")
         st.markdown(f"<p style='font-size:18px;font-weight:600;"
@@ -1403,15 +1458,20 @@ def _page_detail(ctx):
             st.caption("No recent trend: the campaign is not active or "
                        "its group is not judged.")
 
-    runs, trend = st.columns([1.2, 1])
-    with _box(runs):
-        _runs_card(ctx, campaign)
+    # Runs with the trend table under them | the trend chart. The
+    # right column is filled first: the table follows its view and
+    # period.
+    runs, trend = st.container(key="cc_detail_main").columns([1.2, 1])
     with _box(trend):
         _card_title("Trend")
         st.caption(f"Cost per tracked action ({currency})")
-        _detail_trend(ctx, campaign)
+        shown = _detail_trend(ctx, campaign)
+    with _box(runs):
+        _runs_card(ctx, campaign)
+        _trend_table(shown, campaign)
 
-    weekday_col, journey_col = st.columns(2)
+    weekday_col, journey_col = st.container(
+        key="cc_detail_more").columns(2)
     with weekday_col:
         with st.expander("Weekday pattern"):
             by_campaign = tables["weekday_by_campaign"]
@@ -1426,9 +1486,10 @@ def _page_detail(ctx):
                 st.plotly_chart(charts.weekday_bar(weekday, currency),
                                 width="stretch", key="detail_weekday",
                                 config={"displayModeBar": False})
-                _table(dashboard_data.display_table(weekday),
-                       f"weekday_{campaign}.csv",
-                       key="detail_weekday_table", hide=("campaign",))
+                with st.expander("Weekday table"):
+                    _table(dashboard_data.display_table(weekday),
+                           f"weekday_{campaign}.csv",
+                           key="detail_weekday_table", hide=("campaign",))
     with journey_col:
         with st.expander("Acquisition journey"):
             journey = dashboard_data.journey_row(
