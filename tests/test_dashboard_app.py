@@ -316,3 +316,18 @@ def test_act_layout_totals_strip_and_not_comparable(client):
     if count:
         assert "Action:" not in page and "leave-one-out" not in page
         assert "Not in the chart or the ranking" in page
+
+
+def test_expander_titles_card_style_top_level_only():
+    """Top-level expanders get the card-title style; expanders in a
+    card or inside another expander keep the regular style."""
+    import app
+
+    assert (".stMain [data-testid=\"stExpander\"] summary p\n"
+            "  {font-size: var(--cc-card-title); font-weight: 600; "
+            "color: #3B2F2A;}") in app.STYLE
+    assert ".stMain [data-testid=\"stExpanderDetails\"] " \
+           "[data-testid=\"stExpander\"]\n  summary p," in app.STYLE
+    assert ".stMain div[class*=\"st-key-card_\"] [data-testid=\"stExpander\"]" \
+           " summary p\n  {font-size: var(--cc-text); font-weight: 400;}" \
+        in app.STYLE

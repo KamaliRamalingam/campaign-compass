@@ -195,6 +195,15 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   {border-bottom: 1px solid #EADFCF; border-radius: 8px 8px 0 0;}
 [data-testid="stExpanderDetails"] {border: 0 !important;
   background: #FFFFFF;}
+/* Expander titles: a top-level expander is a card, so its title has
+   the card-title style. An expander inside a card or inside another
+   expander only hides a table: it keeps the regular, lighter text. */
+.stMain [data-testid="stExpander"] summary p
+  {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
+.stMain [data-testid="stExpanderDetails"] [data-testid="stExpander"]
+  summary p,
+.stMain div[class*="st-key-card_"] [data-testid="stExpander"] summary p
+  {font-size: var(--cc-text); font-weight: 400;}
 /* Space after HTML blocks (Streamlit gives markdown a negative bottom
    margin, so rows of HTML cards would touch the next row). */
 .cc-tiles, .cc-stat {margin-bottom: var(--cc-gap);}
