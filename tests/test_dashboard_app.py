@@ -373,7 +373,8 @@ def test_context_notice_when_weekday_decomposition_is_off():
 
 
 RAW_KEYS = ("pause_or_review", "insufficient_data", "not_comparable",
-            "not_judged", "not_active")
+            "not_judged", "not_active", "recent_trend_changes_total",
+            "label_changes_total", "recent_trend_change", "vs lag")
 
 
 @pytest.mark.parametrize("client", CLIENTS)

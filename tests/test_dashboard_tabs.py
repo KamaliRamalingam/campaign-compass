@@ -343,3 +343,25 @@ def test_label_steps_without_window_or_override():
                                 "core average.")
     assert steps["Adjust"] == ("Under 10 tracked actions or 14 active "
                                "days: Insufficient data.")
+
+
+def test_lag_check_display_plain_words():
+    lag = pd.DataFrame({
+        "lag": [3, 3, 14, 14, 14],
+        "measure": ["recent_trend", "recent_trend_changes_total",
+                    "recent_trend_change", "label_change",
+                    "label_changes_total"],
+        "value": ["not_active", "vs lag 3", "worsening -> stable",
+                  "test -> continue", "vs lag 3"],
+        "campaigns": [11, 0, 1, 1, 1]})
+    shown = dd.lag_check_display(lag)
+    assert list(shown.columns) == ["Lag (days)", "Measure", "Value",
+                                   "Campaigns"]
+    assert list(shown["Measure"]) == ["Trend", "Trend changes",
+                                      "Trend change", "Label change",
+                                      "Label changes"]
+    assert list(shown["Value"]) == [
+        "Not active", "Compared with a lag of 3 days",
+        "Worsening → Stable", "Test → Continue",
+        "Compared with a lag of 3 days"]
+    assert lag["value"].iloc[1] == "vs lag 3"

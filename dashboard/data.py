@@ -2393,3 +2393,43 @@ def label_steps(config, kpi, names=None, currency="SEK", benchmarks=None):
         adjust.append(f"Under {actions} tracked actions: Insufficient data.")
     return [("Measure", measure), ("Compare", compare), ("Label", label),
             ("Adjust", " ".join(adjust) or "No adjustments are set.")]
+
+
+LAG_MEASURE_TEXT = {
+    "recent_trend": "Trend", "label": "Label",
+    "recent_trend_change": "Trend change", "label_change": "Label change",
+    "recent_trend_changes_total": "Trend changes",
+    "label_changes_total": "Label changes",
+}
+
+
+def _lag_value_text(value):
+    """A lag-check value in words: "vs lag 3" -> "Compared with a lag
+    of 3 days", "worsening -> stable" -> "Worsening → Stable", a key
+    -> its readable name."""
+    text = "" if _is_missing(value) else str(value)
+    match = re.fullmatch(r"vs lag (\d+)", text)
+    if match:
+        return f"Compared with a lag of {match.group(1)} days"
+    if "->" in text:
+        before, _, after = text.partition("->")
+        return " → ".join(_lag_value_text(part.strip())
+                          for part in (before, after))
+    if text in LABEL_STYLE:
+        return label_text(text)
+    return value_text(text)
+
+
+def lag_check_display(lag_check):
+    """lag_check.csv for display: Lag (days) | Measure | Value |
+    Campaigns in plain words. The CSV keeps the raw names."""
+    return pd.DataFrame({
+        "Lag (days)": list(lag_check["lag"]),
+        "Measure": [LAG_MEASURE_TEXT.get(m, value_text(m))
+                    for m in lag_check["measure"]],
+        "Value": [_lag_value_text(v) for v in lag_check["value"]],
+        "Campaigns": list(lag_check["campaigns"]),
+    })
+
+
+LAG_CHECK_FORMATS = {"Lag (days)": "%d", "Campaigns": "%d"}

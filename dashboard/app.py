@@ -1143,7 +1143,9 @@ def _completeness(ctx, campaign):
                    "trend_changes": NUM("Trend changes", format="%d"),
                    "label_changes": NUM("Label changes", format="%d")})
         with st.expander("All lag-check counts"):
-            _table(lag_check, "lag_check.csv", key="ctx_lag_all")
+            _table(lag_check, "lag_check.csv", key="ctx_lag_all",
+                   display=dashboard_data.lag_check_display(lag_check),
+                   formats=dashboard_data.LAG_CHECK_FORMATS)
     if campaign is not None:
         st.markdown(f"**Monthly trend: {campaign}**")
         st.caption("Month note: partial (the campaign ran only part of "
