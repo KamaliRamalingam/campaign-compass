@@ -2351,3 +2351,85 @@ def leave_one_out_display(table):
         out["left_out"] = out["left_out"].replace(
             {"(none)": "All campaigns"})
     return out
+
+
+def label_steps(config, kpi, names=None, currency="SEK", benchmarks=None):
+    """"How a label is decided": four (title, text) steps for the
+    Method page, from the config and benchmarks.csv (kpi_values).
+
+    Measure (with the recent-label window when it is set), compare
+    (the benchmark and its groups), label (the two limits) and
+    adjust (the worsening override when it is set, and the volume
+    rule: a run below min_conversions tracked actions or
+    min_days_active active days is labelled Insufficient data).
+    """
+    analysis = (config or {}).get("analysis") or {}
+    rules = analysis.get("recommendation_rules") or {}
+    window = (rules.get("recent_label") or {}).get("window_days")
+    measure = "Cost per tracked action of the latest run with enough data"
+    measure += (f", or the last {window} days if running." if window
+                else ".")
+    _judged, bench = scope_groups(config, benchmarks)
+    groups = names_and([(names or {}).get(g, g) for g in bench])
+    compare = (f"Divided by the benchmark: {kpi['benchmark']:,.2f} "
+               f"{currency}, the {groups} average.")
+    cont = float(rules.get("continue_max_ratio"))
+    test = float(rules.get("test_max_ratio"))
+    label = (f"Up to {cont:.1f}x: Continue. Up to {test:.1f}x: Test. "
+             f"Above: Pause or review.")
+    adjust = []
+    override = ((analysis.get("recent_trend") or {}).get(
+        "trend_overrides") or {}).get("worsening") or {}
+    for before, after in override.items():
+        adjust.append(f"A worsening trend moves {label_text(before)} to "
+                      f"{label_text(after)}.")
+    volume = analysis.get("volume_rule") or {}
+    actions = volume.get("min_conversions")
+    days = volume.get("min_days_active")
+    if actions and days:
+        adjust.append(f"Under {actions} tracked actions or {days} active "
+                      f"days: Insufficient data.")
+    elif actions:
+        adjust.append(f"Under {actions} tracked actions: Insufficient data.")
+    return [("Measure", measure), ("Compare", compare), ("Label", label),
+            ("Adjust", " ".join(adjust) or "No adjustments are set.")]
+
+
+LAG_MEASURE_TEXT = {
+    "recent_trend": "Trend", "label": "Label",
+    "recent_trend_change": "Trend change", "label_change": "Label change",
+    "recent_trend_changes_total": "Trend changes",
+    "label_changes_total": "Label changes",
+}
+
+
+def _lag_value_text(value):
+    """A lag-check value in words: "vs lag 3" -> "Compared with a lag
+    of 3 days", "worsening -> stable" -> "Worsening → Stable", a key
+    -> its readable name."""
+    text = "" if _is_missing(value) else str(value)
+    match = re.fullmatch(r"vs lag (\d+)", text)
+    if match:
+        return f"Compared with a lag of {match.group(1)} days"
+    if "->" in text:
+        before, _, after = text.partition("->")
+        return " → ".join(_lag_value_text(part.strip())
+                          for part in (before, after))
+    if text in LABEL_STYLE:
+        return label_text(text)
+    return value_text(text)
+
+
+def lag_check_display(lag_check):
+    """lag_check.csv for display: Lag (days) | Measure | Value |
+    Campaigns in plain words. The CSV keeps the raw names."""
+    return pd.DataFrame({
+        "Lag (days)": list(lag_check["lag"]),
+        "Measure": [LAG_MEASURE_TEXT.get(m, value_text(m))
+                    for m in lag_check["measure"]],
+        "Value": [_lag_value_text(v) for v in lag_check["value"]],
+        "Campaigns": list(lag_check["campaigns"]),
+    })
+
+
+LAG_CHECK_FORMATS = {"Lag (days)": "%d", "Campaigns": "%d"}

@@ -104,8 +104,9 @@ def test_every_page_renders(client, mode, page, monkeypatch, tmp_path):
     assert "class='cc-page'>" in page and "class='cc-q'>" in page
 
 
-MOVED = ("Data completeness (lag check, monthly trend)", "Journey table",
-         "Method and definitions")
+MOVED = ("Method and definitions", "What counts as a tracked action",
+         "Settings", "Data completeness (lag check, monthly trend)",
+         "Journey table")
 
 
 @pytest.mark.parametrize("client", CLIENTS)
@@ -122,7 +123,7 @@ def test_method_page_holds_the_moved_sections(client):
         assert not script.exception, script.exception
         labels[page] = [block.label for block in script.expander]
     method = [label for label in labels["method"] if label in MOVED]
-    assert method == list(MOVED)  # all three, in this order
+    assert method == list(MOVED)  # all five, logic first
     assert not set(MOVED) & set(labels["context"])
     assert any(label.startswith("Is one campaign distorting")
                for label in labels["context"])
@@ -369,3 +370,40 @@ def test_context_notice_when_weekday_decomposition_is_off():
     notices = [block.value for block in script.info]
     assert "This analysis is not switched on for this client." in notices
     assert not any("weekday_decomposition" in text for text in notices)
+
+
+RAW_KEYS = ("pause_or_review", "insufficient_data", "not_comparable",
+            "not_judged", "not_active", "recent_trend_changes_total",
+            "label_changes_total", "recent_trend_change", "vs lag")
+
+
+@pytest.mark.parametrize("client", CLIENTS)
+def test_method_page_shows_four_steps_and_no_raw_keys(client):
+    """Method opens with "How a label is decided" (four numbered
+    steps, before every section) and shows no raw keys."""
+    if not _has_outputs(client):
+        pytest.skip(f"no result tables for {client}: run bash run.sh")
+    script = AppTest.from_string(
+        f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+        f"CLIENT = {client!r}\nPAGE = 'method'\n" + PAGE_SCRIPT,
+        default_timeout=60)
+    script.run()
+    assert not script.exception, script.exception
+    blocks = [block.value for block in script.markdown]
+    at = next(i for i, text in enumerate(blocks)
+              if "<div class='cc-tiles cc-steps'>" in text)
+    steps = blocks[at]
+    assert "How a label is decided" in steps
+    for number, title in enumerate(("Measure", "Compare", "Label",
+                                    "Adjust"), start=1):
+        assert f"{number}. {title}</div>" in steps
+    assert steps.count("class='cc-tile cc-step'") == 4
+    # The Settings table keeps each raw config key in a small grey
+    # Key column on purpose; every other cell must be plain text.
+    import re
+    shown = re.sub(r"<td class=cc-key>.*?</td>", "",
+                   " ".join(blocks[at:]))
+    for key in RAW_KEYS:
+        assert key not in shown, key
+    assert [block.label for block in script.expander][0] == \
+        "Method and definitions"
