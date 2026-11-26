@@ -300,3 +300,46 @@ def test_leave_one_out_display_names_the_full_pool():
     assert list(dd.leave_one_out_display(table)["left_out"]) == [
         "All campaigns", "Alpha"]
     assert list(table["left_out"]) == ["(none)", "Alpha"]
+
+
+STEP_KPI = {"benchmark": 4.879686}
+
+
+def _step_config(window=90, override=True):
+    rules = {"continue_max_ratio": 1.0, "test_max_ratio": 2.0,
+             "benchmark": {"groups": ["core"]}}
+    if window:
+        rules["recent_label"] = {"window_days": window}
+    trend = {"trend_overrides": {"worsening": {"continue": "test"}}} \
+        if override else {}
+    return {"analysis": {"recommendation_rules": rules,
+                         "recent_trend": trend,
+                         "volume_rule": {"min_conversions": 10,
+                                         "min_days_active": 14}}}
+
+
+def test_label_steps_restaurant_like():
+    steps = dd.label_steps(_step_config(), STEP_KPI,
+                           {"core": "Core campaigns"}, "SEK")
+    assert steps == [
+        ("Measure", "Cost per tracked action of the latest run with "
+                    "enough data, or the last 90 days if running."),
+        ("Compare", "Divided by the benchmark: 4.88 SEK, the Core "
+                    "campaigns average."),
+        ("Label", "Up to 1.0x: Continue. Up to 2.0x: Test. Above: Pause "
+                  "or review."),
+        ("Adjust", "A worsening trend moves Continue to Test. Under 10 "
+                   "tracked actions or 14 active days: Insufficient "
+                   "data."),
+    ]
+
+
+def test_label_steps_without_window_or_override():
+    steps = dict(dd.label_steps(_step_config(window=None, override=False),
+                                {"benchmark": 29.0328}, {}, "EUR"))
+    assert steps["Measure"] == ("Cost per tracked action of the latest run "
+                                "with enough data.")
+    assert steps["Compare"] == ("Divided by the benchmark: 29.03 EUR, the "
+                                "core average.")
+    assert steps["Adjust"] == ("Under 10 tracked actions or 14 active "
+                               "days: Insufficient data.")

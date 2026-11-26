@@ -2351,3 +2351,45 @@ def leave_one_out_display(table):
         out["left_out"] = out["left_out"].replace(
             {"(none)": "All campaigns"})
     return out
+
+
+def label_steps(config, kpi, names=None, currency="SEK", benchmarks=None):
+    """"How a label is decided": four (title, text) steps for the
+    Method page, from the config and benchmarks.csv (kpi_values).
+
+    Measure (with the recent-label window when it is set), compare
+    (the benchmark and its groups), label (the two limits) and
+    adjust (the worsening override when it is set, and the volume
+    rule: a run below min_conversions tracked actions or
+    min_days_active active days is labelled Insufficient data).
+    """
+    analysis = (config or {}).get("analysis") or {}
+    rules = analysis.get("recommendation_rules") or {}
+    window = (rules.get("recent_label") or {}).get("window_days")
+    measure = "Cost per tracked action of the latest run with enough data"
+    measure += (f", or the last {window} days if running." if window
+                else ".")
+    _judged, bench = scope_groups(config, benchmarks)
+    groups = names_and([(names or {}).get(g, g) for g in bench])
+    compare = (f"Divided by the benchmark: {kpi['benchmark']:,.2f} "
+               f"{currency}, the {groups} average.")
+    cont = float(rules.get("continue_max_ratio"))
+    test = float(rules.get("test_max_ratio"))
+    label = (f"Up to {cont:.1f}x: Continue. Up to {test:.1f}x: Test. "
+             f"Above: Pause or review.")
+    adjust = []
+    override = ((analysis.get("recent_trend") or {}).get(
+        "trend_overrides") or {}).get("worsening") or {}
+    for before, after in override.items():
+        adjust.append(f"A worsening trend moves {label_text(before)} to "
+                      f"{label_text(after)}.")
+    volume = analysis.get("volume_rule") or {}
+    actions = volume.get("min_conversions")
+    days = volume.get("min_days_active")
+    if actions and days:
+        adjust.append(f"Under {actions} tracked actions or {days} active "
+                      f"days: Insufficient data.")
+    elif actions:
+        adjust.append(f"Under {actions} tracked actions: Insufficient data.")
+    return [("Measure", measure), ("Compare", compare), ("Label", label),
+            ("Adjust", " ".join(adjust) or "No adjustments are set.")]

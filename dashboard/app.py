@@ -427,6 +427,16 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   line-height: 1.35; color: #6B5E54; margin-top: 1px;}
 .cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 8px;}
 @media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
+/* Method: the four "How a label is decided" steps, white tiles like
+   Running now on Act. */
+.cc-step {background: #FFFFFF; border: 1px solid #D9CFC0;
+  border-left: 5px solid #D9CFC0;}
+.cc-step-text {font-size: var(--cc-t-body); line-height: 1.35;
+  color: #3B2F2A; margin-top: 4px;}
+/* The last step has the longest text: a little more width, so every
+   step stays within two lines. */
+.cc-steps {grid-template-columns: 1fr 1fr 1fr 1.3fr;}
+@media (max-width: 900px) {.cc-steps {grid-template-columns: 1fr 1fr;}}
 
 /* Context: recent-window rows, what-if tile, tags. */
 .cc-tag {display: inline-block; border: 1px solid #3B2F2A;
@@ -1244,10 +1254,26 @@ def _what_if(rows, span, currency):
         "display": WIDE("Change")})
 
 
-def _context_method(ctx, expanded=False):
-    """Benchmarks, sensitivity, rules and what counts, in an expander."""
+def _label_steps(ctx):
+    """"How a label is decided": four numbered step cards (Act tile
+    style), texts from data.label_steps (config and benchmarks)."""
+    kpi = dashboard_data.kpi_values(ctx["tables"]["benchmarks"])
+    steps = dashboard_data.label_steps(
+        ctx["config"], kpi, ctx["group_names"], ctx["currency"],
+        ctx["tables"]["benchmarks"])
+    cards = "".join(
+        f"<div class='cc-tile cc-step'><div class='cc-card-title'>"
+        f"{number}. {html.escape(title)}</div>"
+        f"<div class='cc-step-text'>{html.escape(text)}</div></div>"
+        for number, (title, text) in enumerate(steps, start=1))
+    st.markdown("<p class='cc-card-title'>How a label is decided</p>"
+                f"<div class='cc-tiles cc-steps'>{cards}</div>",
+                unsafe_allow_html=True)
+
+
+def _method_definitions(ctx, expanded=False):
+    """Benchmarks and the threshold check, in an expander."""
     tables = ctx["tables"]
-    config = ctx["config"]
     with st.expander("Method and definitions", expanded=expanded):
         st.markdown("**Benchmarks**")
         benchmarks = tables["benchmarks"]
@@ -1281,14 +1307,24 @@ def _context_method(ctx, expanded=False):
                        sensitivity, ctx["group_names"]),
                    formats=dashboard_data.SENSITIVITY_FORMATS)
 
-        st.markdown("**Volume rule and thresholds (from the config)**")
+
+
+def _settings(ctx, expanded=False):
+    """The volume rule and thresholds from the config (collapsed)."""
+    config = ctx["config"]
+    with st.expander("Settings", expanded=expanded):
         _table(dashboard_data.rules_table(config, ctx["group_names"]),
                "rules.csv", key="ctx_rules",
                display=dashboard_data.settings_display(
                    config, ctx["group_names"]),
                muted=("Key",))
 
-        st.markdown("**What counts as a tracked action**")
+
+def _what_counts(ctx, expanded=False):
+    """What counts as a tracked action: the action table, its scope
+    and the engagement share."""
+    tables = ctx["tables"]
+    with st.expander("What counts as a tracked action", expanded=expanded):
         mix = tables["conversion_mix_by_campaign"]
         shares = dashboard_data.conversion_shares(mix)
         raw = shares[["action", "action_group", "tracked_actions",
@@ -1341,19 +1377,23 @@ def _page_context(ctx):
 def _page_method(ctx):
     """How were these labels built?
 
-    The reference sections moved from Context, unchanged and open:
-    data completeness (lag check, monthly trend), the journey table
-    (and break-even) and the method and definitions. The monthly
-    trend has its own campaign picker here; it starts on the
-    campaign last picked on Context.
+    Logic first, tables second: how a label is decided (four steps),
+    then the method and definitions, what counts as a tracked action,
+    the settings (collapsed), data completeness (lag check, monthly
+    trend) and the journey table (and break-even). The monthly trend
+    has its own campaign picker here; it starts on the campaign last
+    picked on Context.
     """
     _heading("Method", "How were these labels built?", ctx)
+    _label_steps(ctx)
+    _method_definitions(ctx, expanded=True)
+    _what_counts(ctx, expanded=True)
+    _settings(ctx)
     with st.expander("Data completeness (lag check, monthly trend)",
                      expanded=True):
         campaign = _trend_campaign(ctx, key="method_trend_campaign")
         _completeness(ctx, campaign)
     _journey_tables(ctx, expanded=True)
-    _context_method(ctx, expanded=True)
 
 
 # --- Campaign detail ----------------------------------------------
