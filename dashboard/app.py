@@ -306,13 +306,22 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
   .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;
     font-size: var(--cc-small);}
   .stApp .cc-act th {letter-spacing: 0; font-size: var(--cc-th);}
-  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;
-    white-space: normal;}
+  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;}
 }
 /* Ranked table: the Action column gets about a third of the width
-   and wraps; headers may wrap so the other columns can be narrower. */
+   and wraps; headers may wrap so the other columns can be narrower.
+   Header text follows its column (numbers right, text left); every
+   cell sits at the top of its row. The Final label pill never wraps
+   ("Pause or review" stays on one line), so its column takes the
+   width it needs. */
 .stApp .cc-act th {white-space: normal; vertical-align: bottom;}
+.stApp .cc-act td {vertical-align: top;}
+.stApp .cc-act .lab, .stApp .cc-act .lab .cc-pill {white-space: nowrap;}
 .cc-table .act {width: 32%; white-space: normal; overflow-wrap: anywhere;}
+.cc-act-detail {font-size: var(--cc-small); color: #7A6B5F;
+  margin-top: 2px; line-height: 1.35;}
+.cc-table .cc-ended {color: #7A6B5F;}
+
 
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
@@ -527,40 +536,61 @@ def _fmt(value, pattern):
 def _action_html(table):
     """The ranked action table as HTML.
 
-    The label cell is a pill (tint, left border and text).
-    The Action column is about a third of the table and shows its
-    full text, wrapped onto as many lines as it needs.
+    Numeric columns (#, Ratio, Tracked actions) are right-aligned,
+    text columns left-aligned; every cell sits at the top of its
+    row. The label cell is a pill that never wraps. Status: "Ended"
+    in the secondary colour. Trend: "—" when not active, "Worsening"
+    in bold. Action: the headline (up to the first "; ") on line 1,
+    the detail smaller and grey on line 2. The label period is
+    written "31 May – 13 Jul 2026". All of it is display only.
     """
-    head = ("<tr><th>#</th><th>Campaign</th><th>Final label</th>"
+    head = ("<tr><th class='n'>#</th><th>Campaign</th>"
+            "<th class='lab'>Final label</th>"
             "<th>Status</th><th class='n'>Ratio</th>"
             "<th class='n'>Tracked actions</th><th>Trend</th>"
             "<th class='act'>Action</th><th>Label period</th></tr>")
     body = []
     for _, row in table.iterrows():
-        action = html.escape(_readable(row["action"], keep=True))
+        headline, detail = dashboard_data.split_action(row["action"])
+        action = html.escape(headline or "—")
+        if detail:
+            action += (f"<div class='cc-act-detail'>{html.escape(detail)}"
+                       "</div>")
+        status = dashboard_data.status_text(row["status_now"])
+        status_cls = " class='cc-ended'" if status == "Ended" else ""
+        trend = html.escape(dashboard_data.trend_text(row["recent_trend"]))
+        if trend == "Worsening":
+            trend = f"<b>{trend}</b>"
+        period = _period_html(dashboard_data.period_text(
+            row["label_period"]))
         body.append(
             "<tr>"
             f"<td class='n'>{int(row['rank'])}</td>"
             f"<td class='cmp'><b>{html.escape(str(row['campaign']))}</b></td>"
-            f"<td>{_pill(row['label'])}</td>"
-            f"<td>{html.escape(_readable(row['status_now']))}</td>"
+            f"<td class='lab'>{_pill(row['label'])}</td>"
+            f"<td{status_cls}>{html.escape(status)}</td>"
             f"<td class='n'>{_fmt(row['ratio_to_benchmark'], '{:.2f}x')}</td>"
             f"<td class='n'>{_fmt(row['tracked_actions'], '{:,.0f}')}</td>"
-            f"<td>{html.escape(_readable(row['recent_trend']))}</td>"
+            f"<td>{trend}</td>"
             f"<td class='act'>{action}</td>"
-            f"<td class='per'>{_period_html(row['label_period'])}</td>"
+            f"<td class='per'>{period}</td>"
             "</tr>")
     return (f"<div class='cc-scroll'><table class='cc-table cc-act'>"
             f"<thead>{head}</thead><tbody>{''.join(body)}</tbody>"
             "</table></div>")
 
 
-def _period_html(period):
-    """"start to end" on two lines, so dates never break inside."""
-    if not period:
+def _period_html(text):
+    """A formatted period that may break only after its en dash
+    ("31 May –" / "13 Jul 2026" on a narrow screen), never inside a
+    date. "—" when there is no period."""
+    if not text:
         return "—"
-    return "<br>".join(f"<span class='nw'>{html.escape(part)}</span>"
-                       for part in str(period).split(" to ", 1))
+    first, sep, last = text.partition(" – ")
+    if not sep:
+        return f"<span class='nw'>{html.escape(text)}</span>"
+    return (f"<span class='nw'>{html.escape(first)} –</span> "
+            f"<span class='nw'>{html.escape(last)}</span>")
 
 
 def _readable(value, keep=False):
@@ -695,7 +725,7 @@ def _page_act(ctx):
 
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
     table = dashboard_data.action_table(view, tables["recent_trend"])
-    left, right = st.columns([1.45, 1])
+    left, right = st.container(key="cc_act_row1").columns([1.85, 1])
     with _box(left):
         show_hidden = st.checkbox(
             "Also show insufficient data / not judged campaigns",
@@ -709,7 +739,8 @@ def _page_act(ctx):
             st.markdown(_action_html(table), unsafe_allow_html=True)
             st.caption("Pause or review first, then test, then continue; "
                        "within a label, the highest ratio to the "
-                       "benchmark first.")
+                       "benchmark first. — = no recent trend: the "
+                       "campaign is not active.")
             picks = st.columns([3, 1, 1], vertical_alignment="bottom")
             campaign = picks[0].selectbox(
                 "Campaign", list(table["campaign"]), key=_ckey("act_pick"))
@@ -1433,7 +1464,7 @@ def _page_detail(ctx):
                f"<div style='margin-top:6px'>{_badge(detail['label'])}"
                "</div>",
                f"From {detail['label_from'].replace('_', ' ')}"
-               + (f", {detail['label_period']}"
+               + (f", {dashboard_data.period_text(detail['label_period'])}"
                   if detail["label_period"] else ""))
     _stat_tile(tiles[1], "Status now",
                "<div class='cc-stat-v'>" + html.escape(

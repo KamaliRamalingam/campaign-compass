@@ -21,6 +21,7 @@ filter, sort, join on campaign or run number, and rename for
 display.
 """
 
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -559,6 +560,71 @@ def _period(start, end):
     if start is None or end is None or pd.isna(start) or pd.isna(end):
         return ""
     return f"{start} to {end}"
+
+
+def format_period(start, end):
+    """A period for display: "31 May – 13 Jul 2026", or with
+    different years "18 Nov 2025 – 14 Jul 2026" (en dash, English
+    month abbreviations, no leading zeros). Missing start or end
+    gives "", as _period does. Display only: CSV downloads and
+    tables with separate Start and End columns keep ISO dates.
+    """
+    if _period(start, end) == "":
+        return ""
+    first = pd.Timestamp(start)
+    last = pd.Timestamp(end)
+    if first.year == last.year:
+        return f"{first.day} {first:%b} – {_day(last)}"
+    return f"{_day(first)} – {_day(last)}"
+
+
+def period_text(period):
+    """format_period of an ISO "start to end" text ("" stays "")."""
+    if period is None or (not isinstance(period, str) and pd.isna(period)):
+        return ""
+    parts = str(period).split(" to ", 1)
+    if len(parts) != 2:
+        return str(period)
+    return format_period(*parts)
+
+
+_ISO_PERIOD = re.compile(r"\((\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\)")
+
+
+def split_action(text):
+    """(headline, detail) of an action text, split at the first "; ".
+
+    The headline gets a capital first letter; the detail is "" when
+    there is no "; ". Dates written "(2025-06-06 to 2025-10-04)" in
+    the detail become format_period text without the brackets.
+    Display only: the action text in the data is not changed.
+    """
+    if text is None or (not isinstance(text, str) and pd.isna(text)):
+        return "", ""
+    head, _, detail = str(text).partition("; ")
+    detail = _ISO_PERIOD.sub(
+        lambda match: format_period(match.group(1), match.group(2)),
+        detail)
+    return capitalise_first(head.strip()), detail.strip()
+
+
+def status_text(status):
+    """"Active" / "Ended" (underscores to spaces), "—" for missing."""
+    if status is None or (not isinstance(status, str) and pd.isna(status)) \
+            or str(status).strip() == "":
+        return MISSING
+    return capitalise_first(str(status).replace("_", " "))
+
+
+def trend_text(trend):
+    """The Act table's trend: "—" when the campaign is not active or
+    the value is empty, otherwise capitalised ("Worsening")."""
+    if trend is None or (not isinstance(trend, str) and pd.isna(trend)):
+        return MISSING
+    value = str(trend).strip()
+    if value in ("", "not_active", "not active"):
+        return MISSING
+    return capitalise_first(value.replace("_", " "))
 
 
 def summary_rows(recommendations, recent_trend, show_hidden=False,

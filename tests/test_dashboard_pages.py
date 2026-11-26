@@ -452,3 +452,52 @@ def test_journey_takeaway_weights_by_tracked_actions():
         "requests and 25% are calls.")
     assert dd.journey_takeaway(journey.iloc[:0]) == (
         "No tracked actions to split by type.")
+
+
+def test_format_period_same_and_different_years():
+    assert dd.format_period("2026-05-31", "2026-07-13") == \
+        "31 May – 13 Jul 2026"
+    assert dd.format_period("2025-11-18", "2026-07-14") == \
+        "18 Nov 2025 – 14 Jul 2026"
+    assert dd.format_period("2026-01-05", "2026-01-09") == \
+        "5 Jan – 9 Jan 2026"
+
+
+def test_format_period_missing_end_uses_the_fallback():
+    """A missing date gives "", as _period does (shown as "—")."""
+    assert dd.format_period("2026-05-31", None) == ""
+    assert dd.format_period(None, "2026-05-31") == ""
+    assert dd.format_period("2026-05-31", float("nan")) == ""
+    assert dd.period_text("") == ""
+    assert dd.period_text(None) == ""
+    assert dd.period_text("2026-05-31 to 2026-07-13") == \
+        "31 May – 13 Jul 2026"
+
+
+def test_split_action_headline_and_detail():
+    assert dd.split_action("keep running") == ("Keep running", "")
+    assert dd.split_action(
+        "keep running, but test changes; cost has risen; check it") == (
+        "Keep running, but test changes", "cost has risen; check it")
+    assert dd.split_action(
+        "restart only with changes; best run was run 2 "
+        "(2025-06-06 to 2025-10-04)") == (
+        "Restart only with changes",
+        "best run was run 2 6 Jun – 4 Oct 2025")
+    assert dd.split_action(None) == ("", "")
+
+
+def test_trend_text_dash_and_capitalised():
+    assert dd.trend_text("not_active") == "—"
+    assert dd.trend_text("") == "—"
+    assert dd.trend_text(None) == "—"
+    assert dd.trend_text(float("nan")) == "—"
+    assert dd.trend_text("worsening") == "Worsening"
+    assert dd.trend_text("improving") == "Improving"
+    assert dd.trend_text("stable") == "Stable"
+
+
+def test_status_text_capitalised():
+    assert dd.status_text("ended") == "Ended"
+    assert dd.status_text("active") == "Active"
+    assert dd.status_text(None) == "—"
