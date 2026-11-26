@@ -802,11 +802,7 @@ def _page_act(ctx):
                 st.plotly_chart(charts.ratio_bar(bars, lines, currency),
                                 width="stretch", key="act_ratio",
                                 config={"displayModeBar": False})
-                st.caption("Same order as the table. Dashed lines: the "
-                           "continue and test limits from the config. A bar "
-                           "past the edge (▶) has its value written. "
-                           "\"worsening\": the label comes from the trend "
-                           "override.")
+                st.caption(dashboard_data.ratio_note(lines, bars))
         _not_comparable(ctx)
 
     # Row 2: how to read this, full width.

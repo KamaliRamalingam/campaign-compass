@@ -923,8 +923,8 @@ def ratio_bar_rows(table, recommendations, cap=2.5):
     campaign with a ratio to the benchmark. shown is the ratio cut
     at cap (the axis edge), over is True when the ratio is above
     it (the real value is written on the bar). worsening is True
-    when the label comes from the trend override (trend_override
-    is set in recommendations_by_campaign.csv).
+    when the campaign's recent trend is worsening (the table's
+    recent_trend).
     """
     columns = ["campaign", "label", "label_text", "colour", "ratio",
                "shown", "over", "worsening", "label_period",
@@ -935,18 +935,12 @@ def ratio_bar_rows(table, recommendations, cap=2.5):
     part = part.dropna(subset=["ratio"])
     if part.empty:
         return pd.DataFrame(columns=columns)
-    override = {}
-    if "trend_override" in recommendations.columns:
-        for name, value in zip(recommendations["campaign"],
-                               recommendations["trend_override"]):
-            override[name] = (value is not None and not pd.isna(value)
-                              and str(value).strip() != "")
     part["label_text"] = part["label"].map(label_text)
     part["colour"] = part["label"].map(label_colour)
     part["shown"] = part["ratio"].clip(upper=cap)
     part["over"] = part["ratio"] > cap
-    part["worsening"] = [override.get(name, False)
-                         for name in part["campaign"]]
+    part["worsening"] = part["recent_trend"].astype(str).eq("worsening") \
+        if "recent_trend" in part.columns else False
     return part[columns].reset_index(drop=True)
 
 
@@ -1367,6 +1361,38 @@ def reference_lines(config, benchmark):
         lines.append((f"{name} {float(ratio):.1f}x", float(ratio),
                       float(benchmark) * float(ratio)))
     return lines
+
+
+def _ratio_text(value):
+    """A dashed line's ratio in words: "1.0x" -> "the average",
+    "2.0x" -> "twice the average", otherwise "1.5x the average"."""
+    if round(value, 6) == 1.0:
+        return "the average"
+    if round(value, 6) == 2.0:
+        return "twice the average"
+    return f"{value:.1f}x the average"
+
+
+def ratio_note(lines, rows):
+    """The note under the Act ratio chart.
+
+    lines: reference_lines (the dashed lines are the config's
+    continue and test ratios); rows: ratio_bar_rows. The "▶"
+    sentence only when a bar passes the axis, the "Worsening"
+    sentence only when a campaign in the chart is worsening.
+    """
+    ratios = []
+    for _name, ratio, _value in lines[1:] or lines[:1]:
+        if round(ratio, 6) not in [round(r, 6) for r in ratios]:
+            ratios.append(ratio)
+    parts = [f"{ratio:.1f}x = {_ratio_text(ratio)}" for ratio in ratios]
+    note = f"Dashed lines: {', '.join(parts)}."
+    if rows is not None and len(rows) and bool(rows["over"].any()):
+        note += " ▶ = the bar continues past the chart."
+    if rows is not None and len(rows) and bool(rows["worsening"].any()):
+        note += (" Worsening = cost rising recently, so the label moved "
+                 "down.")
+    return note
 
 
 def action_table(recommendations, recent_trend=None):
