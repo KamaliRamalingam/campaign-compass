@@ -303,6 +303,10 @@ def test_act_layout_totals_strip_and_not_comparable(client):
     assert page.index("<div class='cc-tiles'>") < \
         page.index("<div class='cc-totals'>")
     assert "Total ad spend of the " in page
+    captions = " ".join(block.value for block in script.caption)
+    assert ("Sorted by decision: Pause or review, then Test, then "
+            "Continue; the highest ratio first within each. \"—\" = no "
+            "recent trend (the campaign is not active).") in captions
     labels = [block.label for block in script.expander]
     assert "Totals and benchmark" not in labels
     assert labels[-1] == "How to read this"
@@ -315,7 +319,7 @@ def test_act_layout_totals_strip_and_not_comparable(client):
     assert nc == ([f"Not comparable ({count})"] if count else [])
     if count:
         assert "Action:" not in page and "leave-one-out" not in page
-        assert "Not in the chart or the ranking" in page
+        assert "Shown separately: not in the chart or the ranking." in page
 
 
 def test_expander_titles_card_style_top_level_only():

@@ -686,12 +686,9 @@ def _totals_strip_html(kpi, currency):
 def _not_comparable(ctx):
     """The Not comparable card (an expander) under the chart, or
     nothing when the client has no not-comparable campaign."""
-    names = ctx["group_names"]
-    _judged, bench = dashboard_data.scope_groups(
-        ctx["config"], ctx["tables"]["benchmarks"])
+    kpi = dashboard_data.kpi_values(ctx["tables"]["benchmarks"])
     lines = dashboard_data.not_comparable_lines(
-        ctx["all_recommendations"], names,
-        dashboard_data.names_and([names.get(g, g) for g in bench]),
+        ctx["all_recommendations"], ctx["group_names"], kpi["benchmark"],
         ctx["currency"])
     if not lines:
         return
@@ -759,10 +756,10 @@ def _page_act(ctx):
             st.info("No campaign matches the filters.")
         else:
             st.markdown(_action_html(table), unsafe_allow_html=True)
-            st.caption("Pause or review first, then test, then continue; "
-                       "within a label, the highest ratio to the "
-                       "benchmark first. — = no recent trend: the "
-                       "campaign is not active.")
+            st.caption("Sorted by decision: Pause or review, then Test, "
+                       "then Continue; the highest ratio first within "
+                       "each. \"—\" = no recent trend (the campaign is "
+                       "not active).")
             picks = st.columns([3, 1, 1], vertical_alignment="bottom")
             campaign = picks[0].selectbox(
                 "Campaign", list(table["campaign"]), key=_ckey("act_pick"))
