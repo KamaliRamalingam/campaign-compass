@@ -328,7 +328,7 @@ def test_expander_titles_card_style_top_level_only():
     import app
 
     assert (".stMain [data-testid=\"stExpander\"] summary p\n"
-            "  {font-size: var(--cc-card-title); font-weight: 600; "
+            "  {font-size: var(--cc-card-title); font-weight: 700; "
             "color: #3B2F2A;}") in app.STYLE
     assert ".stMain [data-testid=\"stExpanderDetails\"] " \
            "[data-testid=\"stExpander\"]\n  summary p," in app.STYLE
