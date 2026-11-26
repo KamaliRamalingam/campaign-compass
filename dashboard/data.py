@@ -334,6 +334,15 @@ def group_text(value, names):
     return " + ".join(names.get(part, part) for part in parts)
 
 
+def names_and(parts):
+    """["A"] -> "A", ["A", "B"] -> "A and B", ["A", "B", "C"] ->
+    "A, B and C"."""
+    parts = [str(part) for part in parts]
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
 def journey_pool_label(config, names):
     """Readable name of the journey's pooled row.
 
@@ -670,15 +679,6 @@ def summary_rows(recommendations, recent_trend, show_hidden=False,
         ["status_now", "campaign"]).reset_index(drop=True)
 
 
-def not_comparable_rows(recommendations):
-    """Campaigns labelled not_comparable, with reason and action."""
-    part = recommendations.loc[
-        recommendations["label"] == NOT_COMPARABLE]
-    return part[["campaign", "group", "status_now", "reason",
-                 "action_text"]].sort_values(
-        "campaign").reset_index(drop=True)
-
-
 def kpi_values(benchmarks):
     """KPI tile values, read from benchmarks.csv.
 
@@ -721,17 +721,80 @@ def too_little_data_count(recommendations, groups):
     return int((part["label"] == "insufficient_data").sum())
 
 
-def totals_scope_text(campaigns, judged_groups, too_little,
-                      benchmark_groups):
-    """The "Totals and benchmark" sentence: both scopes.
+def totals_strip_items(kpi, currency):
+    """The Act page's totals strip: [(name, value, caption)] for
+    spend, tracked actions, cost per tracked action and benchmark,
+    from kpi_values (benchmarks.csv). The benchmark caption names
+    the leave-one-out range only when leave-one-out is used."""
+    bench = "The average that campaigns are compared with"
+    if kpi.get("leave_one_out") and kpi.get("loo_min") is not None:
+        bench += (f" ({kpi['loo_min']:,.2f} to {kpi['loo_max']:,.2f} "
+                  f"{currency}, depending on which campaign is left out)")
+    return [
+        ("Spend", f"{kpi['spend']:,.0f} {currency}",
+         f"Total ad spend of the {kpi['judged_campaigns']} campaigns."),
+        ("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+         "Directions requests and calls counted by Google Ads."),
+        ("Cost per tracked action",
+         f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+         "Spend divided by tracked actions."),
+        ("Benchmark", f"{kpi['benchmark']:,.2f} {currency}", bench + "."),
+    ]
 
-    "has" when one campaign has too little data, "have" otherwise.
+
+# "cost per tracked action is 177.90" in a recommendation reason.
+REASON_COST = re.compile(r"cost per tracked action is ([\d,]+(?:\.\d+)?)")
+
+
+def reason_cost(reason):
+    """The cost per tracked action written in a reason, or None."""
+    if reason is None or (not isinstance(reason, str) and pd.isna(reason)):
+        return None
+    match = REASON_COST.search(str(reason))
+    if not match:
+        return None
+    return float(match.group(1).replace(",", ""))
+
+
+NOT_COMPARABLE_INTRO = ("Not in the chart or the ranking: these are "
+                        "judged against their own history, not the "
+                        "benchmark.")
+
+
+def not_comparable_lines(recommendations, names, benchmark_name,
+                         currency):
+    """The Act page's Not comparable card, one dict per campaign.
+
+    name: the campaign; sub: "{group display name} · {Status}";
+    cost: "{value} {currency} per tracked action. ..." with "A
+    different kind of campaign, so it isn't compared with the
+    {benchmark_name} benchmark." for Performance Max and "Not
+    comparable with the {benchmark_name} benchmark." for any other
+    group. The cost comes from label_cost_per_tracked_action, or
+    else from the reason text; without either the cost sentence is
+    left out. Display only: the data is not changed.
     """
-    verb = "has" if too_little == 1 else "have"
-    return (f"Totals cover {campaigns} campaigns in the groups "
-            f"{', '.join(judged_groups)} ({too_little} of them {verb} "
-            f"too little data for a label). The benchmark is built from "
-            f"group(s) {', '.join(benchmark_groups)} only.")
+    rows = recommendations.loc[
+        recommendations["label"] == NOT_COMPARABLE].sort_values("campaign")
+    out = []
+    for _, row in rows.iterrows():
+        group = str(row.get("group", ""))
+        group_name = (names or {}).get(group, group)
+        cost = row.get("label_cost_per_tracked_action")
+        if cost is None or pd.isna(cost):
+            cost = reason_cost(row.get("reason"))
+        if "performance max" in group_name.lower():
+            why = (f"A different kind of campaign, so it isn't compared "
+                   f"with the {benchmark_name} benchmark.")
+        else:
+            why = f"Not comparable with the {benchmark_name} benchmark."
+        text = (f"{float(cost):,.2f} {currency} per tracked action. {why}"
+                if cost is not None else why)
+        out.append({"name": str(row["campaign"]),
+                    "sub": f"{group_name} · "
+                           f"{status_text(row.get('status_now'))}",
+                    "cost": text})
+    return out
 
 
 def scope_groups(config, benchmarks=None):

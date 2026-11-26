@@ -204,14 +204,31 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .cc-stat-title {font-size: var(--cc-label); font-weight: 600;}
 .cc-stat-v {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;
   margin-top: 4px; color: #254C31;}
-.cc-kpis {display: grid; grid-template-columns: 1fr 1fr;
-  gap: var(--cc-gap); margin-bottom: var(--cc-gap);}
-.cc-kpi {background: #FBF6EE; border: 1px solid #EADFCF;
-  border-radius: 8px; padding: calc(10px * var(--cc-pad-k))
-  calc(12px * var(--cc-pad-k));}
-.cc-kpi-l {font-size: var(--cc-small); font-weight: 600; color: #3B2F2A;}
-.cc-kpi-v {font-size: var(--cc-kpi); font-weight: 600; line-height: 1.25;
-  margin: 4px 0; overflow-wrap: anywhere; color: #254C31;}
+/* Act totals strip: one white bar, four items with thin dividers,
+   2 x 2 below about 1100px. */
+.cc-totals {display: grid; grid-template-columns: repeat(4, 1fr);
+  background: #FFFFFF; border: 1px solid #EADFCF; border-radius: 8px;
+  margin-bottom: var(--cc-gap); box-sizing: border-box;}
+.cc-tot {padding: calc(10px * var(--cc-pad-k)) var(--cc-pad-x);
+  border-left: 1px solid #EADFCF; min-width: 0;}
+.cc-tot:first-child {border-left: 0;}
+.cc-tot-l {font-size: var(--cc-small); font-weight: 600; color: #3B2F2A;}
+.cc-tot-v {font-size: var(--cc-kpi); font-weight: 600; line-height: 1.25;
+  color: #254C31; margin: 2px 0;}
+.cc-tot-c {font-size: var(--cc-small); color: #7A6B5F; line-height: 1.35;}
+@media (max-width: 1100px) {
+  .cc-totals {grid-template-columns: 1fr 1fr;}
+  .cc-tot:nth-child(3) {border-left: 0;}
+  .cc-tot:nth-child(n+3) {border-top: 1px solid #EADFCF;}
+}
+/* Not comparable card: bold name, then two small grey lines. */
+.cc-nc {margin-top: 8px;}
+.cc-nc-sub {font-size: var(--cc-small); color: #7A6B5F; line-height: 1.35;
+  margin-top: 1px;}
+/* How to read this: bullets in two columns where the width allows. */
+.cc-foot-2 ul {columns: 2; column-gap: 32px;}
+.cc-foot-2 li {break-inside: avoid;}
+@media (max-width: 900px) {.cc-foot-2 ul {columns: 1;}}
 .cc-card-title {font-size: var(--cc-card-title); font-weight: 600;
   margin: 0 0 4px; color: #3B2F2A;}
 /* The Act-page filter labels (Campaign group, Status now, Minimum
@@ -431,18 +448,6 @@ def _box(parent):
     return parent.container(border=True, key=f"card_{_BOX_COUNT[0]}")
 
 
-def _kpi_grid(cards):
-    """KPI cards (label, value, definition) in a 2-column grid with
-    12px gaps; values wrap, never cut."""
-    items = "".join(
-        f"<div class='cc-kpi'><div class='cc-kpi-l'>{html.escape(label)}"
-        f"</div><div class='cc-kpi-v'>{html.escape(value)}</div>"
-        f"<div class='cc-muted'>{html.escape(definition)}</div></div>"
-        for label, value, definition in cards)
-    st.markdown(f"<div class='cc-kpis'>{items}</div>",
-                unsafe_allow_html=True)
-
-
 def _badge(label):
     """A large label badge: tint, strong left border and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
@@ -451,10 +456,11 @@ def _badge(label):
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
 
 
-def _footnotes(lines):
-    """Small grey footnotes under a page."""
+def _footnotes(lines, columns=False):
+    """Small grey footnotes; columns: two columns where wide enough."""
     items = "".join(f"<li>{line}</li>" for line in lines)
-    st.markdown(f"<div class='cc-foot'><ul>{items}</ul></div>",
+    cls = "cc-foot cc-foot-2" if columns else "cc-foot"
+    st.markdown(f"<div class='{cls}'><ul>{items}</ul></div>",
                 unsafe_allow_html=True)
 
 
@@ -678,16 +684,42 @@ def _tiles_html(summary):
     return f"<div class='cc-tiles'>{''.join(tiles)}</div>"
 
 
-def _totals_scope(ctx, kpi):
-    """The two scopes: what the totals cover, what the benchmark uses."""
-    judged, bench = dashboard_data.scope_groups(
-        ctx["config"], ctx["tables"]["benchmarks"])
-    too_little = dashboard_data.too_little_data_count(
-        ctx["all_recommendations"], judged)
+def _totals_strip_html(kpi, currency):
+    """The slim totals strip: one white bar, four items (name, value,
+    one caption) with thin dividers. Values from benchmarks.csv; the
+    filters never change them."""
+    items = "".join(
+        f"<div class='cc-tot'><div class='cc-tot-l'>{html.escape(name)}"
+        f"</div><div class='cc-tot-v'>{html.escape(value)}</div>"
+        f"<div class='cc-tot-c'>{html.escape(caption)}</div></div>"
+        for name, value, caption in
+        dashboard_data.totals_strip_items(kpi, currency))
+    return f"<div class='cc-totals'>{items}</div>"
+
+
+def _not_comparable(ctx):
+    """The Not comparable card (an expander) under the chart, or
+    nothing when the client has no not-comparable campaign."""
     names = ctx["group_names"]
-    return dashboard_data.totals_scope_text(
-        kpi["judged_campaigns"], [names.get(g, g) for g in judged],
-        too_little, [names.get(g, g) for g in bench])
+    _judged, bench = dashboard_data.scope_groups(
+        ctx["config"], ctx["tables"]["benchmarks"])
+    lines = dashboard_data.not_comparable_lines(
+        ctx["all_recommendations"], names,
+        dashboard_data.names_and([names.get(g, g) for g in bench]),
+        ctx["currency"])
+    if not lines:
+        return
+    with st.expander(f"Not comparable ({len(lines)})"):
+        items = "".join(
+            f"<div class='cc-nc'><div class='cc-tile-name'>"
+            f"{html.escape(line['name'])}</div>"
+            f"<div class='cc-nc-sub'>{html.escape(line['sub'])}</div>"
+            f"<div class='cc-nc-sub'>{html.escape(line['cost'])}</div></div>"
+            for line in lines)
+        st.markdown(
+            f"<p class='cc-take'>"
+            f"{html.escape(dashboard_data.NOT_COMPARABLE_INTRO)}</p>{items}",
+            unsafe_allow_html=True)
 
 
 def _page_act(ctx):
@@ -723,7 +755,11 @@ def _page_act(ctx):
     st.markdown(_tiles_html(dashboard_data.act_summary(recs)),
                 unsafe_allow_html=True)
 
+    # Totals strip: all campaigns in the totals, never filtered.
     kpi = dashboard_data.kpi_values(tables["benchmarks"])
+    st.markdown(_totals_strip_html(kpi, currency), unsafe_allow_html=True)
+
+    # Row 1: the table (left); the chart with Not comparable under it.
     table = dashboard_data.action_table(view, tables["recent_trend"])
     left, right = st.container(key="cc_act_row1").columns([1.85, 1])
     with _box(left):
@@ -752,64 +788,30 @@ def _page_act(ctx):
                 dashboard_data.csv_bytes(table.drop(columns=["label"])),
                 file_name="actions.csv", mime="text/csv",
                 key="act_download", width="stretch")
-    with _box(right):
-        _card_title("Ratio to benchmark (cost per tracked action)")
-        bars = dashboard_data.ratio_bar_rows(table, recs,
-                                             cap=charts.RATIO_CAP)
-        if bars.empty:
-            st.info("No judged campaign with a ratio matches the "
-                    "filters.")
-        else:
-            lines = dashboard_data.reference_lines(
-                ctx["config"], kpi["benchmark"])
-            st.plotly_chart(charts.ratio_bar(bars, lines, currency),
-                            width="stretch", key="act_ratio",
-                            config={"displayModeBar": False})
-            st.caption("Same order as the table. Dashed lines: the "
-                       "continue and test limits from the config. A bar "
-                       "past the edge (▶) has its value written. "
-                       "\"worsening\": the label comes from the trend "
-                       "override.")
+    with right:
+        with _box(st):
+            _card_title("Ratio to benchmark (cost per tracked action)")
+            bars = dashboard_data.ratio_bar_rows(table, recs,
+                                                 cap=charts.RATIO_CAP)
+            if bars.empty:
+                st.info("No judged campaign with a ratio matches the "
+                        "filters.")
+            else:
+                lines = dashboard_data.reference_lines(
+                    ctx["config"], kpi["benchmark"])
+                st.plotly_chart(charts.ratio_bar(bars, lines, currency),
+                                width="stretch", key="act_ratio",
+                                config={"displayModeBar": False})
+                st.caption("Same order as the table. Dashed lines: the "
+                           "continue and test limits from the config. A bar "
+                           "past the edge (▶) has its value written. "
+                           "\"worsening\": the label comes from the trend "
+                           "override.")
+        _not_comparable(ctx)
 
-    below = st.columns(3)
-    with below[0]:
-        not_comparable = dashboard_data.with_group_names(
-            dashboard_data.not_comparable_rows(recs), ctx["group_names"])
-        with st.expander(f"Not comparable ({len(not_comparable)})"):
-            st.caption("Judged against their own history, not the "
-                       "benchmark, so they are not in the chart or the "
-                       "ranking.")
-            for _, row in not_comparable.iterrows():
-                st.markdown(
-                    f"<b>{html.escape(str(row['campaign']))}</b> · "
-                    f"{html.escape(str(row['group']))} · "
-                    f"{html.escape(str(row['status_now']))}<br>"
-                    f"{html.escape(str(row['reason']))}<br>"
-                    f"<i>Action:</i> {html.escape(str(row['action_text']))}",
-                    unsafe_allow_html=True)
-    with below[1]:
-        with st.expander("Totals and benchmark"):
-            scope = _totals_scope(ctx, kpi)
-            bench_note = (f"Leave-one-out range {kpi['loo_min']:,.2f} to "
-                          f"{kpi['loo_max']:,.2f}." if kpi["leave_one_out"]
-                          else "Pooled over the benchmark group(s).")
-            _kpi_grid([
-                ("Spend", f"{kpi['spend']:,.0f} {currency}",
-                 "Total spend of the campaigns in the totals."),
-                ("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
-                 "Directions requests and calls the account counts."),
-                ("Cost per tracked action",
-                 f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
-                 "Spend divided by tracked actions."),
-                ("Benchmark", f"{kpi['benchmark']:,.2f} {currency}",
-                 f"What a campaign is compared with. {bench_note}"),
-            ])
-            st.caption(f"{scope} Totals use the whole daily range "
-                       f"(benchmarks.csv); the filters do not change "
-                       f"them.")
-    with below[2]:
-        with st.expander("How to read this"):
-            _footnotes(_act_definitions(ctx, kpi))
+    # Row 2: how to read this, full width.
+    with st.expander("How to read this"):
+        _footnotes(_act_definitions(ctx, kpi), columns=True)
 
 
 # --- Context ------------------------------------------------------

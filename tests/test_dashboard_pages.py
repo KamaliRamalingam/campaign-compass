@@ -88,12 +88,6 @@ def test_summary_rows_group_filter():
     assert dd.group_options(_recs())[0] == dd.ALL_GROUPS
 
 
-def test_not_comparable_rows():
-    rows = dd.not_comparable_rows(_recs())
-    assert list(rows["campaign"]) == ["Pmax"]
-    assert rows.iloc[0]["reason"] == "pmax reason"
-
-
 def test_kpi_values_read_from_benchmarks():
     benchmarks = pd.DataFrame([
         {"variant": "benchmark", "groups": "core", "leave_one_out": True,
@@ -126,23 +120,6 @@ def test_too_little_data_count_only_in_kpi_groups():
     assert dd.too_little_data_count(recs, "core+sep") == 2
     assert dd.too_little_data_count(recs, "core") == 1
     assert dd.too_little_data_count(recs, ["core", "sep"]) == 2
-
-
-def test_totals_scope_text_has_for_one():
-    assert dd.totals_scope_text(5, ["core"], 1, ["core"]) == (
-        "Totals cover 5 campaigns in the groups core (1 of them has too "
-        "little data for a label). The benchmark is built from group(s) "
-        "core only.")
-
-
-def test_totals_scope_text_have_otherwise():
-    text = dd.totals_scope_text(11, ["core", "sep"], 6, ["core"])
-    assert text == (
-        "Totals cover 11 campaigns in the groups core, sep (6 of them "
-        "have too little data for a label). The benchmark is built from "
-        "group(s) core only.")
-    assert "(0 of them have too little data" in \
-        dd.totals_scope_text(3, ["core"], 0, ["core"])
 
 
 def test_scope_groups_from_config_with_fallbacks():
@@ -501,3 +478,85 @@ def test_status_text_capitalised():
     assert dd.status_text("ended") == "Ended"
     assert dd.status_text("active") == "Active"
     assert dd.status_text(None) == "—"
+
+
+KPI = {"judged_campaigns": 11, "spend": 177041.32,
+       "tracked_actions": 35735.83, "cost_per_tracked_action": 4.954168,
+       "benchmark": 4.879686, "leave_one_out": True, "loo_min": 4.04802,
+       "loo_max": 5.157151}
+
+
+def test_totals_strip_items_values_and_captions():
+    items = dd.totals_strip_items(KPI, "SEK")
+    assert items == [
+        ("Spend", "177,041 SEK", "Total ad spend of the 11 campaigns."),
+        ("Tracked actions", "35,736",
+         "Directions requests and calls counted by Google Ads."),
+        ("Cost per tracked action", "4.95 SEK",
+         "Spend divided by tracked actions."),
+        ("Benchmark", "4.88 SEK",
+         "The average that campaigns are compared with (4.05 to 5.16 "
+         "SEK, depending on which campaign is left out)."),
+    ]
+
+
+def test_totals_strip_benchmark_without_leave_one_out():
+    kpi = dict(KPI, leave_one_out=False, loo_min=None, loo_max=None)
+    assert dd.totals_strip_items(kpi, "SEK")[3][2] == (
+        "The average that campaigns are compared with.")
+
+
+def test_reason_cost_regex():
+    assert dd.reason_cost(
+        "group core_pmax is not comparable with the core benchmark "
+        "(leave-one-out); cost per tracked action is 177.90; judge "
+        "against its own history") == 177.90
+    assert dd.reason_cost("cost per tracked action is 1,234.5") == 1234.5
+    assert dd.reason_cost("no figure here") is None
+    assert dd.reason_cost(None) is None
+
+
+def _nc_recs(group, reason, cost=None):
+    return pd.DataFrame([
+        {"campaign": "Pm", "group": group, "label": "not_comparable",
+         "status_now": "ended", "reason": reason,
+         "label_cost_per_tracked_action": cost},
+        {"campaign": "Other", "group": "core", "label": "test",
+         "status_now": "active", "reason": "x",
+         "label_cost_per_tracked_action": 5.0}])
+
+
+def test_not_comparable_lines_performance_max():
+    names = {"core_pmax": "Performance Max", "core": "Core campaigns"}
+    lines = dd.not_comparable_lines(
+        _nc_recs("core_pmax", "cost per tracked action is 177.90; x"),
+        names, "Core campaigns", "SEK")
+    assert lines == [{
+        "name": "Pm", "sub": "Performance Max · Ended",
+        "cost": "177.90 SEK per tracked action. A different kind of "
+                "campaign, so it isn't compared with the Core campaigns "
+                "benchmark."}]
+    assert "leave-one-out" not in str(lines)
+
+
+def test_not_comparable_lines_other_group_field_and_no_cost():
+    names = {"display": "Display", "core": "Core campaigns"}
+    lines = dd.not_comparable_lines(
+        _nc_recs("display", "no figure", cost=12.5), names,
+        "Core campaigns", "SEK")
+    assert lines[0]["cost"] == ("12.50 SEK per tracked action. Not "
+                                "comparable with the Core campaigns "
+                                "benchmark.")
+    lines = dd.not_comparable_lines(
+        _nc_recs("display", "no figure"), names, "Core campaigns", "SEK")
+    assert lines[0]["cost"] == ("Not comparable with the Core campaigns "
+                                "benchmark.")
+    assert dd.not_comparable_lines(
+        _nc_recs("display", "x").iloc[1:], names, "C", "SEK") == []
+
+
+def test_names_and():
+    assert dd.names_and([]) == ""
+    assert dd.names_and(["A"]) == "A"
+    assert dd.names_and(["A", "B"]) == "A and B"
+    assert dd.names_and(["A", "B", "C"]) == "A, B and C"

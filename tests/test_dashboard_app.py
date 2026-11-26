@@ -283,3 +283,36 @@ def test_act_table_label_pill_never_wraps():
     narrow = app.STYLE[app.STYLE.index("@media (max-width: 1500px)"):]
     narrow = narrow[:narrow.index("}\n}") + 3]
     assert "white-space: normal" not in narrow
+
+
+@pytest.mark.parametrize("client", CLIENTS)
+def test_act_layout_totals_strip_and_not_comparable(client):
+    """Act: tiles, then the totals strip; the old Totals box is gone;
+    Not comparable sits in the right column under the chart (only
+    when the client has such campaigns); How to read this is last."""
+    if not _has_outputs(client):
+        pytest.skip(f"no result tables for {client}: run bash run.sh")
+    script = AppTest.from_string(
+        f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+        f"CLIENT = {client!r}\nPAGE = 'act'\n" + PAGE_SCRIPT,
+        default_timeout=60)
+    script.run()
+    assert not script.exception, script.exception
+    page = " ".join(block.value for block in script.markdown)
+    assert "Totals and benchmark" not in page
+    assert page.index("<div class='cc-tiles'>") < \
+        page.index("<div class='cc-totals'>")
+    assert "Total ad spend of the " in page
+    labels = [block.label for block in script.expander]
+    assert "Totals and benchmark" not in labels
+    assert labels[-1] == "How to read this"
+    config = dd.load_config(dd.client_config_path(client))
+    root = dd.client_output_root(client, config)
+    recs = dd.load_tables(config, output_root=root)[
+        "recommendations_by_campaign"]
+    count = int((recs["label"] == "not_comparable").sum())
+    nc = [label for label in labels if label.startswith("Not comparable")]
+    assert nc == ([f"Not comparable ({count})"] if count else [])
+    if count:
+        assert "Action:" not in page and "leave-one-out" not in page
+        assert "Not in the chart or the ranking" in page
