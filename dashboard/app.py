@@ -278,35 +278,37 @@ div[class*="st-key-card_"] {background: #FFFFFF;
   {font-size: var(--cc-card-title); font-weight: 700; line-height: 1.35;
   margin: 0 0 4px; color: #3B2F2A;}
 
-/* Campaign detail rows (cc_detail_*): the columns of a row are one
-   height, and the card, tile or expander in each column fills it, so
-   the shorter side has no blank area under it. Content stays at the
-   top, except the acquisition journey, which is centred when it is
-   the shorter side. The space between rows is the one --cc-gap. */
-div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+/* Equal-height rows (Campaign detail cc_detail_*, Context cc_eq_*):
+   the columns of a row are one height, and the card, tile or
+   expander in each column fills it, so the shorter side has no blank
+   area under it. Content stays at the top, except the acquisition
+   journey, which is centred when it is the shorter side. The space
+   between rows is the one --cc-gap. */
+:is(div[class*="st-key-cc_detail_"], div[class*="st-key-cc_eq_"])
+  > [data-testid="stLayoutWrapper"]
   > [data-testid="stHorizontalBlock"] {align-items: stretch;}
-div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+:is(div[class*="st-key-cc_detail_"], div[class*="st-key-cc_eq_"])
+  > [data-testid="stLayoutWrapper"]
   > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
   {display: flex; flex-direction: column;}
-div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+:is(div[class*="st-key-cc_detail_"], div[class*="st-key-cc_eq_"])
+  > [data-testid="stLayoutWrapper"]
   > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
   > [data-testid="stVerticalBlock"] {flex: 1 1 auto;}
-div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+:is(div[class*="st-key-cc_detail_"], div[class*="st-key-cc_eq_"])
+  > [data-testid="stLayoutWrapper"]
   > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
   > [data-testid="stVerticalBlock"] > *:only-child {flex: 1 1 auto;}
-div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
+:is(div[class*="st-key-cc_detail_"], div[class*="st-key-cc_eq_"])
+  > [data-testid="stLayoutWrapper"]
   > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]
   > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]
   > div[class*="st-key-card_"] {height: 100%;}
 .st-key-cc_detail_tiles [data-testid="stElementContainer"],
 .st-key-cc_detail_tiles .stMarkdown, .st-key-cc_detail_tiles
   [data-testid="stMarkdownContainer"] {height: 100%; margin-bottom: 0;}
+.st-key-cc_detail_tiles .stMarkdown > div {height: 100%;}
 .st-key-cc_detail_tiles .cc-stat {height: 100%; margin-bottom: 0;}
-/* Runs card: the trend table (last block) takes the height left
-   beside the trend chart and scrolls inside it when longer. */
-.st-key-cc_detail_main [data-testid="stColumn"]:first-child
-  div[class*="st-key-card_"] > :last-child:has([data-testid="stExpander"])
-  {flex: 1 1 0; min-height: 220px; overflow-y: auto;}
 .st-key-cc_detail_more [data-testid="stExpander"],
 .st-key-cc_detail_more [data-testid="stExpander"] > details[open]
   {height: 100%;}
@@ -354,6 +356,8 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
+/* A small table (few columns, few rows) is as wide as its content. */
+.stApp .cc-table.cc-narrow {width: auto; min-width: 360px;}
 .cc-table .cc-key {font-size: var(--cc-t-cap); color: #7A6B5F;}
 .cc-table .cmp {min-width: 7.5em;}
 /* Narrower windows: the ranked table gets compact so it fits its
@@ -538,7 +542,8 @@ def _open_detail(campaign):
     st.switch_page(PAGE_OBJECTS["Campaign detail"])
 
 
-def _html_table(table, column_config=None, formats=None, muted=()):
+def _html_table(table, column_config=None, formats=None, muted=(),
+                narrow=False):
     """A table as escaped HTML that fits its card.
 
     Headers wrap, every column stays visible (a horizontal scroll
@@ -574,13 +579,15 @@ def _html_table(table, column_config=None, formats=None, muted=()):
             for column, value, pattern, is_number in zip(
                 columns, row, patterns, numeric))
         body.append(f"<tr>{cells}</tr>")
-    return (f"<div class='cc-scroll'><table class='cc-table cc-tight'>"
+    extra = " cc-narrow" if narrow else ""
+    return (f"<div class='cc-scroll'><table class='cc-table cc-tight{extra}'>"
             f"<thead><tr>{head}</tr></thead>"
             f"<tbody>{''.join(body)}</tbody></table></div>")
 
 
 def _table(table, file_name=None, column_config=None, key=None,
-           height="auto", hide=(), display=None, formats=None, muted=()):
+           height="auto", hide=(), display=None, formats=None, muted=(),
+           narrow=False):
     """A table as escaped HTML, with a CSV download of the raw table.
 
     The download is the table's raw values (no display rounding) and
@@ -601,8 +608,8 @@ def _table(table, file_name=None, column_config=None, key=None,
     if shown is None or shown.empty:
         st.caption("No rows.")
     else:
-        st.markdown(_html_table(shown, column_config, formats, muted),
-                    unsafe_allow_html=True)
+        st.markdown(_html_table(shown, column_config, formats, muted,
+                                narrow), unsafe_allow_html=True)
     if file_name:
         st.download_button(
             "Download CSV", dashboard_data.csv_bytes(table),
@@ -1117,7 +1124,7 @@ def _completeness(ctx, campaign):
         st.caption("Tracked actions can arrive days late. The lag check "
                    "reruns the recent signals with other lags and counts "
                    "what changes.")
-        _table(summary, "lag_check_summary.csv", key="ctx_lag",
+        _table(summary, "lag_check_summary.csv", key="ctx_lag", narrow=True,
                column_config={
                    "lag": NUM("Lag (days)", format="%d"),
                    "trend_changes": NUM("Trend changes", format="%d"),
@@ -1255,11 +1262,15 @@ def _context_method(ctx, expanded=False):
                    f"(labels before the trend override).")
         unstable = sensitivity[~sensitivity["label_stable"].astype(bool)]
         if not unstable.empty:
-            st.markdown("**Labels that move**")
-            _table(unstable, None, key="ctx_sensitivity_unstable",
-                   display=dashboard_data.sensitivity_display(
-                       unstable, ctx["group_names"]),
-                   formats=dashboard_data.SENSITIVITY_FORMATS)
+            moving = unstable["campaign"].nunique()
+            _takeaway(f"{moving} campaign{'s' if moving != 1 else ''} "
+                      f"change{'' if moving != 1 else 's'} label in some "
+                      f"threshold combination.")
+            with st.expander("Labels that move"):
+                _table(unstable, None, key="ctx_sensitivity_unstable",
+                       display=dashboard_data.sensitivity_display(
+                           unstable, ctx["group_names"]),
+                       formats=dashboard_data.SENSITIVITY_FORMATS)
         with st.expander(f"Show all {len(sensitivity)} rows"):
             _table(sensitivity, "recommendation_sensitivity.csv",
                    key="ctx_sensitivity",
@@ -1286,6 +1297,10 @@ def _context_method(ctx, expanded=False):
             lambda g: dashboard_data.ACTION_GROUP_TEXT.get(g, g))
         st.caption(dashboard_data.what_counts_caption(
             mix, ctx["optional"].get("conversion_mix_by_campaign_month")))
+        show_zero = st.checkbox("Show zero rows", value=False,
+                                key="ctx_conversion_zero")
+        if not show_zero:
+            display = display.loc[display["Tracked actions"] != 0]
         _table(raw, "tracked_actions_by_action.csv",
                key="ctx_conversion", display=display,
                column_config={"Action": WIDE("Action", width="large")})
@@ -1307,12 +1322,12 @@ def _page_context(ctx):
     _heading("Context", "Can we trust these labels, and when should we "
              "run campaigns?", ctx)
     pooled, rows, span = _weekday_parts(ctx)
-    top = st.columns(2)
+    top = st.container(key="cc_eq_ctx_top").columns(2)
     with _box(top[0]):
         _card_recent(ctx)
     with _box(top[1]):
         _card_weekday(ctx, pooled)
-    bottom = st.columns(2)
+    bottom = st.container(key="cc_eq_ctx_bottom").columns(2)
     with _box(bottom[0]):
         _card_what_if(ctx, rows, span)
     with _box(bottom[1]):
@@ -1369,11 +1384,11 @@ def _detail_trend(ctx, campaign):
     if view == "Monthly":
         table = dashboard_data.trend_with_flags(
             tables["timeline_by_campaign"], campaign)
-        x_field, x_title, key = "month", "Month", "month"
+        x_field, key = "month", "month"
     else:
         table = dashboard_data.weekly_for_campaign(
             tables["weekly_by_campaign"], campaign)
-        x_field, x_title, key = "week_start", "Week starting", "week"
+        x_field, key = "week_start", "week"
     if table.empty:
         st.caption("No monthly or weekly rows: the trend tables cover "
                    "the time groups in the config.")
@@ -1391,7 +1406,7 @@ def _detail_trend(ctx, campaign):
                                 f"detail_period_{key}", default=default)
     table = dashboard_data.filter_period(table, x_field, start, end)
     st.plotly_chart(charts.trend_line(
-        table, x_field, x_title, currency,
+        table, x_field, None, currency,
         freq="MS" if x_field == "month" else "W-MON"),
         width="stretch", key=f"detail_trend_{key}")
     if "month_note" in table.columns:
@@ -1404,10 +1419,8 @@ def _detail_trend(ctx, campaign):
 
 
 def _trend_table(trend, campaign):
-    """The monthly or weekly table of the trend card, in an expander
-    under the runs, open: it fills the space beside the trend chart
-    and scrolls inside it when it is longer (see STYLE), so the two
-    columns end level."""
+    """The monthly or weekly table of the trend card ("Monthly
+    figures"), in a collapsed expander under the runs."""
     if trend is None:
         return
     view, table, key = trend
@@ -1415,7 +1428,7 @@ def _trend_table(trend, campaign):
     shown = (dashboard_data.month_table_display(table, currency)
              if key == "month" else
              dashboard_data.week_table_display(table, currency))
-    with st.expander(f"{view} table", expanded=True):
+    with st.expander(f"{view} figures"):
         _table(table, f"{key}ly_{campaign}.csv",
                key=f"detail_trend_table_{key}", display=shown,
                formats=dashboard_data.TREND_TABLE_FORMATS)
@@ -1574,7 +1587,9 @@ def _page_detail(ctx):
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
-    tiles = st.container(key="cc_detail_tiles").columns(4)
+    # Five tiles: the Action sits in the tile row (wider), so it has
+    # no card of its own with blank space beside the reasons.
+    tiles = st.container(key="cc_detail_tiles").columns([1, 1, 1, 1, 1.6])
     _stat_tile(tiles[0], "Final label",
                f"<div style='margin-top:6px'>{_badge(detail['label'])}"
                "</div>",
@@ -1598,16 +1613,13 @@ def _page_detail(ctx):
                "Cost per tracked action in the label period / its "
                "benchmark.")
 
-    action, why = st.container(key="cc_detail_reasons").columns([1, 1.6])
-    with _box(action):
-        _card_title("Action")
-        headline, extra = dashboard_data.split_action(detail["action"])
-        st.markdown(
-            f"<p style='font-weight:600;margin:0'>"
-            f"{html.escape(headline or '—')}</p>"
-            + (f"<div class='cc-act-detail'>{html.escape(extra)}</div>"
-               if extra else ""), unsafe_allow_html=True)
-    with _box(why):
+    headline, extra = dashboard_data.split_action(detail["action"])
+    _stat_tile(tiles[4], "Action",
+               f"<div style='font-weight:600;margin-top:6px'>"
+               f"{html.escape(headline or '—')}</div>"
+               + (f"<div class='cc-act-detail'>{html.escape(extra)}</div>"
+                  if extra else ""))
+    with _box(st):
         _card_title("Why this label")
         st.markdown("".join(
             f"<p class='cc-take' style='margin:0 0 2px'>{html.escape(line)}"
@@ -1628,7 +1640,6 @@ def _page_detail(ctx):
     runs, trend = st.container(key="cc_detail_main").columns([1.2, 1])
     with _box(trend):
         _card_title("Trend")
-        st.caption(f"Cost per tracked action ({currency})")
         shown = _detail_trend(ctx, campaign)
     with _box(runs):
         _runs_card(ctx, campaign)

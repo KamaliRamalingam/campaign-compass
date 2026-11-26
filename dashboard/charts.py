@@ -9,6 +9,7 @@ named in text, never shown by colour alone.
 
 import html
 
+import pandas as pd
 import plotly.graph_objects as go
 
 import data as dashboard_data
@@ -184,12 +185,22 @@ def trend_line(table, x_field, x_title, currency, height=360,
             fig.add_trace(go.Scatter(
                 x=flagged["period_date"],
                 y=flagged["cost_per_tracked_action"],
-                mode="markers+text", name="Partial or lagged month",
-                text=flagged["month_note"], textposition="top center",
-                textfont={"color": GREY, "size": CHART_FONT}, cliponaxis=False,
+                mode="markers", name="Partial or lagged month",
+                text=flagged["month_note"], cliponaxis=False,
                 marker={"size": 12, "symbol": "circle-open",
                         "color": TEXT, "line": {"width": 2}},
                 hovertemplate="%{x|%b %Y}: %{text}<extra></extra>"))
+            # Each note above its ring on a white backing, so it does
+            # not sit on the line.
+            for x, y, note in zip(flagged["period_date"],
+                                  flagged["cost_per_tracked_action"],
+                                  flagged["month_note"]):
+                if y is None or pd.isna(y):
+                    continue
+                fig.add_annotation(
+                    x=x, y=y, text=html.escape(str(note)), showarrow=False,
+                    yshift=18, bgcolor="rgba(255,255,255,0.9)", borderpad=1,
+                    font={"color": GREY, "size": CHART_FONT})
     # One tick per month (or per 3, 6, 12 months on long ranges), so
     # a month label is never repeated.
     dtick = None
@@ -197,14 +208,19 @@ def trend_line(table, x_field, x_title, currency, height=360,
         months = len(table)
         dtick = ("M1" if months <= 12 else "M3" if months <= 36
                  else "M6" if months <= 72 else "M12")
-    fig.update_xaxes(title=x_title, type="date", dtick=dtick,
+    # x_title None leaves the axis untitled (the dates name it).
+    fig.update_xaxes(title=x_title or None, type="date", dtick=dtick,
                      tickformat="%b %Y" if freq == "MS" else "%d %b %Y")
     values = table["cost_per_tracked_action"].dropna()
     top = float(values.max()) * 1.2 if len(values) else None
     fig.update_yaxes(title=f"Cost per tracked action ({currency})",
                      rangemode="tozero",
                      range=[0, top] if top else None)
-    return _layout(fig, height=height)
+    _layout(fig, height=height)
+    if not x_title:
+        # Room for rotated date ticks when there is no axis title.
+        fig.update_layout(margin={"l": 10, "r": 10, "t": 30, "b": 40})
+    return fig
 
 
 def weekday_bar(table, currency, highlight=None, note=None):
@@ -273,7 +289,7 @@ def share_bar(table, weekday):
 
 
 # Segment labels under this share are hidden (they do not fit).
-INTENT_LABEL_MIN = 0.05
+INTENT_LABEL_MIN = 0.03
 # A brown family (no red, amber or green: those are for labels only),
 # dark to light. The share inside each bar is white on the dark bar
 # and near-black brown on the lighter ones, all at least 4.5:1
@@ -289,7 +305,8 @@ def intent_stack(long):
     fig = go.Figure()
     for intent, colour in INTENT_COLOURS.items():
         part = long.loc[long["intent"] == intent]
-        if part.empty:
+        # No legend entry (and no trace) for a type with no data.
+        if part.empty or not (part["share"].fillna(0) > 0).any():
             continue
         fig.add_trace(go.Bar(
             x=part["share"], y=_safe(part["campaign"]), orientation="h",
