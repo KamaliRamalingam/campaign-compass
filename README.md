@@ -73,6 +73,7 @@ This was proved on a synthetic Company B dataset (`bash run.sh --client syntheti
 These values are my decisions, written in the config and logged in [docs/decision-log.md](docs/decision-log.md). The code calculates from them; it does not choose them.
 
 - **Campaign groups** (`analysis.campaign_groups`): which campaigns belong together, and which are set aside until the owner answers the open questions.
+  A group may have a `display_name`, the readable name the dashboard shows (for example "Performance Max" for `core_pmax`). It is display only: the result files keep the group keys, and a group without one is shown by its key.
 - **Volume rules** (`analysis.volume_rule`): the minimum tracked actions and active days a campaign needs before it is judged.
 - **Recommendation thresholds** (`analysis.recommendation_rules`): the ratios against the core benchmark that separate continue, test and pause_or_review, and how many runs make a repeat.
 - **Recent-trend rule** (`analysis.recent_trend`): the window lengths, the reporting lag, and the ratios against the prior 28 days and the run average that separate worsening, improving and stable.

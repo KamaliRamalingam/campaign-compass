@@ -503,6 +503,9 @@ def _table(table, file_name=None, column_config=None, key=None,
     shown = table.drop(columns=[column for column in hide
                                 if column in table.columns]) \
         if table is not None else table
+    # Group keys shown by their display names; the download keeps keys.
+    shown = dashboard_data.with_group_names(
+        shown, _CTX.get("group_names") or {}, _CTX.get("journey_pool"))
     if shown is None or shown.empty:
         st.caption("No rows.")
     else:
@@ -579,8 +582,10 @@ def _act_definitions(ctx, kpi):
         "recommendation_rules") or {}
     currency = ctx["currency"]
     window = (rules.get("recent_label") or {}).get("window_days")
+    groups = dashboard_data.group_text(kpi["benchmark_groups"],
+                                       ctx["group_names"])
     bench = (f"<b>Benchmark</b>: pooled cost per tracked action of "
-             f"group(s) {html.escape(str(kpi['benchmark_groups']))}, "
+             f"group(s) {html.escape(str(groups))}, "
              f"{kpi['benchmark']:,.2f} {currency}.")
     if kpi["leave_one_out"]:
         bench += (f" Each campaign is compared with the benchmark "
@@ -656,8 +661,10 @@ def _totals_scope(ctx, kpi):
         ctx["config"], ctx["tables"]["benchmarks"])
     too_little = dashboard_data.too_little_data_count(
         ctx["all_recommendations"], judged)
+    names = ctx["group_names"]
     return dashboard_data.totals_scope_text(
-        kpi["judged_campaigns"], judged, too_little, bench)
+        kpi["judged_campaigns"], [names.get(g, g) for g in judged],
+        too_little, [names.get(g, g) for g in bench])
 
 
 def _page_act(ctx):
@@ -672,8 +679,12 @@ def _page_act(ctx):
     # labels match the card titles (18px, weight 600).
     with st.container(key="cc_filters"):
         filters = st.columns(3)
+        # Options are the group keys (the filter matches on them);
+        # each is shown by its display name.
+        names = ctx["group_names"]
         group = filters[0].selectbox(
             "Campaign group", dashboard_data.group_options(recs),
+            format_func=lambda key: names.get(key, key),
             key=_ckey("act_group"))
         status = filters[1].selectbox(
             "Status now", dashboard_data.status_options(recs),
@@ -738,7 +749,8 @@ def _page_act(ctx):
 
     below = st.columns(3)
     with below[0]:
-        not_comparable = dashboard_data.not_comparable_rows(recs)
+        not_comparable = dashboard_data.with_group_names(
+            dashboard_data.not_comparable_rows(recs), ctx["group_names"])
         with st.expander(f"Not comparable ({len(not_comparable)})"):
             st.caption("Judged against their own history, not the "
                        "benchmark, so they are not in the chart or the "
@@ -1171,7 +1183,8 @@ def _context_method(ctx, expanded=False):
                                         pinned=True)})
 
         st.markdown("**Volume rule and thresholds (from the config)**")
-        _table(dashboard_data.rules_table(config), "rules.csv",
+        _table(dashboard_data.rules_table(config, ctx["group_names"]),
+               "rules.csv",
                key="ctx_rules", column_config={
                    "setting": WIDE("Setting", width="large"),
                    "value": WIDE("Value", width="medium")})
@@ -1416,6 +1429,9 @@ def _page_detail(ctx):
         help="Ordered as in the Act ranking; not-comparable last.")
     detail = dashboard_data.campaign_detail(
         recs, tables["recent_trend"], campaign)
+    for key in ("reason", "trend_reason"):
+        detail[key] = dashboard_data.replace_group_keys(
+            detail[key], ctx["group_names"])
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
@@ -1568,9 +1584,12 @@ def _load(client):
     optional = dashboard_data.load_optional_tables(
         config, output_root=output_root)
     paths = dashboard_data.table_paths(config, output_root=output_root)
+    names = dashboard_data.group_names(config)
     return {
         "client": client,
         "config": config,
+        "group_names": names,
+        "journey_pool": dashboard_data.journey_pool_label(config, names),
         "caveat": dashboard_data.caveat_text(config),
         "currency": config.get("currency", "SEK"),
         "tables": tables,
