@@ -1158,9 +1158,7 @@ def _distorting(ctx):
     label = full.get(focus, focus) if focus else "one weekday"
     with st.expander(f"Is one campaign distorting {label}?"):
         if mix is None or loo is None:
-            st.info("The weekday decomposition is not turned on for "
-                    "this client (analysis.weekday_decomposition in its "
-                    "config).")
+            st.info("This analysis is not switched on for this client.")
         else:
             _weekday_breakdown(
                 mix, loo, top, focus,

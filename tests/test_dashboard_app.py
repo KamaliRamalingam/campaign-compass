@@ -353,3 +353,19 @@ def test_act_row_columns_equal_height_and_picker_at_bottom():
             "\n  {margin-top: auto;}") in style
     source = Path(app.__file__).read_text(encoding="utf-8")
     assert 'st.container(key="cc_act_picks").columns(' in source
+
+
+def test_context_notice_when_weekday_decomposition_is_off():
+    """synthetic_b has no weekday decomposition: Context says so in
+    plain words, without naming the config key."""
+    if not _has_outputs("synthetic_b"):
+        pytest.skip("no result tables for synthetic_b: run bash run.sh")
+    script = AppTest.from_string(
+        f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+        "CLIENT = 'synthetic_b'\nPAGE = 'context'\n" + PAGE_SCRIPT,
+        default_timeout=60)
+    script.run()
+    assert not script.exception, script.exception
+    notices = [block.value for block in script.info]
+    assert "This analysis is not switched on for this client." in notices
+    assert not any("weekday_decomposition" in text for text in notices)
