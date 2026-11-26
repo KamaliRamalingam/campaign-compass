@@ -193,14 +193,15 @@ def test_act_tiles_title_with_count_and_two_line_campaigns():
                      "status": "active", "running": True,
                      "action": "keep running, but test changes"}]}
     out = app._tiles_html(summary)
-    title = dd.tile_title(dd.label_text("test"), 3)
-    assert f"<div class='cc-card-title'>{title}</div>" in out
+    assert "<div class='cc-card-title'>Test (3)</div>" in out
     assert "<div class='cc-card-title'>Running now (1)</div>" in out
     assert "<div class='cc-tile-name'>Lunch</div>" in out
     assert ("<div class='cc-tile-sub'>Ended · Restart only with changes"
             "</div>") in out
-    assert (f"<div class='cc-tile-sub'>{dd.label_text('test')} · Keep "
-            "running, but test changes</div>") in out
+    assert ("<div class='cc-tile-sub'>Test · Keep running, but test "
+            "changes</div>") in out
+    # Text-only labels: no symbol anywhere in the tiles.
+    assert not set(out) & set("✕◆✓●○")
     assert "cc-tile-count" not in out and "cc-tile-count" not in app.STYLE
     assert "min-height: var(--cc-tile-min)" not in app.STYLE
 

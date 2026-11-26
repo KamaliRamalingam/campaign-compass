@@ -227,7 +227,7 @@ def test_tile_detail_status_then_advice_capitalised():
     # Running now: the label first, then the advice.
     running = summary["running"][0]
     assert dd.tile_detail(running, with_label=True) == (
-        f"{dd.label_text('test')} · Keep running, but test changes")
+        "Test · Keep running, but test changes")
 
 
 def test_tile_detail_only_first_letter_changes():

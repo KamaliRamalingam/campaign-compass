@@ -268,7 +268,7 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .stButton button:hover, .stDownloadButton button:hover
   {background: #1C3A25; color: #FFFFFF; border-color: #1C3A25;}
 
-/* Labels: soft tint, coloured left border, symbol and dark text. */
+/* Labels: soft tint, coloured left border and dark text. */
 .cc-pill {display: inline-block; padding: 2px 8px; border-radius: 4px;
   font-weight: 600; font-size: var(--cc-small); color: #3B2F2A;
   white-space: nowrap; border-left: 3px solid;}
@@ -405,13 +405,8 @@ def _card_title(text):
 
 
 def _pill(label):
-    """A label pill: tint, strong left border, symbol and text.
-
-    The symbol is joined to the first word by a no-break space, so a
-    pill that wraps never leaves the symbol on a line by itself.
-    """
+    """A label pill: tint, strong left border and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
-    text = text.replace(" ", "\u00a0", 1)
     return (f"<span class='cc-pill' style='background:"
             f"{dashboard_data.label_tint(label)};border-color:"
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
@@ -440,7 +435,7 @@ def _kpi_grid(cards):
 
 
 def _badge(label):
-    """A large label badge: tint, strong left border, symbol and text."""
+    """A large label badge: tint, strong left border and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
     return (f"<span class='cc-badge' style='background:"
             f"{dashboard_data.label_tint(label)};border-color:"
@@ -532,7 +527,7 @@ def _fmt(value, pattern):
 def _action_html(table):
     """The ranked action table as HTML.
 
-    The label cell is a pill (tint, left border, symbol and text).
+    The label cell is a pill (tint, left border and text).
     The Action column is about a third of the table and shows its
     full text, wrapped onto as many lines as it needs.
     """

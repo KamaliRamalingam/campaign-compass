@@ -1056,29 +1056,29 @@ def csv_bytes(table):
 
 # --- PR 5: three-page report -------------------------------------
 
-# Display text, symbol and colours per label (redesign palette).
+# Display text and colours per label (redesign palette).
 # colour: the strong colour for bars, borders and markers. tint:
 # the soft fill for tiles and pills, always with dark text (dark
 # text on the strong green or grey is below 4.5:1). Every label
-# also has its own text and symbol, so the meaning never depends
-# on colour alone.
+# is always shown with its text, so the meaning never depends on
+# colour alone. Labels are text only, with no symbols.
 LABEL_STYLE = {
-    "continue": {"text": "Continue", "symbol": "✓",
+    "continue": {"text": "Continue",
                  "colour": "#2E9E5B", "tint": "#DDF0E2",
                  "marker": "circle"},
-    "test": {"text": "Test", "symbol": "◆",
+    "test": {"text": "Test",
              "colour": "#D9961A", "tint": "#FFF0CC",
              "marker": "diamond"},
-    "pause_or_review": {"text": "Pause or review", "symbol": "✕",
+    "pause_or_review": {"text": "Pause or review",
                         "colour": "#C8452D", "tint": "#FBE3DD",
                         "marker": "x"},
-    "not_comparable": {"text": "Not comparable", "symbol": "○",
+    "not_comparable": {"text": "Not comparable",
                        "colour": "#8C8C8C", "tint": "#EFEAE3",
                        "marker": "circle-open"},
-    "insufficient_data": {"text": "Insufficient data", "symbol": "–",
+    "insufficient_data": {"text": "Insufficient data",
                           "colour": "#8C8C8C", "tint": "#EFEAE3",
                           "marker": "circle-open"},
-    "not_judged": {"text": "Not judged", "symbol": "–",
+    "not_judged": {"text": "Not judged",
                    "colour": "#8C8C8C", "tint": "#EFEAE3",
                    "marker": "circle-open"},
 }
@@ -1096,11 +1096,11 @@ INTENT_COLUMNS = {"directions_share": "Directions",
 
 
 def label_text(label):
-    """"✓ Continue" style display text; unknown labels unchanged."""
+    """"Continue" style display text; unknown labels unchanged."""
     style = LABEL_STYLE.get(label)
     if style is None:
         return "" if label is None or pd.isna(label) else str(label)
-    return f"{style['symbol']} {style['text']}"
+    return style["text"]
 
 
 def label_colour(label):
