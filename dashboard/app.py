@@ -374,6 +374,36 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .cc-act-detail {font-size: var(--cc-small); color: #7A6B5F;
   margin-top: 2px; line-height: 1.35;}
 .cc-table .cc-ended {color: #7A6B5F;}
+/* Act row 1: both columns are one height, whether Not comparable is
+   open or closed. The left card fills its column; in the right
+   column the last block (Not comparable, or the chart card when
+   there is none) grows. Inside the left card the picker row sits at
+   the bottom, so any extra height falls between the hint and the
+   picker, not under the buttons. */
+.st-key-cc_act_row1 > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] {align-items: stretch;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] {display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  {flex: 1 0 auto;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child {flex: 1 0 auto; display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child > div[class*="st-key-card_"],
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child > [data-testid="stExpander"]
+  {flex: 1 0 auto; display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stExpander"] > details {flex: 1 0 auto;}
+/* Room under the last Not comparable campaign (the markdown block's
+   negative bottom margin would put the text on the border). */
+.st-key-cc_act_row1 .cc-nc:last-child {padding-bottom: var(--cc-gap);}
+.st-key-cc_act_row1 div[class*="st-key-card_"]
+  > [data-testid="stLayoutWrapper"]:has(> .st-key-cc_act_picks)
+  {margin-top: auto;}
 
 
 /* Decision tiles. */
@@ -788,7 +818,9 @@ def _page_act(ctx):
                        "then Continue; the highest ratio first within "
                        "each. \"—\" = no recent trend (the campaign is "
                        "not active).")
-            picks = st.columns([3, 1, 1], vertical_alignment="bottom")
+            # The picker row sits at the bottom of the card (see STYLE).
+            picks = st.container(key="cc_act_picks").columns(
+                [3, 1, 1], vertical_alignment="bottom")
             campaign = picks[0].selectbox(
                 "Campaign", list(table["campaign"]), key=_ckey("act_pick"))
             if picks[1].button("Open detail", type="primary",
