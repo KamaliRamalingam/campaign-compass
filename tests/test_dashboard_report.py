@@ -48,11 +48,15 @@ def _recs():
 
 def test_every_label_has_text_and_a_distinct_judged_colour():
     for label, style in dd.LABEL_STYLE.items():
-        assert style["text"] and style["symbol"] and style["colour"]
+        assert style["text"] and style["colour"]
+        # Text only: no symbol key, and no symbol in the text.
+        assert "symbol" not in style
+        assert dd.label_text(label) == style["text"]
+        assert not set(dd.label_text(label)) & set("✕◆✓●○–")
     colours = {dd.LABEL_STYLE[label]["colour"]
                for label in dd.JUDGED_LABELS}
     assert len(colours) == 3
-    assert dd.label_text("continue") == "✓ Continue"
+    assert dd.label_text("continue") == "Continue"
     assert dd.label_text("something_new") == "something_new"
 
 
@@ -96,7 +100,7 @@ def test_bubble_rows_only_judged_with_figures():
     assert list(rows["campaign"]) == ["Alpha", "Beta", "Delta", "Gamma"]
     assert set(rows["label"]) <= set(dd.JUDGED_LABELS)
     alpha = rows.set_index("campaign").loc["Alpha"]
-    assert alpha["label_text"] == "◆ Test"
+    assert alpha["label_text"] == "Test"
     assert alpha["label_period"] == "2026-01-01 to 2026-03-31"
 
 
@@ -122,7 +126,7 @@ def test_action_table_is_ranked_most_urgent_first():
         "Gamma", "Delta", "Alpha", "Beta", "Eps", "Zeta"]
     assert list(table["rank"]) == list(range(1, 7))
     assert "Pmax" not in set(table["campaign"])
-    assert table.loc[0, "final_label"] == "✕ Pause or review"
+    assert table.loc[0, "final_label"] == "Pause or review"
     assert table.loc[0, "ratio_to_benchmark"] == 2.5
 
 
@@ -170,7 +174,7 @@ def test_recent_trend_rows():
         "prior_cost_per_tracked_action": 10.0,
         "recent_vs_prior_ratio": 1.5, "recent_tracked_actions": 20}])
     rows = dd.recent_trend_rows(trend, _recs())
-    assert rows.loc[0, "final_label"] == "◆ Test"
+    assert rows.loc[0, "final_label"] == "Test"
     assert rows.loc[0, "prior_window"] == "2026-02-01 to 2026-02-28"
     assert dd.recent_trend_rows(None, _recs()).empty
 

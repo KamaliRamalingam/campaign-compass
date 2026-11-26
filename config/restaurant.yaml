@@ -68,36 +68,48 @@ analysis:
   # group goes to "ungrouped" and is reported, never dropped.
   # sep_2026_group matches exact names and any name starting
   # with the given prefix.
+  # display_name (optional) is the readable name the dashboard
+  # shows; display only. The group key stays the value in every
+  # output, and a group without display_name is shown by its key.
   campaign_groups:
     core:
-      - The South Indian Stockholm
-      - Authentic Indian Restaurant
-      - Restaurang The South Indian
-      - South Indian Restaurant
-      - Indisk Mat i Södertälje
+      display_name: Core campaigns
+      exact:
+        - The South Indian Stockholm
+        - Authentic Indian Restaurant
+        - Restaurang The South Indian
+        - South Indian Restaurant
+        - Indisk Mat i Södertälje
     # Performance Max (PR 1, 2026-11-16): kept out of core so it
     # does not set the Search benchmark; labelled not_comparable.
     core_pmax:
-      - Website traffic-Performance Max-2
+      display_name: Performance Max
+      exact:
+        - Website traffic-Performance Max-2
     sep_2026_group:
+      display_name: September 2026 campaigns
       exact:
         - Super Sales Campaign
         - The South Indian Sweden Campaign
       prefix: "The South Indian Campaign"
     monthly_history_only:
-      - Ny Restaurang i Örebro
-      - Brand awareness and reach-Display-1
-      - Grand Opening
-      - Halal Restaurant
-      - The South Indian Kista
-      - The South Indian Sodermalm
+      display_name: Older campaigns (monthly history only)
+      exact:
+        - Ny Restaurang i Örebro
+        - Brand awareness and reach-Display-1
+        - Grand Opening
+        - Halal Restaurant
+        - The South Indian Kista
+        - The South Indian Sodermalm
     exclude_pending_owner:
-      - DrTiwari
-      - DrTiwariPersonal
-      - Lorry booking
-      - Yoga Mela - Yoga och Gratis Music Konsert
-      - "Campaign #2"
-      - Sales-Search-8
+      display_name: Set aside until the owner confirms
+      exact:
+        - DrTiwari
+        - DrTiwariPersonal
+        - Lorry booking
+        - Yoga Mela - Yoga och Gratis Music Konsert
+        - "Campaign #2"
+        - Sales-Search-8
   # Volume rule (T3). Provisional, to be confirmed by the student.
   volume_rule:
     min_conversions: 10

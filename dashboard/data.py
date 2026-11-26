@@ -21,6 +21,7 @@ filter, sort, join on campaign or run number, and rename for
 display.
 """
 
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,11 @@ import pandas as pd
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.groups import display_names, replace_group_keys  # noqa: E402
+
 DEFAULT_CONFIG = REPO_ROOT / "config" / "restaurant.yaml"
 
 # Fallback paths, used only when the config has no path for a
@@ -289,7 +295,77 @@ def journey_display(journey):
 def journey_campaigns(journey):
     """Journey rows for campaigns only, without the core group row."""
     return journey.loc[
-        journey["campaign"] != "core group"].copy()
+        journey["campaign"] != JOURNEY_POOL_ROW].copy()
+
+
+# --- Group display names (display only) ---------------------------
+# The result tables hold group keys (core, core_pmax, ...) and
+# src/ texts that name them. These helpers swap in each group's
+# config display_name when a value is shown; the tables, the
+# filters and the downloads keep the keys.
+
+# The journey's pooled row, as src/journey.py writes it.
+JOURNEY_POOL_ROW = "core group"
+# Columns holding one group key, or several joined with "+".
+GROUP_COLUMNS = ("group", "groups")
+# Columns holding src/ explanation text that may name a group.
+GROUP_TEXT_COLUMNS = ("reason", "base_reason", "trend_reason")
+
+
+def group_names(config):
+    """{group key: readable name} from the config's campaign_groups."""
+    analysis = (config or {}).get("analysis") or {}
+    return display_names(analysis.get("campaign_groups") or {})
+
+
+def group_text(value, names):
+    """One group key, or "+"-joined keys, as readable names.
+
+    "core+core_pmax" becomes "Core campaigns + Performance Max". A
+    missing value is returned as is.
+    """
+    if isinstance(value, (list, tuple)):
+        parts = [str(part) for part in value]
+    elif isinstance(value, str):
+        parts = [part for part in value.split("+") if part]
+    else:
+        return value
+    return " + ".join(names.get(part, part) for part in parts)
+
+
+def journey_pool_label(config, names):
+    """Readable name of the journey's pooled row.
+
+    src/journey.py pools the campaigns of analysis.time_groups
+    (default core) into one row, so it is named after those groups.
+    """
+    analysis = (config or {}).get("analysis") or {}
+    return group_text(list(analysis.get("time_groups") or ["core"]),
+                      names)
+
+
+def with_group_names(table, names, pool_label=None):
+    """A copy of a table with group keys shown as readable names.
+
+    group / groups columns become readable names; reason columns
+    get each whole-word key replaced; the journey's pooled row is
+    renamed to pool_label when given. The input table is unchanged.
+    """
+    if table is None:
+        return table
+    result = table.copy()
+    for column in GROUP_COLUMNS:
+        if column in result.columns:
+            result[column] = [group_text(value, names)
+                              for value in result[column]]
+    for column in GROUP_TEXT_COLUMNS:
+        if column in result.columns:
+            result[column] = [replace_group_keys(value, names)
+                              for value in result[column]]
+    if pool_label and "campaign" in result.columns:
+        result["campaign"] = result["campaign"].replace(
+            {JOURNEY_POOL_ROW: pool_label})
+    return result
 
 
 def data_date_range(summary_day):
@@ -631,6 +707,37 @@ def first_clause(text):
 TILE_LABELS = ("pause_or_review", "test", "continue")
 
 
+def capitalise_first(text):
+    """Text with only its first letter made upper case."""
+    text = "" if text is None else str(text)
+    return text[:1].upper() + text[1:]
+
+
+def tile_title(text, count):
+    """An Act tile's title with its count in brackets: "Test (3)"."""
+    return f"{text} ({int(count)})"
+
+
+def tile_detail(line, with_label=False):
+    """Second line of a campaign in an Act tile.
+
+    "Ended · Do not restart without changes", "Running · Keep
+    running, but test changes", or in the Running now tile the label
+    first: "Test · Keep running, but test changes". Only the first
+    letter of each part is capitalised; the text is the same as in
+    act_summary.
+    """
+    if with_label:
+        first = label_text(line["label"]) or "—"
+    elif line["running"]:
+        first = "running"
+    else:
+        first = line["status"]
+    parts = [capitalise_first(part) for part in (first, line["action"])
+             if part]
+    return " · ".join(parts)
+
+
 def act_summary(recommendations, max_lines=3):
     """Per-tile data for the Act page's four decision tiles.
 
@@ -832,8 +939,12 @@ def lag_check_summary(lag_check):
     return table
 
 
-def rules_table(config):
-    """Volume rule and thresholds as read from the config."""
+def rules_table(config, names=None):
+    """Volume rule and thresholds as read from the config.
+
+    With names ({group key: readable name}), a list of groups (a
+    setting ending in "groups") is shown by its readable names.
+    """
     analysis = config.get("analysis") or {}
     rows = []
     sections = (
@@ -842,15 +953,24 @@ def rules_table(config):
          analysis.get("recommendation_rules") or {}),
         ("recent_trend", analysis.get("recent_trend") or {}),
     )
+
+    def shown(setting, value):
+        if names and setting.endswith("groups") \
+                and isinstance(value, list):
+            return ", ".join(names.get(str(g), str(g)) for g in value)
+        return str(value)
+
     for section, values in sections:
         for key, value in values.items():
             if isinstance(value, dict):
                 for inner, inner_value in value.items():
-                    rows.append({"setting": f"{section}.{key}.{inner}",
-                                 "value": str(inner_value)})
+                    setting = f"{section}.{key}.{inner}"
+                    rows.append({"setting": setting,
+                                 "value": shown(setting, inner_value)})
             else:
-                rows.append({"setting": f"{section}.{key}",
-                             "value": str(value)})
+                setting = f"{section}.{key}"
+                rows.append({"setting": setting,
+                             "value": shown(setting, value)})
     for key in ("weekday_min_conversions", "run_gap_days"):
         if key in analysis:
             rows.append({"setting": key, "value": str(analysis[key])})
@@ -936,29 +1056,29 @@ def csv_bytes(table):
 
 # --- PR 5: three-page report -------------------------------------
 
-# Display text, symbol and colours per label (redesign palette).
+# Display text and colours per label (redesign palette).
 # colour: the strong colour for bars, borders and markers. tint:
 # the soft fill for tiles and pills, always with dark text (dark
 # text on the strong green or grey is below 4.5:1). Every label
-# also has its own text and symbol, so the meaning never depends
-# on colour alone.
+# is always shown with its text, so the meaning never depends on
+# colour alone. Labels are text only, with no symbols.
 LABEL_STYLE = {
-    "continue": {"text": "Continue", "symbol": "✓",
+    "continue": {"text": "Continue",
                  "colour": "#2E9E5B", "tint": "#DDF0E2",
                  "marker": "circle"},
-    "test": {"text": "Test", "symbol": "◆",
+    "test": {"text": "Test",
              "colour": "#D9961A", "tint": "#FFF0CC",
              "marker": "diamond"},
-    "pause_or_review": {"text": "Pause or review", "symbol": "✕",
+    "pause_or_review": {"text": "Pause or review",
                         "colour": "#C8452D", "tint": "#FBE3DD",
                         "marker": "x"},
-    "not_comparable": {"text": "Not comparable", "symbol": "○",
+    "not_comparable": {"text": "Not comparable",
                        "colour": "#8C8C8C", "tint": "#EFEAE3",
                        "marker": "circle-open"},
-    "insufficient_data": {"text": "Insufficient data", "symbol": "–",
+    "insufficient_data": {"text": "Insufficient data",
                           "colour": "#8C8C8C", "tint": "#EFEAE3",
                           "marker": "circle-open"},
-    "not_judged": {"text": "Not judged", "symbol": "–",
+    "not_judged": {"text": "Not judged",
                    "colour": "#8C8C8C", "tint": "#EFEAE3",
                    "marker": "circle-open"},
 }
@@ -976,11 +1096,11 @@ INTENT_COLUMNS = {"directions_share": "Directions",
 
 
 def label_text(label):
-    """"✓ Continue" style display text; unknown labels unchanged."""
+    """"Continue" style display text; unknown labels unchanged."""
     style = LABEL_STYLE.get(label)
     if style is None:
         return "" if label is None or pd.isna(label) else str(label)
-    return f"{style['symbol']} {style['text']}"
+    return style["text"]
 
 
 def label_colour(label):

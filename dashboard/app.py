@@ -74,7 +74,6 @@ STYLE = """
   --cc-gap: calc(13.64px * var(--cc-s));             /* 12px */
   --cc-pad-y: calc(14px * var(--cc-pad-k));
   --cc-pad-x: calc(16px * var(--cc-pad-k));
-  --cc-tile-min: calc(150px * var(--cc-s));
   --cc-page-max: 1500px;                              /* content width */
   --cc-side: 24px;                                    /* side padding */
   --cc-logo-h: 64px;
@@ -269,7 +268,7 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .stButton button:hover, .stDownloadButton button:hover
   {background: #1C3A25; color: #FFFFFF; border-color: #1C3A25;}
 
-/* Labels: soft tint, coloured left border, symbol and dark text. */
+/* Labels: soft tint, coloured left border and dark text. */
 .cc-pill {display: inline-block; padding: 2px 8px; border-radius: 4px;
   font-weight: 600; font-size: var(--cc-small); color: #3B2F2A;
   white-space: nowrap; border-left: 3px solid;}
@@ -318,15 +317,18 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
   gap: var(--cc-gap); align-items: stretch;}
+/* Equal height in the row comes from the grid (align-items:
+   stretch), with no fixed minimum, so short tiles stay compact. */
 .cc-tile {border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
-  border-left: 5px solid; color: #3B2F2A; min-height: var(--cc-tile-min);}
-.cc-tile-head {display: flex; align-items: baseline; gap: 10px;}
-.cc-tile-count {font-size: var(--cc-num); font-weight: 300; line-height: 1;}
-.cc-tile-label {font-size: var(--cc-label); font-weight: 600;}
-.cc-tile-line {font-size: var(--cc-small); font-weight: 400;
-  line-height: 1.4; margin-top: 5px;}
-.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 5px;}
-.cc-run {color: #6B5E54; white-space: nowrap;}
+  border-left: 5px solid; color: #3B2F2A;}
+/* One campaign: bold name, then status and advice in the secondary
+   colour (#6B5E54, 4.5:1 or more on the tints), a gap between. */
+.cc-tile-camp {margin-top: 8px;}
+.cc-tile-name {font-size: var(--cc-text); font-weight: 600;
+  line-height: 1.35; color: #3B2F2A;}
+.cc-tile-sub {font-size: var(--cc-small); font-weight: 400;
+  line-height: 1.35; color: #6B5E54; margin-top: 1px;}
+.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 8px;}
 @media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
 
 /* Context: recent-window rows, what-if tile, tags. */
@@ -403,13 +405,8 @@ def _card_title(text):
 
 
 def _pill(label):
-    """A label pill: tint, strong left border, symbol and text.
-
-    The symbol is joined to the first word by a no-break space, so a
-    pill that wraps never leaves the symbol on a line by itself.
-    """
+    """A label pill: tint, strong left border and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
-    text = text.replace(" ", "\u00a0", 1)
     return (f"<span class='cc-pill' style='background:"
             f"{dashboard_data.label_tint(label)};border-color:"
             f"{dashboard_data.label_colour(label)}'>{text}</span>")
@@ -438,7 +435,7 @@ def _kpi_grid(cards):
 
 
 def _badge(label):
-    """A large label badge: tint, strong left border, symbol and text."""
+    """A large label badge: tint, strong left border and text."""
     text = html.escape(dashboard_data.label_text(label) or "—")
     return (f"<span class='cc-badge' style='background:"
             f"{dashboard_data.label_tint(label)};border-color:"
@@ -503,6 +500,9 @@ def _table(table, file_name=None, column_config=None, key=None,
     shown = table.drop(columns=[column for column in hide
                                 if column in table.columns]) \
         if table is not None else table
+    # Group keys shown by their display names; the download keeps keys.
+    shown = dashboard_data.with_group_names(
+        shown, _CTX.get("group_names") or {}, _CTX.get("journey_pool"))
     if shown is None or shown.empty:
         st.caption("No rows.")
     else:
@@ -527,7 +527,7 @@ def _fmt(value, pattern):
 def _action_html(table):
     """The ranked action table as HTML.
 
-    The label cell is a pill (tint, left border, symbol and text).
+    The label cell is a pill (tint, left border and text).
     The Action column is about a third of the table and shows its
     full text, wrapped onto as many lines as it needs.
     """
@@ -579,8 +579,10 @@ def _act_definitions(ctx, kpi):
         "recommendation_rules") or {}
     currency = ctx["currency"]
     window = (rules.get("recent_label") or {}).get("window_days")
+    groups = dashboard_data.group_text(kpi["benchmark_groups"],
+                                       ctx["group_names"])
     bench = (f"<b>Benchmark</b>: pooled cost per tracked action of "
-             f"group(s) {html.escape(str(kpi['benchmark_groups']))}, "
+             f"group(s) {html.escape(str(groups))}, "
              f"{kpi['benchmark']:,.2f} {currency}.")
     if kpi["leave_one_out"]:
         bench += (f" Each campaign is compared with the benchmark "
@@ -605,19 +607,19 @@ def _act_definitions(ctx, kpi):
 
 
 def _tile_line(line, with_label=False):
-    """One campaign line in a tile: name, status or label, action."""
-    parts = [f"<b>{html.escape(line['campaign'])}</b>"]
-    if with_label:
-        parts.append(html.escape(
-            f"({dashboard_data.label_text(line['label']) or '—'})"))
-    elif line["running"]:
-        parts.append("<span class='cc-run'>● running</span>")
-    elif line["status"]:
-        parts.append(html.escape(line["status"]))
-    text = " · ".join(parts)
-    if line["action"]:
-        text += f": {html.escape(line['action'])}"
-    return f"<div class='cc-tile-line'>{text}</div>"
+    """One campaign in a tile: the name in bold, then a smaller
+    secondary line with status (or label) and advice."""
+    detail = dashboard_data.tile_detail(line, with_label=with_label)
+    sub = (f"<div class='cc-tile-sub'>{html.escape(detail)}</div>"
+           if detail else "")
+    return (f"<div class='cc-tile-camp'><div class='cc-tile-name'>"
+            f"{html.escape(line['campaign'])}</div>{sub}</div>")
+
+
+def _tile_title(text, count):
+    """A tile's title line, in the card-title style."""
+    return (f"<div class='cc-card-title'>"
+            f"{html.escape(dashboard_data.tile_title(text, count))}</div>")
 
 
 def _tiles_html(summary):
@@ -633,10 +635,8 @@ def _tiles_html(summary):
             "<div class='cc-tile' style='background:"
             f"{dashboard_data.label_tint(label)};border-left-color:"
             f"{dashboard_data.label_colour(label)}'>"
-            "<div class='cc-tile-head'><span class='cc-tile-count'>"
-            f"{tile['count']}</span><span class='cc-tile-label'>"
-            f"{html.escape(dashboard_data.label_text(label))}</span></div>"
-            f"{lines}</div>")
+            + _tile_title(dashboard_data.label_text(label), tile["count"])
+            + f"{lines}</div>")
     running = summary["running"]
     lines = "".join(_tile_line(line, with_label=True) for line in running)
     if not running:
@@ -644,9 +644,7 @@ def _tiles_html(summary):
     tiles.append(
         "<div class='cc-tile' style='background:#FFFFFF;"
         "border:1px solid #D9CFC0;border-left:5px solid #D9CFC0'>"
-        "<div class='cc-tile-head'><span class='cc-tile-count'>"
-        f"{len(running)}</span><span class='cc-tile-label'>Running now"
-        f"</span></div>{lines}</div>")
+        + _tile_title("Running now", len(running)) + f"{lines}</div>")
     return f"<div class='cc-tiles'>{''.join(tiles)}</div>"
 
 
@@ -656,8 +654,10 @@ def _totals_scope(ctx, kpi):
         ctx["config"], ctx["tables"]["benchmarks"])
     too_little = dashboard_data.too_little_data_count(
         ctx["all_recommendations"], judged)
+    names = ctx["group_names"]
     return dashboard_data.totals_scope_text(
-        kpi["judged_campaigns"], judged, too_little, bench)
+        kpi["judged_campaigns"], [names.get(g, g) for g in judged],
+        too_little, [names.get(g, g) for g in bench])
 
 
 def _page_act(ctx):
@@ -672,8 +672,12 @@ def _page_act(ctx):
     # labels match the card titles (18px, weight 600).
     with st.container(key="cc_filters"):
         filters = st.columns(3)
+        # Options are the group keys (the filter matches on them);
+        # each is shown by its display name.
+        names = ctx["group_names"]
         group = filters[0].selectbox(
             "Campaign group", dashboard_data.group_options(recs),
+            format_func=lambda key: names.get(key, key),
             key=_ckey("act_group"))
         status = filters[1].selectbox(
             "Status now", dashboard_data.status_options(recs),
@@ -738,7 +742,8 @@ def _page_act(ctx):
 
     below = st.columns(3)
     with below[0]:
-        not_comparable = dashboard_data.not_comparable_rows(recs)
+        not_comparable = dashboard_data.with_group_names(
+            dashboard_data.not_comparable_rows(recs), ctx["group_names"])
         with st.expander(f"Not comparable ({len(not_comparable)})"):
             st.caption("Judged against their own history, not the "
                        "benchmark, so they are not in the chart or the "
@@ -1171,7 +1176,8 @@ def _context_method(ctx, expanded=False):
                                         pinned=True)})
 
         st.markdown("**Volume rule and thresholds (from the config)**")
-        _table(dashboard_data.rules_table(config), "rules.csv",
+        _table(dashboard_data.rules_table(config, ctx["group_names"]),
+               "rules.csv",
                key="ctx_rules", column_config={
                    "setting": WIDE("Setting", width="large"),
                    "value": WIDE("Value", width="medium")})
@@ -1416,6 +1422,9 @@ def _page_detail(ctx):
         help="Ordered as in the Act ranking; not-comparable last.")
     detail = dashboard_data.campaign_detail(
         recs, tables["recent_trend"], campaign)
+    for key in ("reason", "trend_reason"):
+        detail[key] = dashboard_data.replace_group_keys(
+            detail[key], ctx["group_names"])
     row = recs.set_index("campaign").loc[campaign]
     ratio = row.get("label_ratio")
 
@@ -1568,9 +1577,12 @@ def _load(client):
     optional = dashboard_data.load_optional_tables(
         config, output_root=output_root)
     paths = dashboard_data.table_paths(config, output_root=output_root)
+    names = dashboard_data.group_names(config)
     return {
         "client": client,
         "config": config,
+        "group_names": names,
+        "journey_pool": dashboard_data.journey_pool_label(config, names),
         "caveat": dashboard_data.caveat_text(config),
         "currency": config.get("currency", "SEK"),
         "tables": tables,

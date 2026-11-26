@@ -179,6 +179,33 @@ def test_campaign_detail_table_expanders_sit_under_their_charts():
     assert [block.label for block in pattern.expander] == ["Weekday table"]
 
 
+def test_act_tiles_title_with_count_and_two_line_campaigns():
+    """Each tile: one card-title line with the count in brackets (no
+    large number), then per campaign a bold name and a secondary
+    status / advice line. No fixed tile height."""
+    import app
+
+    summary = {
+        "tiles": [{"label": "test", "count": 3, "more": 0, "lines": [
+            {"campaign": "Lunch", "label": "test", "status": "ended",
+             "running": False, "action": "restart only with changes"}]}],
+        "running": [{"campaign": "Dinner", "label": "test",
+                     "status": "active", "running": True,
+                     "action": "keep running, but test changes"}]}
+    out = app._tiles_html(summary)
+    assert "<div class='cc-card-title'>Test (3)</div>" in out
+    assert "<div class='cc-card-title'>Running now (1)</div>" in out
+    assert "<div class='cc-tile-name'>Lunch</div>" in out
+    assert ("<div class='cc-tile-sub'>Ended · Restart only with changes"
+            "</div>") in out
+    assert ("<div class='cc-tile-sub'>Test · Keep running, but test "
+            "changes</div>") in out
+    # Text-only labels: no symbol anywhere in the tiles.
+    assert not set(out) & set("✕◆✓●○")
+    assert "cc-tile-count" not in out and "cc-tile-count" not in app.STYLE
+    assert "min-height: var(--cc-tile-min)" not in app.STYLE
+
+
 def test_act_table_shows_the_full_action_text():
     """A long action text is in the Act table in full: no clamp, no
     "…", and the Action cell is the wide, wrapping column."""

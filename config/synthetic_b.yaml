@@ -56,14 +56,16 @@ analysis:
   exclude_campaigns: []
   # Campaign groups (T7): all five generated campaigns in one
   # core group. There is no location in the names, so no other
-  # group exists.
+  # group exists. display_name is display only (the dashboard).
   campaign_groups:
     core:
-      - Blue Spoon
-      - Green Fork
-      - Red Kettle
-      - Golden Ladle
-      - Silver Plate
+      display_name: All campaigns
+      exact:
+        - Blue Spoon
+        - Green Fork
+        - Red Kettle
+        - Golden Ladle
+        - Silver Plate
   # Volume rule: unchanged from the restaurant config, so reuse
   # did not need a threshold change.
   volume_rule:
