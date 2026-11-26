@@ -1779,13 +1779,13 @@ def weekday_outline_text(table):
     return f"Outlined: {names_and(parts)}."
 
 
-VOLUME_TEXT = {"ok": "OK", "insufficient_data": "Low volume"}
+VOLUME_TEXT = {"ok": "OK", "insufficient_data": "Low"}
 
 
 def pooled_weekday_display(pooled, currency):
     """The pooled weekday table with plain headers (weekday_core_table
     in, a renamed copy out). Tracked actions per 100 clicks is the
-    conversion rate x 100; the volume flag reads OK / Low volume."""
+    conversion rate x 100; the volume flag reads OK / Low."""
     table = pooled.copy()
     out = pd.DataFrame({
         "Weekday": [full_weekday(day) for day in table["weekday"]],
