@@ -460,7 +460,11 @@ def test_split_action_headline_and_detail():
         "restart only with changes; best run was run 2 "
         "(2025-06-06 to 2025-10-04)") == (
         "Restart only with changes",
-        "best run was run 2 6 Jun – 4 Oct 2025")
+        "best run was run 2, 6 Jun – 4 Oct 2025")
+    # No run number before the dates: no comma.
+    assert dd.split_action(
+        "restart; best period (2025-06-06 to 2025-10-04)") == (
+        "Restart", "best period 6 Jun – 4 Oct 2025")
     assert dd.split_action(None) == ("", "")
 
 

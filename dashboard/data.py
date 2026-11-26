@@ -605,7 +605,18 @@ def period_text(period):
     return format_period(*parts)
 
 
-_ISO_PERIOD = re.compile(r"\((\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\)")
+# An optional "run N " before the bracketed dates, so the period can
+# follow the run number after a comma.
+_ISO_PERIOD = re.compile(r"(\brun \d+ )?\((\d{4}-\d{2}-\d{2}) to "
+                         r"(\d{4}-\d{2}-\d{2})\)")
+
+
+def _period_sub(match):
+    """A bracketed ISO period as format_period text; after a run
+    number it follows a comma ("run 2, 6 Jun – 4 Oct 2025")."""
+    period = format_period(match.group(2), match.group(3))
+    run = match.group(1)
+    return f"{run.rstrip()}, {period}" if run else period
 
 
 def split_action(text):
@@ -613,15 +624,15 @@ def split_action(text):
 
     The headline gets a capital first letter; the detail is "" when
     there is no "; ". Dates written "(2025-06-06 to 2025-10-04)" in
-    the detail become format_period text without the brackets.
-    Display only: the action text in the data is not changed.
+    the detail become format_period text without the brackets, after
+    a comma when they follow a run number ("best run was run 2, 6 Jun
+    – 4 Oct 2025"). Display only: the action text in the data is not
+    changed.
     """
     if text is None or (not isinstance(text, str) and pd.isna(text)):
         return "", ""
     head, _, detail = str(text).partition("; ")
-    detail = _ISO_PERIOD.sub(
-        lambda match: format_period(match.group(1), match.group(2)),
-        detail)
+    detail = _ISO_PERIOD.sub(_period_sub, detail)
     return capitalise_first(head.strip()), detail.strip()
 
 
