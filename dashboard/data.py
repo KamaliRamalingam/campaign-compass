@@ -19,6 +19,12 @@ recommendations_by_campaign.csv (after the trend override), and
 no metric, ratio or label is recomputed here. Functions only
 filter, sort, join on campaign or run number, and rename for
 display.
+
+The caveat banner and the Act page's "How to read this" sentences
+are dashboard text (CAVEAT_TEXT, how_to_read_lines), not read from
+analysis.caveat_text / footnote_text: those config keys feed the
+pipeline's outputs (the caveat column and the reports), which a
+display change must not alter.
 """
 
 import re
@@ -150,9 +156,11 @@ def load_config(config_path=None):
         return yaml.safe_load(handle)
 
 
-def caveat_text(config):
-    """The caveat text, from analysis.caveat_text in the config."""
-    return config["analysis"]["caveat_text"]
+# The caveat banner at the bottom of every page (display text).
+CAVEAT_TEXT = ("Tracked actions (mostly directions requests and calls) "
+               "are not bookings or orders. This shows campaign "
+               "performance, not proof that an offer brought extra "
+               "customers.")
 
 
 def client_config_path(client, config_dir=None):
@@ -1212,10 +1220,34 @@ LABEL_RANK = {"pause_or_review": 0, "test": 1, "continue": 2,
               "not_comparable": 3, "insufficient_data": 4,
               "not_judged": 5}
 ALL_STATUSES = "All"
-DEFAULT_FOOTNOTE = "Labels are prompts for review, not proof of cause."
 INTENT_COLUMNS = {"directions_share": "Directions",
                   "calls_share": "Calls",
                   "store_visits_share": "Store visits"}
+
+
+# Raw values shown by their readable names in on-screen tables:
+# the labels, plus the trend and volume-flag keys. Display only.
+KEY_TEXT = {"not_active": "Not active"}
+
+
+def readable_keys(table):
+    """A copy of the table for display, with label and flag keys in
+    text columns shown by their readable names ("pause_or_review" ->
+    "Pause or review", "insufficient_data" -> "Insufficient data").
+    Only exact cell values are mapped; CSV downloads keep the keys.
+    """
+    if table is None or table.empty:
+        return table
+    mapping = {key: style["text"] for key, style in LABEL_STYLE.items()}
+    mapping.update(KEY_TEXT)
+    out = table.copy()
+    for column in out.columns:
+        if out[column].dtype == object or \
+                pd.api.types.is_string_dtype(out[column]):
+            out[column] = [mapping.get(value, value)
+                           if isinstance(value, str) else value
+                           for value in out[column]]
+    return out
 
 
 def label_text(label):
@@ -1263,12 +1295,6 @@ def logo_path(config, repo_root=None):
     if not path.is_absolute():
         path = (Path(repo_root) if repo_root else REPO_ROOT) / path
     return path if path.is_file() else None
-
-
-def footnote_text(config):
-    """analysis.footnote_text from the config, or the default."""
-    analysis = config.get("analysis") or {}
-    return analysis.get("footnote_text") or DEFAULT_FOOTNOTE
 
 
 def judged_label_counts(recommendations):
@@ -1361,6 +1387,62 @@ def reference_lines(config, benchmark):
         lines.append((f"{name} {float(ratio):.1f}x", float(ratio),
                       float(benchmark) * float(ratio)))
     return lines
+
+
+def how_to_read_lines(config, kpi, names, recommendations,
+                      benchmarks=None, currency="SEK"):
+    """The Act page's "How to read this" bullets: [(lead, text)].
+
+    lead is the bold term before the colon ("" for none). Values
+    come from the data (kpi_values, the recommendations) and the
+    config (thresholds, recent_label.window_days, groups); nothing
+    is typed in. Without a recent-label window the Period bullet
+    names only the latest run. The "compared with the average of
+    the other campaigns" sentence needs leave-one-out; without it
+    a campaign is compared with the benchmark itself. The last
+    Totals sentence only when the benchmark and the overall cost
+    per tracked action differ (at 2 decimals).
+    """
+    rules = ((config or {}).get("analysis") or {}).get(
+        "recommendation_rules") or {}
+    judged, bench = scope_groups(config, benchmarks)
+    bench_names = names_and([names.get(g, g) for g in bench])
+    judged_names = names_and([names.get(g, g) for g in judged])
+    compared = ("Each campaign is compared with the average of the "
+                "other campaigns." if kpi.get("leave_one_out") else
+                "Each campaign is compared with this average.")
+    window = (rules.get("recent_label") or {}).get("window_days")
+    period = "the latest run with enough data"
+    if window:
+        period += f", or the last {window} days for a running campaign"
+    k = too_little_data_count(recommendations, judged)
+    totals = (f"cover {kpi['judged_campaigns']} campaigns "
+              f"({judged_names}) over the whole data period; {k} of them "
+              f"{'has' if k == 1 else 'have'} too little data for a "
+              f"label.")
+    if round(kpi["benchmark"], 2) != round(kpi["cost_per_tracked_action"],
+                                           2):
+        totals += (f" The benchmark uses the {bench_names} only, so it "
+                   f"differs slightly from the overall cost per tracked "
+                   f"action.")
+    cont = float(rules.get("continue_max_ratio"))
+    test = float(rules.get("test_max_ratio"))
+    return [
+        ("Tracked action", "something Google Ads counts after an ad, "
+         "mostly directions requests and calls (Google Ads calls it a "
+         "conversion). It is not a booking."),
+        ("Benchmark", f"the average cost per tracked action of the "
+         f"{bench_names}, {kpi['benchmark']:,.2f} {currency}. {compared}"),
+        ("Labels", f"up to {cont:.1f}x the benchmark: Continue. Up to "
+         f"{test:.1f}x: Test. Above that: Pause or review."),
+        ("Period", f"{period}. The bars use the figures of that period."),
+        ("Totals", totals),
+        ("", "Filters only change what you see. They never change a "
+         "label, a tile or a total."),
+        ("", "Labels are prompts for review, not proof of cause. They "
+         "compare cost with a benchmark. They don't show why a campaign "
+         "did better or worse."),
+    ]
 
 
 def _ratio_text(value):

@@ -16,9 +16,9 @@ labels (after the trend override) from
 recommendations_by_campaign.csv; nothing is recomputed here. No
 hosting, login, uploads or network access.
 
-Every page shows the client's caveat from its config, the data
-date range and the last-updated date. The wording is "tracked
-actions" everywhere.
+Every page shows the caveat (data.CAVEAT_TEXT), the data date
+range and the last-updated date. The wording is "tracked actions"
+everywhere.
 """
 
 import base64
@@ -420,8 +420,8 @@ def _heading(page, question, ctx):
 
 
 def _caveat(ctx):
-    """The client's caveat banner (on every page)."""
-    st.info(ctx["caveat"], icon="ℹ️")
+    """The caveat banner (on every page)."""
+    st.info(dashboard_data.CAVEAT_TEXT, icon="ℹ️")
 
 
 def _card_title(text):
@@ -518,6 +518,8 @@ def _table(table, file_name=None, column_config=None, key=None,
     # Group keys shown by their display names; the download keeps keys.
     shown = dashboard_data.with_group_names(
         shown, _CTX.get("group_names") or {}, _CTX.get("journey_pool"))
+    # Label and flag keys shown by their readable names; same reason.
+    shown = dashboard_data.readable_keys(shown)
     if shown is None or shown.empty:
         st.caption("No rows.")
     else:
@@ -609,37 +611,12 @@ def _readable(value, keep=False):
 
 
 def _act_definitions(ctx, kpi):
-    """Footnote lines: definitions, then the config footnote."""
-    config = ctx["config"]
-    rules = (config.get("analysis") or {}).get(
-        "recommendation_rules") or {}
-    currency = ctx["currency"]
-    window = (rules.get("recent_label") or {}).get("window_days")
-    groups = dashboard_data.group_text(kpi["benchmark_groups"],
-                                       ctx["group_names"])
-    bench = (f"<b>Benchmark</b>: pooled cost per tracked action of "
-             f"group(s) {html.escape(str(groups))}, "
-             f"{kpi['benchmark']:,.2f} {currency}.")
-    if kpi["leave_one_out"]:
-        bench += (f" Each campaign is compared with the benchmark "
-                  f"without itself ({kpi['loo_min']:,.2f} to "
-                  f"{kpi['loo_max']:,.2f}); the hover shows its own.")
-    lines = [
-        "<b>Tracked action</b>: a conversion the account counts "
-        "(mainly get-directions requests and calls), not a booking.",
-        bench,
-        f"<b>Ratio lines</b>: continue up to "
-        f"{rules.get('continue_max_ratio')}x and test up to "
-        f"{rules.get('test_max_ratio')}x the benchmark (from the "
-        f"config); above that, pause or review.",
-        "<b>Label period</b>: the latest run with enough volume"
-        + (f", or the last {window} days for active campaigns"
-           if window else "") + ". Bars use that period's figures.",
-        "<b>Filters</b> only hide table rows and bars; they never "
-        "change a label, a tile or a KPI card.",
-        f"<b>{html.escape(dashboard_data.footnote_text(config))}</b>",
-    ]
-    return lines
+    """The "How to read this" bullets, lead term in bold."""
+    lines = dashboard_data.how_to_read_lines(
+        ctx["config"], kpi, ctx["group_names"], ctx["all_recommendations"],
+        ctx["tables"]["benchmarks"], ctx["currency"])
+    return [(f"<b>{html.escape(lead)}</b>: " if lead else "")
+            + html.escape(text) for lead, text in lines]
 
 
 def _tile_line(line, with_label=False):
@@ -1612,7 +1589,6 @@ def _load(client):
         "config": config,
         "group_names": names,
         "journey_pool": dashboard_data.journey_pool_label(config, names),
-        "caveat": dashboard_data.caveat_text(config),
         "currency": config.get("currency", "SEK"),
         "tables": tables,
         "optional": optional,

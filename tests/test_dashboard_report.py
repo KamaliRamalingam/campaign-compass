@@ -192,13 +192,6 @@ def test_journey_intent_long():
     assert long["share"].sum() == pytest.approx(1.0)
 
 
-def test_footnote_text_from_config_or_default():
-    assert dd.footnote_text({"analysis": {"footnote_text": "x"}}) == "x"
-    assert dd.footnote_text({}) == dd.DEFAULT_FOOTNOTE
-
-
-# --- Redesign: theme, header helpers --------------------------------
-
 def test_label_colours_match_the_redesign_palette():
     assert dd.label_colour("pause_or_review") == "#C8452D"
     assert dd.label_colour("test") == "#D9961A"

@@ -560,3 +560,81 @@ def test_names_and():
     assert dd.names_and(["A"]) == "A"
     assert dd.names_and(["A", "B"]) == "A and B"
     assert dd.names_and(["A", "B", "C"]) == "A, B and C"
+
+
+def _how_config(window=90):
+    rules = {"continue_max_ratio": 1.0, "test_max_ratio": 2.0,
+             "judged_groups": ["core", "sep"],
+             "benchmark": {"groups": ["core"]}}
+    if window:
+        rules["recent_label"] = {"window_days": window}
+    return {"analysis": {"recommendation_rules": rules}}
+
+
+HOW_NAMES = {"core": "Core campaigns", "sep": "September campaigns"}
+
+
+def _how_recs():
+    return pd.DataFrame({
+        "campaign": list("ABCDE"),
+        "group": ["core", "core", "sep", "sep", "other"],
+        "label": ["test", "insufficient_data", "insufficient_data",
+                  "continue", "insufficient_data"]})
+
+
+def test_how_to_read_lines_restaurant_like():
+    lines = dd.how_to_read_lines(_how_config(), KPI, HOW_NAMES,
+                                 _how_recs(), currency="SEK")
+    text = [f"{lead}: {body}" if lead else body for lead, body in lines]
+    assert text == [
+        "Tracked action: something Google Ads counts after an ad, mostly "
+        "directions requests and calls (Google Ads calls it a "
+        "conversion). It is not a booking.",
+        "Benchmark: the average cost per tracked action of the Core "
+        "campaigns, 4.88 SEK. Each campaign is compared with the average "
+        "of the other campaigns.",
+        "Labels: up to 1.0x the benchmark: Continue. Up to 2.0x: Test. "
+        "Above that: Pause or review.",
+        "Period: the latest run with enough data, or the last 90 days "
+        "for a running campaign. The bars use the figures of that "
+        "period.",
+        "Totals: cover 11 campaigns (Core campaigns and September "
+        "campaigns) over the whole data period; 2 of them have too "
+        "little data for a label. The benchmark uses the Core campaigns "
+        "only, so it differs slightly from the overall cost per tracked "
+        "action.",
+        "Filters only change what you see. They never change a label, a "
+        "tile or a total.",
+        "Labels are prompts for review, not proof of cause. They compare "
+        "cost with a benchmark. They don't show why a campaign did better "
+        "or worse.",
+    ]
+
+
+def test_how_to_read_lines_no_window_same_cost_no_leave_one_out():
+    kpi = dict(KPI, cost_per_tracked_action=4.88, benchmark=4.879686,
+               leave_one_out=False)
+    config = _how_config(window=None)
+    config["analysis"]["recommendation_rules"]["continue_max_ratio"] = 0.8
+    lines = dict(dd.how_to_read_lines(config, kpi, HOW_NAMES,
+                                      _how_recs().iloc[:2]))
+    assert lines["Period"] == ("the latest run with enough data. The bars "
+                               "use the figures of that period.")
+    assert lines["Totals"].endswith(
+        "1 of them has too little data for a label.")
+    assert lines["Benchmark"].endswith(
+        "Each campaign is compared with this average.")
+    assert lines["Labels"].startswith("up to 0.8x the benchmark")
+
+
+def test_readable_keys_display_only():
+    table = pd.DataFrame({
+        "campaign": ["A", "B"], "label": ["pause_or_review", "test"],
+        "volume flag": ["insufficient_data", "ok"],
+        "trend": ["not_active", "worsening"], "ratio": [1.0, 2.0]})
+    shown = dd.readable_keys(table)
+    assert list(shown["label"]) == ["Pause or review", "Test"]
+    assert list(shown["volume flag"]) == ["Insufficient data", "ok"]
+    assert list(shown["trend"]) == ["Not active", "worsening"]
+    assert list(table["label"]) == ["pause_or_review", "test"]
+    assert dd.label_text("not_comparable") == "Not comparable"

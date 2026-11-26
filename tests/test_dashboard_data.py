@@ -77,9 +77,14 @@ def _mix():
     ])
 
 
-def test_caveat_text_comes_from_config():
-    config = {"analysis": {"caveat_text": CAVEAT}}
-    assert dashboard_data.caveat_text(config) == CAVEAT
+def test_caveat_banner_text():
+    """The banner text on every page (display text, not the config's
+    caveat_text, which feeds the pipeline outputs)."""
+    assert dashboard_data.CAVEAT_TEXT == (
+        "Tracked actions (mostly directions requests and calls) are not "
+        "bookings or orders. This shows campaign performance, not proof "
+        "that an offer brought extra customers.")
+    assert not hasattr(dashboard_data, "caveat_text")
 
 
 def test_conversion_shares_and_engagement():
