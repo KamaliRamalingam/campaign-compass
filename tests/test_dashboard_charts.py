@@ -120,15 +120,31 @@ def test_weekday_bar_outlines_busiest_cheapest_and_dearest():
     assert fig.layout.annotations[0].x == "Fri"
 
 
-def test_intent_stack_hides_labels_under_five_percent():
+def test_intent_stack_labels_from_three_percent_and_hides_empty_types():
     long = pd.DataFrame({
         "campaign": ["A", "A", "A"],
         "intent": ["Directions", "Calls", "Store visits"],
-        "share": [0.92, 0.05, 0.03]})
+        "share": [0.92, 0.05, 0.029]})
     fig = charts.intent_stack(long)
     texts = {trace.name: list(trace.text) for trace in fig.data}
     assert texts == {"Directions": ["92%"], "Calls": ["5%"],
                      "Store visits": [""]}
+    long["share"] = [0.95, 0.05, 0.0]
+    names = [trace.name for trace in charts.intent_stack(long).data]
+    assert names == ["Directions", "Calls"]
+
+
+def test_trend_line_notes_are_offset_annotations():
+    table = pd.DataFrame({
+        "month": ["2026-01", "2026-02"], "cost_per_tracked_action": [2.0,
+                                                                     3.0],
+        "spend": [1.0, 1.0], "tracked_actions": [1.0, 1.0],
+        "month_note": ["", "partial"]})
+    fig = charts.trend_line(table, "month", None, "SEK")
+    notes = [note for note in fig.layout.annotations
+             if note.text == "partial"]
+    assert len(notes) == 1 and notes[0].yshift == 18
+    assert fig.layout.xaxis.title.text is None
 
 
 def _contrast(foreground, background):

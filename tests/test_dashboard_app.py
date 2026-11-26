@@ -170,8 +170,8 @@ def test_campaign_detail_table_expanders_sit_under_their_charts():
     script.run()
     assert not script.exception, script.exception
     labels = [block.label for block in script.expander]
-    wanted = ["Monthly table", "Weekday pattern", "Weekday table",
-              "Acquisition journey"]
+    wanted = ["Monthly figures", "Weekday pattern", "Weekday table",
+              "How do people reach the restaurant?"]
     assert [label for label in labels if label in wanted] == wanted
     # The weekday table is inside the weekday pattern expander.
     pattern = next(block for block in script.expander
