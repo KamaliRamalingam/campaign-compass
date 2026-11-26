@@ -47,7 +47,9 @@ def test_pooled_weekday_display_headers_and_values():
         "Volume"]
     assert shown["Weekday"].iloc[0] == "Monday"
     assert round(shown["Tracked actions per 100 clicks"].iloc[0], 2) == 30.47
-    assert list(shown["Volume"].iloc[-2:]) == ["OK", "Low volume"]
+    assert list(shown["Volume"].iloc[-2:]) == ["OK", "Low"]
+    # Display only: the input table keeps the raw flag.
+    assert _weekdays()["volume_flag"].iloc[-1] == "insufficient_data"
     assert dd.format_number(30.47, dd.POOLED_WEEKDAY_FORMATS[
         "Tracked actions per 100 clicks"]) == "30.5"
 
