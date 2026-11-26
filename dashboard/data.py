@@ -1601,9 +1601,10 @@ def weekday_takeaway(pooled, currency, change=None, scenario=None):
     else:
         low = costs.loc[costs["cost_per_tracked_action"].idxmin()]
         high = costs.loc[costs["cost_per_tracked_action"].idxmax()]
-        text = (f"Cost per tracked action is lowest on {low['weekday']} "
+        text = (f"Cost per tracked action is lowest on "
+                f"{full_weekday(low['weekday'])} "
                 f"({low['cost_per_tracked_action']:,.2f} {currency}) and "
-                f"highest on {high['weekday']} "
+                f"highest on {full_weekday(high['weekday'])} "
                 f"({high['cost_per_tracked_action']:,.2f} {currency}).")
     if change:
         what = f"{scenario}: " if scenario else "Moving spend: "
@@ -2310,3 +2311,28 @@ def sensitivity_display(sensitivity, names=None):
 
 
 SENSITIVITY_FORMATS = {"Continue up to": "%.2fx", "Test up to": "%.2fx"}
+
+
+def recent_rows_display(rows):
+    """recent_trend_rows for display: windows as "15 Sep – 12 Oct
+    2026" and the trend capitalised ("Worsening"). The CSV keeps the
+    raw rows."""
+    out = rows.copy()
+    for column in ("recent_window", "prior_window"):
+        if column in out.columns:
+            out[column] = [period_text(value) or MISSING
+                           for value in out[column]]
+    if "recent_trend" in out.columns:
+        out["recent_trend"] = [value_text(value)
+                               for value in out["recent_trend"]]
+    return out
+
+
+def leave_one_out_display(table):
+    """The leave-one-out table for display: "(none)" reads "All
+    campaigns" (the full pool)."""
+    out = table.copy()
+    if "left_out" in out.columns:
+        out["left_out"] = out["left_out"].replace(
+            {"(none)": "All campaigns"})
+    return out

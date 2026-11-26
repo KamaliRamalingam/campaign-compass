@@ -274,3 +274,23 @@ def test_sensitivity_display():
     shown = dd.sensitivity_display(sens, {"core": "Core campaigns"})
     assert list(shown.iloc[0]) == ["A", "Core campaigns", 0.75, 1.5,
                                    "Pause or review", "No"]
+
+
+def test_recent_rows_display_dates_and_trend():
+    rows = pd.DataFrame({
+        "campaign": ["A", "B"],
+        "recent_trend": ["worsening", "insufficient_data"],
+        "recent_window": ["2026-10-13 to 2026-11-09", ""],
+        "prior_window": ["2026-09-15 to 2026-10-12", ""]})
+    shown = dd.recent_rows_display(rows)
+    assert list(shown["recent_trend"]) == ["Worsening", "Insufficient data"]
+    assert list(shown["prior_window"]) == ["15 Sep – 12 Oct 2026", "—"]
+    assert list(shown["recent_window"]) == ["13 Oct – 9 Nov 2026", "—"]
+    assert rows["recent_trend"].iloc[0] == "worsening"
+
+
+def test_leave_one_out_display_names_the_full_pool():
+    table = pd.DataFrame({"left_out": ["(none)", "Alpha"]})
+    assert list(dd.leave_one_out_display(table)["left_out"]) == [
+        "All campaigns", "Alpha"]
+    assert list(table["left_out"]) == ["(none)", "Alpha"]

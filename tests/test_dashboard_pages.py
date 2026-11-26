@@ -402,8 +402,8 @@ def test_weekday_takeaway_low_high_and_what_if():
                            "cost_per_tracked_action": [5.0, 6.5, 3.25]})
     text = dd.weekday_takeaway(pooled, "SEK", "+10 tracked actions",
                                "Move spend")
-    assert text == ("Cost per tracked action is lowest on Sat (3.25 SEK) "
-                    "and highest on Tue (6.50 SEK). Move spend: "
+    assert text == ("Cost per tracked action is lowest on Saturday (3.25 "
+                    "SEK) and highest on Tuesday (6.50 SEK). Move spend: "
                     "+10 tracked actions, a linear estimate.")
     assert "linear" not in dd.weekday_takeaway(pooled, "SEK")
 

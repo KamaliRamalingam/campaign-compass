@@ -904,7 +904,7 @@ def _recent_html(rows, currency):
             return (f"<span class='cc-bar' style='width:{width:.0f}px;"
                     f"background:{colour}'></span>")
         ratio = row["recent_vs_prior_ratio"]
-        trend = _readable(row["recent_trend"])
+        trend = dashboard_data.value_text(row["recent_trend"])
         if str(row["recent_trend"]) == "worsening":
             flag = f"<span class='cc-tag'>⚠ {html.escape(trend)}</span>"
         else:
@@ -914,7 +914,8 @@ def _recent_html(rows, currency):
             f"<td rowspan='2' style='width:30%'><b>"
             f"{html.escape(str(row['campaign']))}</b></td>"
             f"<td>Prior window<br><span class='cc-muted'>"
-            f"{html.escape(str(row['prior_window'] or '—'))}</span></td>"
+            f"{html.escape(dashboard_data.period_text(row['prior_window']) or '—')}"
+            "</span></td>"
             f"<td class='nw'>{bar(row['prior_cost_per_tracked_action'], charts.NEUTRAL_LIGHT)} "
             f"{html.escape(_money(row['prior_cost_per_tracked_action'], currency))}</td>"
             f"<td rowspan='2' class='nw' style='text-align:right'>"
@@ -924,7 +925,8 @@ def _recent_html(rows, currency):
             f"{_fmt(ratio, '{:.2f}x')}</span><br>{flag}</td></tr>"
             "<tr>"
             f"<td>Recent window<br><span class='cc-muted'>"
-            f"{html.escape(str(row['recent_window'] or '—'))}</span></td>"
+            f"{html.escape(dashboard_data.period_text(row['recent_window']) or '—')}"
+            "</span></td>"
             f"<td class='nw'>{bar(row['recent_cost_per_tracked_action'], charts.NEUTRAL)} "
             f"{html.escape(_money(row['recent_cost_per_tracked_action'], currency))}</td>"
             "</tr>")
@@ -971,7 +973,7 @@ def _card_recent(ctx):
     if campaign is not None:
         table = dashboard_data.trend_with_flags(
             tables["timeline_by_campaign"], campaign)
-        st.plotly_chart(charts.trend_line(table, "month", "Month",
+        st.plotly_chart(charts.trend_line(table, "month", None,
                                           currency, height=280),
                         width="stretch", key="ctx_trend_chart")
         st.caption("Monthly cost per tracked action. Hollow ring = "
@@ -980,8 +982,9 @@ def _card_recent(ctx):
                    "read a jump in those months as a change.")
     if not rows.empty:
         with st.expander("Recent trend table"):
-            _table(rows.drop(columns=["recent_tracked_actions"]),
-                   "recent_trend.csv", key="ctx_recent",
+            raw = rows.drop(columns=["recent_tracked_actions"])
+            _table(raw, "recent_trend.csv", key="ctx_recent",
+                   display=dashboard_data.recent_rows_display(raw),
                    column_config={
                        "campaign": WIDE("Campaign", pinned=True),
                        "final_label": WIDE("Final label"),
@@ -1199,6 +1202,8 @@ def _weekday_breakdown(mix, loo, top, focus, baseline="Mon-Thu"):
             "actions_per_click", "clicks") if column in loo_table]
         _table(loo_table[loo_columns],
                f"weekday_leave_one_out_{weekday}.csv", key="ctx_loo",
+               display=dashboard_data.leave_one_out_display(
+                   loo_table[loo_columns]),
                column_config={
                    "left_out": WIDE("Left out", pinned=True),
                    "actions_per_click_vs_baseline": NUM(
