@@ -2313,14 +2313,29 @@ def sensitivity_display(sensitivity, names=None):
 SENSITIVITY_FORMATS = {"Continue up to": "%.2fx", "Test up to": "%.2fx"}
 
 
+NBSP = "\u00a0"
+
+
+def period_keep_dates(text):
+    """A formatted period that can break only after its dash: the
+    spaces inside each date and before the dash are non-breaking
+    ("15 Sep – 12 Oct 2026" wraps as "15 Sep –" / "12 Oct 2026")."""
+    first, sep, last = str(text).partition(" – ")
+    if not sep:
+        return str(text).replace(" ", NBSP)
+    return (f"{first.replace(' ', NBSP)}{NBSP}– "
+            f"{last.replace(' ', NBSP)}")
+
+
 def recent_rows_display(rows):
     """recent_trend_rows for display: windows as "15 Sep – 12 Oct
-    2026" and the trend capitalised ("Worsening"). The CSV keeps the
-    raw rows."""
+    2026" (breaking only after the dash) and the trend capitalised
+    ("Worsening"). The CSV keeps the raw rows."""
     out = rows.copy()
     for column in ("recent_window", "prior_window"):
         if column in out.columns:
-            out[column] = [period_text(value) or MISSING
+            out[column] = [period_keep_dates(period_text(value))
+                           if period_text(value) else MISSING
                            for value in out[column]]
     if "recent_trend" in out.columns:
         out["recent_trend"] = [value_text(value)

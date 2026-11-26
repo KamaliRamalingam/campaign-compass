@@ -284,8 +284,14 @@ def test_recent_rows_display_dates_and_trend():
         "prior_window": ["2026-09-15 to 2026-10-12", ""]})
     shown = dd.recent_rows_display(rows)
     assert list(shown["recent_trend"]) == ["Worsening", "Insufficient data"]
-    assert list(shown["prior_window"]) == ["15 Sep – 12 Oct 2026", "—"]
-    assert list(shown["recent_window"]) == ["13 Oct – 9 Nov 2026", "—"]
+    nb = "\u00a0"
+    assert list(shown["prior_window"]) == [
+        f"15{nb}Sep{nb}– 12{nb}Oct{nb}2026", "—"]
+    assert list(shown["recent_window"]) == [
+        f"13{nb}Oct{nb}– 9{nb}Nov{nb}2026", "—"]
+    # The only normal space is the one after the dash.
+    assert shown["prior_window"].iloc[0].count(" ") == 1
+    assert dd.period_keep_dates("Jul 2024") == f"Jul{nb}2024"
     assert rows["recent_trend"].iloc[0] == "worsening"
 
 
