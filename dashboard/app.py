@@ -53,23 +53,34 @@ STYLE = """
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap');
 /* Scale: every size below comes from these variables, so the whole
    dashboard can be tuned here. --cc-s is the overall scale (0.88 =
-   about 12% smaller than the original design); sizes keep a 12px
-   floor except footnotes. Streamlit sizes its own widgets (selects,
-   inputs, buttons, card padding) in rem, so the root font size
-   follows the same scale. */
+   about 12% smaller than the original design). Streamlit sizes its
+   own widgets (selects, inputs, buttons, card padding) in rem, so
+   the root font size follows the same scale.
+   Type scale: five text styles, all Open Sans (sizes at --cc-s
+   0.88): card title 16px 700 charcoal; label 13px 600 secondary;
+   value (KPI numbers) 24px 600 deep green; body 13px 400 charcoal;
+   caption 12.5px 400 secondary, line-height 1.35. The older size
+   names below point at these five. */
 :root {
   --cc-s: 0.88;
   --cc-pad-k: calc(var(--cc-s) - 0.08);          /* padding: ~20% less */
   --cc-root: calc(16px * var(--cc-s));
-  --cc-text: max(12px, calc(14.2px * var(--cc-s)));   /* body: 12.5px */
-  --cc-small: max(12px, calc(13px * var(--cc-s)));    /* 12px */
-  --cc-foot: calc(13px * var(--cc-s));                /* footnotes */
-  --cc-th: 12px;                                      /* table headers */
-  --cc-num: calc(34px * var(--cc-s));                 /* tile numbers: 30px */
-  --cc-kpi: calc(22px * var(--cc-s));
+  --cc-t-title: calc(18.18px * var(--cc-s));          /* 16px */
+  --cc-t-label: calc(14.77px * var(--cc-s));          /* 13px */
+  --cc-t-value: calc(27.27px * var(--cc-s));          /* 24px */
+  --cc-t-body: calc(14.77px * var(--cc-s));           /* 13px */
+  --cc-t-cap: calc(14.2px * var(--cc-s));             /* 12.5px */
+  --cc-text: var(--cc-t-body);
+  --cc-small: var(--cc-t-cap);
+  --cc-foot: var(--cc-t-cap);
+  --cc-th: var(--cc-t-label);
+  --cc-num: var(--cc-t-value);
+  --cc-kpi: var(--cc-t-value);
   --cc-badge: calc(20px * var(--cc-s));
-  --cc-card-title: calc(18px * var(--cc-s));
-  --cc-label: calc(15px * var(--cc-s));
+  --cc-card-title: var(--cc-t-title);
+  --cc-label: var(--cc-t-label);
+  --cc-tot-pad: calc(15.91px * var(--cc-s));          /* 14px */
+  --cc-tot-gap: calc(4.55px * var(--cc-s));           /* 4px */
   --cc-wordmark: calc(22px * var(--cc-s));
   --cc-gap: calc(13.64px * var(--cc-s));             /* 12px */
   --cc-pad-y: calc(14px * var(--cc-pad-k));
@@ -96,6 +107,28 @@ html, body, .stApp, .stApp p, .stApp div, .stApp label, .stApp input,
 [data-testid="stHorizontalBlock"] {gap: var(--cc-gap);}
 h1, h2, h3, h4 {color: #3B2F2A !important;}
 p, li, td, th {font-size: var(--cc-text);}
+/* Streamlit sets markdown paragraphs in rem; they are body text. */
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stMarkdownContainer"] li
+  {font-size: var(--cc-t-body);}
+/* Streamlit text in the type scale: widget labels are labels, the
+   checkbox and radio options are body (weight 500 for the checkbox),
+   captions are captions, buttons, inputs and the caveat are body. */
+.stApp [data-testid="stWidgetLabel"] p,
+.stApp [data-testid="stWidgetLabel"] span
+  {font-size: var(--cc-t-label); font-weight: 600; color: #7A6B5F;}
+.stApp [data-testid="stCheckbox"] label p,
+.stApp [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p
+  {font-size: var(--cc-t-body); font-weight: 500; color: #3B2F2A;}
+.stApp [role="radiogroup"] label p {font-size: var(--cc-t-body);
+  font-weight: 400; color: #3B2F2A;}
+.stApp [data-testid="stCaptionContainer"],
+.stApp [data-testid="stCaptionContainer"] p
+  {font-size: var(--cc-t-cap); font-weight: 400; color: #7A6B5F;
+   line-height: 1.35;}
+.stApp .stButton button p, .stApp .stDownloadButton button p,
+.stApp input, .stApp [data-testid="stAlert"] p
+  {font-size: var(--cc-t-body);}
 
 /* No header bar: Streamlit's header is transparent and empty except
    for its menu (⋮). The header is two rows at every width: the
@@ -169,7 +202,7 @@ p, li, td, th {font-size: var(--cc-text);}
   line-height: 1.2; color: #254C31; margin: 0; white-space: nowrap;}
 @media (max-width: 1149px) {
   .stApp .cc-tool {display: none;}
-  .cc-wordmark {font-size: 16px;}
+  .cc-wordmark {font-size: var(--cc-t-title);}
 }
 .stApp .cc-page {font-weight: 600; color: #254C31;}
 .stApp .cc-q {font-weight: 400; color: #254C31;}
@@ -199,7 +232,7 @@ div[class*="st-key-card_"] {background: #FFFFFF;
    the card-title style. An expander inside a card or inside another
    expander only hides a table: it keeps the regular, lighter text. */
 .stMain [data-testid="stExpander"] summary p
-  {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
+  {font-size: var(--cc-card-title); font-weight: 700; color: #3B2F2A;}
 .stMain [data-testid="stExpanderDetails"] [data-testid="stExpander"]
   summary p,
 .stMain div[class*="st-key-card_"] [data-testid="stExpander"] summary p
@@ -210,21 +243,23 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .cc-stat {background: #FFFFFF; border: 1px solid #EADFCF;
   border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
   box-sizing: border-box;}
-.cc-stat-title {font-size: var(--cc-label); font-weight: 600;}
-.cc-stat-v {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;
+.cc-stat-title {font-size: var(--cc-card-title); font-weight: 700;
+  color: #3B2F2A;}
+.cc-stat-v {font-size: var(--cc-num); font-weight: 600; line-height: 1.2;
   margin-top: 4px; color: #254C31;}
 /* Act totals strip: one white bar, four items with thin dividers,
    2 x 2 below about 1100px. */
 .cc-totals {display: grid; grid-template-columns: repeat(4, 1fr);
   background: #FFFFFF; border: 1px solid #EADFCF; border-radius: 8px;
   margin-bottom: var(--cc-gap); box-sizing: border-box;}
-.cc-tot {padding: calc(10px * var(--cc-pad-k)) var(--cc-pad-x);
-  border-left: 1px solid #EADFCF; min-width: 0;}
+.cc-tot {padding: var(--cc-tot-pad); border-left: 1px solid #EADFCF;
+  min-width: 0; line-height: 1.3;}
 .cc-tot:first-child {border-left: 0;}
-.cc-tot-l {font-size: var(--cc-small); font-weight: 600; color: #3B2F2A;}
-.cc-tot-v {font-size: var(--cc-kpi); font-weight: 600; line-height: 1.25;
-  color: #254C31; margin: 2px 0;}
-.cc-tot-c {font-size: var(--cc-small); color: #7A6B5F; line-height: 1.35;}
+.cc-tot-l {font-size: var(--cc-t-label); font-weight: 600; color: #7A6B5F;
+  line-height: 1.3;}
+.cc-tot-v {font-size: var(--cc-t-value); font-weight: 600; line-height: 1.3;
+  color: #254C31; margin: var(--cc-tot-gap) 0;}
+.cc-tot-c {font-size: var(--cc-t-cap); color: #7A6B5F; line-height: 1.35;}
 @media (max-width: 1100px) {
   .cc-totals {grid-template-columns: 1fr 1fr;}
   .cc-tot:nth-child(3) {border-left: 0;}
@@ -238,15 +273,10 @@ div[class*="st-key-card_"] {background: #FFFFFF;
 .cc-foot-2 ul {columns: 2; column-gap: 32px;}
 .cc-foot-2 li {break-inside: avoid;}
 @media (max-width: 900px) {.cc-foot-2 ul {columns: 1;}}
-.cc-card-title {font-size: var(--cc-card-title); font-weight: 600;
+.cc-card-title, .stApp .stMarkdown p.cc-card-title,
+.stApp [data-testid="stMarkdownContainer"] p.cc-card-title
+  {font-size: var(--cc-card-title); font-weight: 700; line-height: 1.35;
   margin: 0 0 4px; color: #3B2F2A;}
-/* The Act-page filter labels (Campaign group, Status now, Minimum
-   tracked actions) match the card titles. Only the labels inside
-   the filters container change. */
-.st-key-cc_filters [data-testid="stWidgetLabel"],
-.st-key-cc_filters [data-testid="stWidgetLabel"] p,
-.st-key-cc_filters [data-testid="stWidgetLabel"] span
-  {font-size: var(--cc-card-title); font-weight: 600; color: #3B2F2A;}
 
 /* Campaign detail rows (cc_detail_*): the columns of a row are one
    height, and the card, tile or expander in each column fills it, so
@@ -301,38 +331,35 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .cc-badge {display: inline-block; padding: 5px 12px; border-radius: 6px;
   font-weight: 600; font-size: var(--cc-badge); color: #3B2F2A;
   border-left: 5px solid;}
-.cc-foot {color: #7A6B5F; font-size: var(--cc-foot); line-height: 1.5;}
+.cc-foot {color: #7A6B5F; font-size: var(--cc-foot); line-height: 1.35;}
 .cc-take {font-size: var(--cc-text); color: #3B2F2A; margin: 0 0 8px;}
-.cc-muted {color: #7A6B5F; font-size: var(--cc-small);}
+.cc-muted {color: #7A6B5F; font-size: var(--cc-small); line-height: 1.35;}
 
 /* Tables. */
 .cc-table {width: 100%; border-collapse: collapse;
   font-size: var(--cc-text); margin: 0 0 8px;}
 .cc-table th {text-align: left; color: #7A6B5F; font-size: var(--cc-th);
-  font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  font-weight: 600;
   border-bottom: 1px solid #EADFCF; padding: 6px; background: #F3EADB;}
 .cc-table td {border-bottom: 1px solid #EADFCF; padding: 6px;
-  vertical-align: top; background: #FFFFFF;}
+  vertical-align: top; background: #FFFFFF; line-height: 1.35;}
+.cc-table th {line-height: 1.35;}
 .cc-table, .cc-table tr, .cc-table tr:nth-child(even) td
   {background: #FFFFFF;}
 .cc-table {border: 1px solid #EADFCF;}
 .stApp .cc-table th, .stApp .cc-table td {border-left: 0; border-right: 0;}
 .cc-table .n {text-align: right; white-space: nowrap;}
 .cc-scroll {overflow-x: auto; max-width: 100%;}
-.stApp .cc-tight th, .stApp .cc-tight td {padding: 4px;
-  font-size: var(--cc-small);}
+.stApp .cc-tight th, .stApp .cc-tight td {padding: 4px;}
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
-.cc-table .per {font-size: var(--cc-small);}
 .cc-table .cmp {min-width: 7.5em;}
 /* Narrower windows: the ranked table gets compact so it fits its
    card (the 2-column layout stays). */
 @media (max-width: 1500px) {
-  .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;
-    font-size: var(--cc-small);}
-  .stApp .cc-act th {letter-spacing: 0; font-size: var(--cc-th);}
-  .stApp .cc-act .cc-pill {font-size: var(--cc-small); padding: 2px 5px;}
+  .stApp .cc-act th, .stApp .cc-act td {padding: 5px 4px;}
+  .stApp .cc-act .cc-pill {padding: 2px 5px;}
 }
 /* Ranked table: the Action column gets about a third of the width
    and wraps; headers may wrap so the other columns can be narrower.
@@ -347,6 +374,36 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .cc-act-detail {font-size: var(--cc-small); color: #7A6B5F;
   margin-top: 2px; line-height: 1.35;}
 .cc-table .cc-ended {color: #7A6B5F;}
+/* Act row 1: both columns are one height, whether Not comparable is
+   open or closed. The left card fills its column; in the right
+   column the last block (Not comparable, or the chart card when
+   there is none) grows. Inside the left card the picker row sits at
+   the bottom, so any extra height falls between the hint and the
+   picker, not under the buttons. */
+.st-key-cc_act_row1 > [data-testid="stLayoutWrapper"]
+  > [data-testid="stHorizontalBlock"] {align-items: stretch;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] {display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  {flex: 1 0 auto;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child {flex: 1 0 auto; display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child > div[class*="st-key-card_"],
+.st-key-cc_act_row1 [data-testid="stHorizontalBlock"]
+  > [data-testid="stColumn"] > [data-testid="stVerticalBlock"]
+  > :last-child > [data-testid="stExpander"]
+  {flex: 1 0 auto; display: flex; flex-direction: column;}
+.st-key-cc_act_row1 [data-testid="stExpander"] > details {flex: 1 0 auto;}
+/* Room under the last Not comparable campaign (the markdown block's
+   negative bottom margin would put the text on the border). */
+.st-key-cc_act_row1 .cc-nc:last-child {padding-bottom: var(--cc-gap);}
+.st-key-cc_act_row1 div[class*="st-key-card_"]
+  > [data-testid="stLayoutWrapper"]:has(> .st-key-cc_act_picks)
+  {margin-top: auto;}
 
 
 /* Decision tiles. */
@@ -373,7 +430,8 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
   white-space: nowrap;}
 .cc-big {background: #FBF6EE; border-radius: 8px;
   padding: calc(20px * var(--cc-pad-k)); text-align: center;}
-.cc-big-n {font-size: var(--cc-num); font-weight: 300; line-height: 1.2;}
+.cc-big-n {font-size: var(--cc-num); font-weight: 600; line-height: 1.3;
+  color: #254C31;}
 .cc-rt {width: 100%; border-collapse: collapse; font-size: var(--cc-small);}
 .cc-rt td {padding: 4px 6px; vertical-align: middle;
   border-bottom: 1px solid #EADFCF;}
@@ -686,12 +744,9 @@ def _totals_strip_html(kpi, currency):
 def _not_comparable(ctx):
     """The Not comparable card (an expander) under the chart, or
     nothing when the client has no not-comparable campaign."""
-    names = ctx["group_names"]
-    _judged, bench = dashboard_data.scope_groups(
-        ctx["config"], ctx["tables"]["benchmarks"])
+    kpi = dashboard_data.kpi_values(ctx["tables"]["benchmarks"])
     lines = dashboard_data.not_comparable_lines(
-        ctx["all_recommendations"], names,
-        dashboard_data.names_and([names.get(g, g) for g in bench]),
+        ctx["all_recommendations"], ctx["group_names"], kpi["benchmark"],
         ctx["currency"])
     if not lines:
         return
@@ -759,11 +814,13 @@ def _page_act(ctx):
             st.info("No campaign matches the filters.")
         else:
             st.markdown(_action_html(table), unsafe_allow_html=True)
-            st.caption("Pause or review first, then test, then continue; "
-                       "within a label, the highest ratio to the "
-                       "benchmark first. — = no recent trend: the "
-                       "campaign is not active.")
-            picks = st.columns([3, 1, 1], vertical_alignment="bottom")
+            st.caption("Sorted by decision: Pause or review, then Test, "
+                       "then Continue; the highest ratio first within "
+                       "each. \"—\" = no recent trend (the campaign is "
+                       "not active).")
+            # The picker row sits at the bottom of the card (see STYLE).
+            picks = st.container(key="cc_act_picks").columns(
+                [3, 1, 1], vertical_alignment="bottom")
             campaign = picks[0].selectbox(
                 "Campaign", list(table["campaign"]), key=_ckey("act_pick"))
             if picks[1].button("Open detail", type="primary",
@@ -851,7 +908,8 @@ def _recent_html(rows, currency):
             f"{html.escape(_money(row['prior_cost_per_tracked_action'], currency))}</td>"
             f"<td rowspan='2' class='nw' style='text-align:right'>"
             f"<span class='cc-muted'>Recent / prior</span><br>"
-            f"<span style='font-size:22px;font-weight:600'>"
+            f"<span style='font-size:var(--cc-t-value);font-weight:600;"
+            f"color:#254C31'>"
             f"{_fmt(ratio, '{:.2f}x')}</span><br>{flag}</td></tr>"
             "<tr>"
             f"<td>Recent window<br><span class='cc-muted'>"
@@ -986,7 +1044,7 @@ def _card_what_if(ctx, rows, span):
     st.markdown(
         "<div class='cc-big'><div class='cc-big-n'>"
         f"{html.escape(head)}</div>"
-        + (f"<div style='font-size:20px'>{html.escape(sub)}</div>"
+        + (f"<div style='font-size:var(--cc-t-body)'>{html.escape(sub)}</div>"
            if sub else "") + "</div>", unsafe_allow_html=True)
     if scenario and not pd.isna(scenario):
         st.markdown(f"<p class='cc-take' style='margin-top:12px'>"
@@ -1469,7 +1527,7 @@ def _page_detail(ctx):
     action, why = st.container(key="cc_detail_reasons").columns([1, 1.6])
     with _box(action):
         _card_title("Action")
-        st.markdown(f"<p style='font-size:18px;font-weight:600;"
+        st.markdown(f"<p style='font-size:var(--cc-t-body);font-weight:600;"
                     f"margin:0'>{html.escape(detail['action'] or '—')}</p>",
                     unsafe_allow_html=True)
     with _box(why):

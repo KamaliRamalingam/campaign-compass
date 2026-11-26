@@ -775,26 +775,27 @@ def reason_cost(reason):
     return float(match.group(1).replace(",", ""))
 
 
-NOT_COMPARABLE_INTRO = ("Not in the chart or the ranking: these are "
-                        "judged against their own history, not the "
-                        "benchmark.")
+NOT_COMPARABLE_INTRO = "Shown separately: not in the chart or the ranking."
 
 
-def not_comparable_lines(recommendations, names, benchmark_name,
-                         currency):
+def not_comparable_lines(recommendations, names, benchmark, currency):
     """The Act page's Not comparable card, one dict per campaign.
 
     name: the campaign; sub: "{group display name} · {Status}";
-    cost: "{value} {currency} per tracked action. ..." with "A
-    different kind of campaign, so it isn't compared with the
-    {benchmark_name} benchmark." for Performance Max and "Not
-    comparable with the {benchmark_name} benchmark." for any other
-    group. The cost comes from label_cost_per_tracked_action, or
-    else from the reason text; without either the cost sentence is
-    left out. Display only: the data is not changed.
+    cost: "{value} {currency} per tracked action." followed by, for
+    Performance Max, "Performance Max works differently from the
+    other campaigns (Google chooses where the ads appear), so it
+    can't be compared with the {benchmark} {currency} average.", and
+    for any other group "It can't be compared with the {benchmark}
+    {currency} average."; then "Compare it with its own past results
+    instead." benchmark is the value the totals strip shows
+    (kpi_values). The cost comes from label_cost_per_tracked_action,
+    or else from the reason text; without either the cost sentence
+    is left out. Display only: the data is not changed.
     """
     rows = recommendations.loc[
         recommendations["label"] == NOT_COMPARABLE].sort_values("campaign")
+    average = f"{float(benchmark):,.2f} {currency} average"
     out = []
     for _, row in rows.iterrows():
         group = str(row.get("group", ""))
@@ -803,10 +804,12 @@ def not_comparable_lines(recommendations, names, benchmark_name,
         if cost is None or pd.isna(cost):
             cost = reason_cost(row.get("reason"))
         if "performance max" in group_name.lower():
-            why = (f"A different kind of campaign, so it isn't compared "
-                   f"with the {benchmark_name} benchmark.")
+            why = ("Performance Max works differently from the other "
+                   "campaigns (Google chooses where the ads appear), so "
+                   f"it can't be compared with the {average}.")
         else:
-            why = f"Not comparable with the {benchmark_name} benchmark."
+            why = f"It can't be compared with the {average}."
+        why += " Compare it with its own past results instead."
         text = (f"{float(cost):,.2f} {currency} per tracked action. {why}"
                 if cost is not None else why)
         out.append({"name": str(row["campaign"]),

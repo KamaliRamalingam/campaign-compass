@@ -534,29 +534,31 @@ def test_not_comparable_lines_performance_max():
     names = {"core_pmax": "Performance Max", "core": "Core campaigns"}
     lines = dd.not_comparable_lines(
         _nc_recs("core_pmax", "cost per tracked action is 177.90; x"),
-        names, "Core campaigns", "SEK")
+        names, 4.879686, "SEK")
     assert lines == [{
         "name": "Pm", "sub": "Performance Max · Ended",
-        "cost": "177.90 SEK per tracked action. A different kind of "
-                "campaign, so it isn't compared with the Core campaigns "
-                "benchmark."}]
+        "cost": "177.90 SEK per tracked action. Performance Max works "
+                "differently from the other campaigns (Google chooses "
+                "where the ads appear), so it can't be compared with the "
+                "4.88 SEK average. Compare it with its own past results "
+                "instead."}]
     assert "leave-one-out" not in str(lines)
 
 
 def test_not_comparable_lines_other_group_field_and_no_cost():
     names = {"display": "Display", "core": "Core campaigns"}
     lines = dd.not_comparable_lines(
-        _nc_recs("display", "no figure", cost=12.5), names,
-        "Core campaigns", "SEK")
-    assert lines[0]["cost"] == ("12.50 SEK per tracked action. Not "
-                                "comparable with the Core campaigns "
-                                "benchmark.")
+        _nc_recs("display", "no figure", cost=12.5), names, 4.88, "SEK")
+    assert lines[0]["cost"] == (
+        "12.50 SEK per tracked action. It can't be compared with the "
+        "4.88 SEK average. Compare it with its own past results instead.")
     lines = dd.not_comparable_lines(
-        _nc_recs("display", "no figure"), names, "Core campaigns", "SEK")
-    assert lines[0]["cost"] == ("Not comparable with the Core campaigns "
-                                "benchmark.")
+        _nc_recs("display", "no figure"), names, 4.88, "SEK")
+    assert lines[0]["cost"] == (
+        "It can't be compared with the 4.88 SEK average. Compare it with "
+        "its own past results instead.")
     assert dd.not_comparable_lines(
-        _nc_recs("display", "x").iloc[1:], names, "C", "SEK") == []
+        _nc_recs("display", "x").iloc[1:], names, 4.88, "SEK") == []
 
 
 def test_names_and():

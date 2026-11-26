@@ -303,6 +303,10 @@ def test_act_layout_totals_strip_and_not_comparable(client):
     assert page.index("<div class='cc-tiles'>") < \
         page.index("<div class='cc-totals'>")
     assert "Total ad spend of the " in page
+    captions = " ".join(block.value for block in script.caption)
+    assert ("Sorted by decision: Pause or review, then Test, then "
+            "Continue; the highest ratio first within each. \"—\" = no "
+            "recent trend (the campaign is not active).") in captions
     labels = [block.label for block in script.expander]
     assert "Totals and benchmark" not in labels
     assert labels[-1] == "How to read this"
@@ -315,7 +319,7 @@ def test_act_layout_totals_strip_and_not_comparable(client):
     assert nc == ([f"Not comparable ({count})"] if count else [])
     if count:
         assert "Action:" not in page and "leave-one-out" not in page
-        assert "Not in the chart or the ranking" in page
+        assert "Shown separately: not in the chart or the ranking." in page
 
 
 def test_expander_titles_card_style_top_level_only():
@@ -324,10 +328,28 @@ def test_expander_titles_card_style_top_level_only():
     import app
 
     assert (".stMain [data-testid=\"stExpander\"] summary p\n"
-            "  {font-size: var(--cc-card-title); font-weight: 600; "
+            "  {font-size: var(--cc-card-title); font-weight: 700; "
             "color: #3B2F2A;}") in app.STYLE
     assert ".stMain [data-testid=\"stExpanderDetails\"] " \
            "[data-testid=\"stExpander\"]\n  summary p," in app.STYLE
     assert ".stMain div[class*=\"st-key-card_\"] [data-testid=\"stExpander\"]" \
            " summary p\n  {font-size: var(--cc-text); font-weight: 400;}" \
         in app.STYLE
+
+
+def test_act_row_columns_equal_height_and_picker_at_bottom():
+    """Act row 1: columns stretch to one height, the last block of a
+    column grows (never shrinks), and the picker row sits at the
+    bottom of the table card."""
+    import app
+
+    style = app.STYLE
+    assert (".st-key-cc_act_row1 > [data-testid=\"stLayoutWrapper\"]\n"
+            "  > [data-testid=\"stHorizontalBlock\"] {align-items: "
+            "stretch;}") in style
+    assert "> :last-child {flex: 1 0 auto; display: flex; " \
+           "flex-direction: column;}" in style
+    assert ("[data-testid=\"stLayoutWrapper\"]:has(> .st-key-cc_act_picks)"
+            "\n  {margin-top: auto;}") in style
+    source = Path(app.__file__).read_text(encoding="utf-8")
+    assert 'st.container(key="cc_act_picks").columns(' in source
