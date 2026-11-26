@@ -192,13 +192,6 @@ def test_journey_intent_long():
     assert long["share"].sum() == pytest.approx(1.0)
 
 
-def test_footnote_text_from_config_or_default():
-    assert dd.footnote_text({"analysis": {"footnote_text": "x"}}) == "x"
-    assert dd.footnote_text({}) == dd.DEFAULT_FOOTNOTE
-
-
-# --- Redesign: theme, header helpers --------------------------------
-
 def test_label_colours_match_the_redesign_palette():
     assert dd.label_colour("pause_or_review") == "#C8452D"
     assert dd.label_colour("test") == "#D9961A"
@@ -232,8 +225,7 @@ def test_logo_path_missing_key_missing_file_and_file(tmp_path):
 
 def test_ratio_bar_rows_keep_table_order_cap_and_worsening():
     recs = _recs()
-    recs["trend_override"] = [
-        "continue -> test", None, None, None, None, None, None]
+    recs.loc[recs["campaign"] == "Alpha", "recent_trend"] = "worsening"
     recs.loc[recs["campaign"] == "Gamma", "label_ratio"] = 25.4
     table = dd.action_table(recs)
     rows = dd.ratio_bar_rows(table, recs, cap=2.5)
@@ -247,7 +239,7 @@ def test_ratio_bar_rows_keep_table_order_cap_and_worsening():
     assert not rows.set_index("campaign").loc["Beta", "over"]
 
 
-def test_ratio_bar_rows_without_override_column_or_rows():
+def test_ratio_bar_rows_no_worsening_or_no_rows():
     rows = dd.ratio_bar_rows(dd.action_table(_recs()), _recs())
     assert not rows["worsening"].any()
     empty = dd.ratio_bar_rows(dd.action_table(_recs().iloc[4:]),

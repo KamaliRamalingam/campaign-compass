@@ -88,17 +88,19 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
     shown top to bottom). lines: data.reference_lines; the dashed
     lines are the threshold ratios from the config (the benchmark
     itself when there are none), each labelled with its cost.
-    Bars are coloured by the final label and the label is also
-    written after the bar, so colour is never the only cue. A ratio
-    above cap is cut at the axis edge, marked with an arrow and its
-    real value written. "worsening" follows the value when the label
-    comes from the trend override. Linear axis, no log scale.
+    Bars are coloured by the final label; the label is named in the
+    table beside the chart and in each bar's hover ("Final label:
+    Test"), so colour is never the only cue. Each bar's text is only
+    its ratio. A ratio above cap is cut at the axis edge, marked
+    with "▶" and its real value written. " · worsening" follows the
+    value when the campaign's recent trend is worsening. Linear
+    axis, no log scale.
     """
     fig = go.Figure()
     names = _wrapped(rows["campaign"])
     texts = []
     for _, row in rows.iterrows():
-        text = f"{row['ratio']:.2f}x · {html.escape(row['label_text'])}"
+        text = f"{row['ratio']:.2f}x"
         if row["over"]:
             text = f"▶ {text}"
         if row["worsening"]:
@@ -115,7 +117,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
             _safe(rows["label_period"]), rows["cost_per_tracked_action"],
             rows["benchmark"])),
         hovertemplate=(
-            "<b>%{y}</b><br>%{customdata[0]}"
+            "<b>%{y}</b><br>Final label: %{customdata[0]}"
             "<br>Ratio to benchmark: %{customdata[1]:.2f}x"
             "<br>Label period: %{customdata[2]}"
             f"<br>Cost per tracked action: %{{customdata[3]:,.2f}} "
@@ -141,7 +143,7 @@ def ratio_bar(rows, lines, currency, cap=RATIO_CAP):
                      tickformat=".1f", type="linear")
     fig.update_yaxes(title=None, type="category", autorange="reversed")
     _layout(fig, height=max(240, 46 * len(rows) + 110), legend=False)
-    fig.update_layout(margin={"l": 10, "r": 170, "t": 50, "b": 10},
+    fig.update_layout(margin={"l": 10, "r": 90, "t": 50, "b": 10},
                       bargap=0.35)
     fig.update_xaxes(tickangle=0)
     return fig

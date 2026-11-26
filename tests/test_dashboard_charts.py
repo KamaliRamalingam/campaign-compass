@@ -22,13 +22,13 @@ def _bars():
     recs = pd.DataFrame([
         {"campaign": "Alpha", "label": "pause_or_review",
          "label_ratio": 25.37, "status_now": "ended",
-         "action_text": "a", "trend_override": None},
+         "action_text": "a", "recent_trend": "not_active"},
         {"campaign": "Beta", "label": "test", "label_ratio": 0.45,
          "status_now": "active", "action_text": "b",
-         "trend_override": "continue -> test"},
+         "recent_trend": "worsening"},
         {"campaign": "Gamma", "label": "continue", "label_ratio": 0.95,
          "status_now": "ended", "action_text": "c",
-         "trend_override": None},
+         "recent_trend": "not_active"},
     ])
     return dd.ratio_bar_rows(dd.action_table(recs), recs)
 
@@ -45,12 +45,33 @@ def test_ratio_bar_is_linear_capped_with_real_value_written():
     assert tuple(fig.layout.xaxis.range) == (0, 2.5)
     bar = fig.data[0]
     assert max(bar.x) == 2.5
-    assert bar.text[0].startswith("▶ 25.37x")
-    assert "worsening" in bar.text[1]
-    assert "worsening" not in bar.text[2]
-    # Label text is written, so colour is not the only cue.
-    assert "Pause or review" in bar.text[0]
+    # Only the ratio: "▶" on a bar past the axis, " · worsening" when
+    # the trend is worsening; no label word on the bar.
+    assert list(bar.text) == ["▶ 25.37x", "0.45x · worsening", "0.95x"]
+    # The hover still names the label in words.
+    assert "Final label: %{customdata[0]}" in bar.hovertemplate
+    assert [row[0] for row in bar.customdata] == [
+        "Pause or review", "Test", "Continue"]
     assert list(bar.marker.color) == ["#C8452D", "#D9961A", "#2E9E5B"]
+
+
+def test_ratio_note_defaults_arrow_and_worsening():
+    assert dd.ratio_note(_lines(), _bars()) == (
+        "Dashed lines: 1.0x = the average, 2.0x = twice the average. "
+        "▶ = the bar continues past the chart. Worsening = cost rising "
+        "recently, so the label moved down.")
+
+
+def test_ratio_note_other_values_and_no_extra_sentences():
+    config = {"analysis": {"recommendation_rules": {
+        "continue_max_ratio": 0.8, "test_max_ratio": 1.5}}}
+    lines = dd.reference_lines(config, 4.88)
+    rows = _bars().iloc[2:]
+    assert dd.ratio_note(lines, rows) == (
+        "Dashed lines: 0.8x = 0.8x the average, 1.5x = 1.5x the average.")
+    assert dd.ratio_note(_lines(), _bars().iloc[1:]) == (
+        "Dashed lines: 1.0x = the average, 2.0x = twice the average. "
+        "Worsening = cost rising recently, so the label moved down.")
 
 
 def test_ratio_bar_dashed_lines_at_config_ratios_with_costs():

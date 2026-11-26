@@ -206,9 +206,20 @@ def test_act_tiles_title_with_count_and_two_line_campaigns():
     assert "min-height: var(--cc-tile-min)" not in app.STYLE
 
 
+def _act_row(**changes):
+    row = {"rank": 1, "campaign": "Lunch", "label": "test",
+           "status_now": "active", "ratio_to_benchmark": 1.4,
+           "tracked_actions": 120, "recent_trend": "worsening",
+           "action": "keep running", "label_period":
+           "2025-06-06 to 2025-10-04"}
+    row.update(changes)
+    return row
+
+
 def test_act_table_shows_the_full_action_text():
     """A long action text is in the Act table in full: no clamp, no
-    "…", and the Action cell is the wide, wrapping column."""
+    "…". The headline (up to the first "; ") is line 1 with a capital
+    first letter; the rest is a smaller second line."""
     import pandas as pd
 
     import app
@@ -216,14 +227,107 @@ def test_act_table_shows_the_full_action_text():
     action = ("keep running, but test changes; cost per tracked action "
               "has risen recently: check budget changes & conversion "
               "reporting")
-    table = pd.DataFrame([{
-        "rank": 1, "campaign": "Lunch", "label": "test",
-        "status_now": "active", "ratio_to_benchmark": 1.4,
-        "tracked_actions": 120, "recent_trend": "worsening",
-        "action": action, "label_period": "2025-06-06 to 2025-10-04"}])
-    out = app._action_html(table)
-    escaped = action.replace("&", "&amp;")
-    assert f"<td class='act'>{escaped}</td>" in out
+    out = app._action_html(pd.DataFrame([_act_row(action=action)]))
+    assert ("<td class='act'>Keep running, but test changes"
+            "<div class='cc-act-detail'>Cost per tracked action has risen "
+            "recently: check budget changes &amp; conversion reporting"
+            "</div></td>") in out
     assert "…" not in out
     assert "cc-clamp" not in out and "line-clamp" not in app.STYLE
     assert ".cc-table .act {width: 32%; white-space: normal;" in app.STYLE
+
+
+def test_act_table_formats_status_trend_and_period():
+    """Status capitalised (Ended in grey), Trend "—" when not active
+    and Worsening in bold, the period in day-month text, numbers
+    right-aligned in header and cells."""
+    import pandas as pd
+
+    import app
+
+    table = pd.DataFrame([
+        _act_row(),
+        _act_row(rank=2, campaign="Dinner", status_now="ended",
+                 recent_trend="not_active",
+                 action="restart only with changes; best run was run 2 "
+                        "(2025-06-06 to 2025-10-04)",
+                 label_period="2025-11-18 to 2026-07-14")])
+    out = app._action_html(table)
+    assert "<td>Active</td>" in out
+    assert "<td class='cc-ended'>Ended</td>" in out
+    assert "<td><b>Worsening</b></td>" in out
+    assert "<td>—</td>" in out
+    assert ("<td class='per'><span class='nw'>6 Jun –</span> "
+            "<span class='nw'>4 Oct 2025</span></td>") in out
+    assert ("<td class='per'><span class='nw'>18 Nov 2025 –</span> "
+            "<span class='nw'>14 Jul 2026</span></td>") in out
+    assert "Best run was run 2, 6 Jun – 4 Oct 2025</div>" in out
+    assert "2025-06-06" not in out
+    assert "<th class='n'>Ratio</th>" in out
+    assert "<th class='n'>Tracked actions</th>" in out
+    assert out.count("<td class='n'>") == 6
+
+
+def test_act_table_label_pill_never_wraps():
+    """The Final label pill stays on one line at every width: its
+    cell is nowrap and no narrow-screen rule lets the pill wrap."""
+    import pandas as pd
+
+    import app
+
+    out = app._action_html(pd.DataFrame([_act_row(
+        label="pause_or_review")]))
+    assert "<td class='lab'><span class='cc-pill'" in out
+    assert ".stApp .cc-act .lab, .stApp .cc-act .lab .cc-pill " \
+           "{white-space: nowrap;}" in app.STYLE
+    narrow = app.STYLE[app.STYLE.index("@media (max-width: 1500px)"):]
+    narrow = narrow[:narrow.index("}\n}") + 3]
+    assert "white-space: normal" not in narrow
+
+
+@pytest.mark.parametrize("client", CLIENTS)
+def test_act_layout_totals_strip_and_not_comparable(client):
+    """Act: tiles, then the totals strip; the old Totals box is gone;
+    Not comparable sits in the right column under the chart (only
+    when the client has such campaigns); How to read this is last."""
+    if not _has_outputs(client):
+        pytest.skip(f"no result tables for {client}: run bash run.sh")
+    script = AppTest.from_string(
+        f"DASHBOARD_PATH = {str(DASHBOARD)!r}\n"
+        f"CLIENT = {client!r}\nPAGE = 'act'\n" + PAGE_SCRIPT,
+        default_timeout=60)
+    script.run()
+    assert not script.exception, script.exception
+    page = " ".join(block.value for block in script.markdown)
+    assert "Totals and benchmark" not in page
+    assert page.index("<div class='cc-tiles'>") < \
+        page.index("<div class='cc-totals'>")
+    assert "Total ad spend of the " in page
+    labels = [block.label for block in script.expander]
+    assert "Totals and benchmark" not in labels
+    assert labels[-1] == "How to read this"
+    config = dd.load_config(dd.client_config_path(client))
+    root = dd.client_output_root(client, config)
+    recs = dd.load_tables(config, output_root=root)[
+        "recommendations_by_campaign"]
+    count = int((recs["label"] == "not_comparable").sum())
+    nc = [label for label in labels if label.startswith("Not comparable")]
+    assert nc == ([f"Not comparable ({count})"] if count else [])
+    if count:
+        assert "Action:" not in page and "leave-one-out" not in page
+        assert "Not in the chart or the ranking" in page
+
+
+def test_expander_titles_card_style_top_level_only():
+    """Top-level expanders get the card-title style; expanders in a
+    card or inside another expander keep the regular style."""
+    import app
+
+    assert (".stMain [data-testid=\"stExpander\"] summary p\n"
+            "  {font-size: var(--cc-card-title); font-weight: 600; "
+            "color: #3B2F2A;}") in app.STYLE
+    assert ".stMain [data-testid=\"stExpanderDetails\"] " \
+           "[data-testid=\"stExpander\"]\n  summary p," in app.STYLE
+    assert ".stMain div[class*=\"st-key-card_\"] [data-testid=\"stExpander\"]" \
+           " summary p\n  {font-size: var(--cc-text); font-weight: 400;}" \
+        in app.STYLE

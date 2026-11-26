@@ -19,8 +19,15 @@ recommendations_by_campaign.csv (after the trend override), and
 no metric, ratio or label is recomputed here. Functions only
 filter, sort, join on campaign or run number, and rename for
 display.
+
+The caveat banner and the Act page's "How to read this" sentences
+are dashboard text (CAVEAT_TEXT, how_to_read_lines), not read from
+analysis.caveat_text / footnote_text: those config keys feed the
+pipeline's outputs (the caveat column and the reports), which a
+display change must not alter.
 """
 
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -149,9 +156,11 @@ def load_config(config_path=None):
         return yaml.safe_load(handle)
 
 
-def caveat_text(config):
-    """The caveat text, from analysis.caveat_text in the config."""
-    return config["analysis"]["caveat_text"]
+# The caveat banner at the bottom of every page (display text).
+CAVEAT_TEXT = ("Tracked actions (mostly directions requests and calls) "
+               "are not bookings or orders. This shows campaign "
+               "performance, not proof that an offer brought extra "
+               "customers.")
 
 
 def client_config_path(client, config_dir=None):
@@ -331,6 +340,15 @@ def group_text(value, names):
     else:
         return value
     return " + ".join(names.get(part, part) for part in parts)
+
+
+def names_and(parts):
+    """["A"] -> "A", ["A", "B"] -> "A and B", ["A", "B", "C"] ->
+    "A, B and C"."""
+    parts = [str(part) for part in parts]
+    if len(parts) <= 1:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
 
 def journey_pool_label(config, names):
@@ -561,6 +579,82 @@ def _period(start, end):
     return f"{start} to {end}"
 
 
+def format_period(start, end):
+    """A period for display: "31 May – 13 Jul 2026", or with
+    different years "18 Nov 2025 – 14 Jul 2026" (en dash, English
+    month abbreviations, no leading zeros). Missing start or end
+    gives "", as _period does. Display only: CSV downloads and
+    tables with separate Start and End columns keep ISO dates.
+    """
+    if _period(start, end) == "":
+        return ""
+    first = pd.Timestamp(start)
+    last = pd.Timestamp(end)
+    if first.year == last.year:
+        return f"{first.day} {first:%b} – {_day(last)}"
+    return f"{_day(first)} – {_day(last)}"
+
+
+def period_text(period):
+    """format_period of an ISO "start to end" text ("" stays "")."""
+    if period is None or (not isinstance(period, str) and pd.isna(period)):
+        return ""
+    parts = str(period).split(" to ", 1)
+    if len(parts) != 2:
+        return str(period)
+    return format_period(*parts)
+
+
+# An optional "run N " before the bracketed dates, so the period can
+# follow the run number after a comma.
+_ISO_PERIOD = re.compile(r"(\brun \d+ )?\((\d{4}-\d{2}-\d{2}) to "
+                         r"(\d{4}-\d{2}-\d{2})\)")
+
+
+def _period_sub(match):
+    """A bracketed ISO period as format_period text; after a run
+    number it follows a comma ("run 2, 6 Jun – 4 Oct 2025")."""
+    period = format_period(match.group(2), match.group(3))
+    run = match.group(1)
+    return f"{run.rstrip()}, {period}" if run else period
+
+
+def split_action(text):
+    """(headline, detail) of an action text, split at the first "; ".
+
+    The headline and the detail each get a capital first letter; the
+    detail is "" when there is no "; ". Dates written "(2025-06-06 to 2025-10-04)" in
+    the detail become format_period text without the brackets, after
+    a comma when they follow a run number ("Best run was run 2, 6 Jun
+    – 4 Oct 2025"). Display only: the action text in the data is not
+    changed.
+    """
+    if text is None or (not isinstance(text, str) and pd.isna(text)):
+        return "", ""
+    head, _, detail = str(text).partition("; ")
+    detail = capitalise_first(_ISO_PERIOD.sub(_period_sub, detail).strip())
+    return capitalise_first(head.strip()), detail.strip()
+
+
+def status_text(status):
+    """"Active" / "Ended" (underscores to spaces), "—" for missing."""
+    if status is None or (not isinstance(status, str) and pd.isna(status)) \
+            or str(status).strip() == "":
+        return MISSING
+    return capitalise_first(str(status).replace("_", " "))
+
+
+def trend_text(trend):
+    """The Act table's trend: "—" when the campaign is not active or
+    the value is empty, otherwise capitalised ("Worsening")."""
+    if trend is None or (not isinstance(trend, str) and pd.isna(trend)):
+        return MISSING
+    value = str(trend).strip()
+    if value in ("", "not_active", "not active"):
+        return MISSING
+    return capitalise_first(value.replace("_", " "))
+
+
 def summary_rows(recommendations, recent_trend, show_hidden=False,
                  group=None):
     """One row per judged campaign for the Summary page.
@@ -602,15 +696,6 @@ def summary_rows(recommendations, recent_trend, show_hidden=False,
                "label_period", "trend_period"]
     return pd.DataFrame(rows, columns=columns).sort_values(
         ["status_now", "campaign"]).reset_index(drop=True)
-
-
-def not_comparable_rows(recommendations):
-    """Campaigns labelled not_comparable, with reason and action."""
-    part = recommendations.loc[
-        recommendations["label"] == NOT_COMPARABLE]
-    return part[["campaign", "group", "status_now", "reason",
-                 "action_text"]].sort_values(
-        "campaign").reset_index(drop=True)
 
 
 def kpi_values(benchmarks):
@@ -655,17 +740,80 @@ def too_little_data_count(recommendations, groups):
     return int((part["label"] == "insufficient_data").sum())
 
 
-def totals_scope_text(campaigns, judged_groups, too_little,
-                      benchmark_groups):
-    """The "Totals and benchmark" sentence: both scopes.
+def totals_strip_items(kpi, currency):
+    """The Act page's totals strip: [(name, value, caption)] for
+    spend, tracked actions, cost per tracked action and benchmark,
+    from kpi_values (benchmarks.csv). The benchmark caption names
+    the leave-one-out range only when leave-one-out is used."""
+    bench = "The average that campaigns are compared with"
+    if kpi.get("leave_one_out") and kpi.get("loo_min") is not None:
+        bench += (f" ({kpi['loo_min']:,.2f} to {kpi['loo_max']:,.2f} "
+                  f"{currency}, depending on which campaign is left out)")
+    return [
+        ("Spend", f"{kpi['spend']:,.0f} {currency}",
+         f"Total ad spend of the {kpi['judged_campaigns']} campaigns."),
+        ("Tracked actions", f"{kpi['tracked_actions']:,.0f}",
+         "Directions requests and calls counted by Google Ads."),
+        ("Cost per tracked action",
+         f"{kpi['cost_per_tracked_action']:,.2f} {currency}",
+         "Spend divided by tracked actions."),
+        ("Benchmark", f"{kpi['benchmark']:,.2f} {currency}", bench + "."),
+    ]
 
-    "has" when one campaign has too little data, "have" otherwise.
+
+# "cost per tracked action is 177.90" in a recommendation reason.
+REASON_COST = re.compile(r"cost per tracked action is ([\d,]+(?:\.\d+)?)")
+
+
+def reason_cost(reason):
+    """The cost per tracked action written in a reason, or None."""
+    if reason is None or (not isinstance(reason, str) and pd.isna(reason)):
+        return None
+    match = REASON_COST.search(str(reason))
+    if not match:
+        return None
+    return float(match.group(1).replace(",", ""))
+
+
+NOT_COMPARABLE_INTRO = ("Not in the chart or the ranking: these are "
+                        "judged against their own history, not the "
+                        "benchmark.")
+
+
+def not_comparable_lines(recommendations, names, benchmark_name,
+                         currency):
+    """The Act page's Not comparable card, one dict per campaign.
+
+    name: the campaign; sub: "{group display name} · {Status}";
+    cost: "{value} {currency} per tracked action. ..." with "A
+    different kind of campaign, so it isn't compared with the
+    {benchmark_name} benchmark." for Performance Max and "Not
+    comparable with the {benchmark_name} benchmark." for any other
+    group. The cost comes from label_cost_per_tracked_action, or
+    else from the reason text; without either the cost sentence is
+    left out. Display only: the data is not changed.
     """
-    verb = "has" if too_little == 1 else "have"
-    return (f"Totals cover {campaigns} campaigns in the groups "
-            f"{', '.join(judged_groups)} ({too_little} of them {verb} "
-            f"too little data for a label). The benchmark is built from "
-            f"group(s) {', '.join(benchmark_groups)} only.")
+    rows = recommendations.loc[
+        recommendations["label"] == NOT_COMPARABLE].sort_values("campaign")
+    out = []
+    for _, row in rows.iterrows():
+        group = str(row.get("group", ""))
+        group_name = (names or {}).get(group, group)
+        cost = row.get("label_cost_per_tracked_action")
+        if cost is None or pd.isna(cost):
+            cost = reason_cost(row.get("reason"))
+        if "performance max" in group_name.lower():
+            why = (f"A different kind of campaign, so it isn't compared "
+                   f"with the {benchmark_name} benchmark.")
+        else:
+            why = f"Not comparable with the {benchmark_name} benchmark."
+        text = (f"{float(cost):,.2f} {currency} per tracked action. {why}"
+                if cost is not None else why)
+        out.append({"name": str(row["campaign"]),
+                    "sub": f"{group_name} · "
+                           f"{status_text(row.get('status_now'))}",
+                    "cost": text})
+    return out
 
 
 def scope_groups(config, benchmarks=None):
@@ -794,8 +942,8 @@ def ratio_bar_rows(table, recommendations, cap=2.5):
     campaign with a ratio to the benchmark. shown is the ratio cut
     at cap (the axis edge), over is True when the ratio is above
     it (the real value is written on the bar). worsening is True
-    when the label comes from the trend override (trend_override
-    is set in recommendations_by_campaign.csv).
+    when the campaign's recent trend is worsening (the table's
+    recent_trend).
     """
     columns = ["campaign", "label", "label_text", "colour", "ratio",
                "shown", "over", "worsening", "label_period",
@@ -806,18 +954,12 @@ def ratio_bar_rows(table, recommendations, cap=2.5):
     part = part.dropna(subset=["ratio"])
     if part.empty:
         return pd.DataFrame(columns=columns)
-    override = {}
-    if "trend_override" in recommendations.columns:
-        for name, value in zip(recommendations["campaign"],
-                               recommendations["trend_override"]):
-            override[name] = (value is not None and not pd.isna(value)
-                              and str(value).strip() != "")
     part["label_text"] = part["label"].map(label_text)
     part["colour"] = part["label"].map(label_colour)
     part["shown"] = part["ratio"].clip(upper=cap)
     part["over"] = part["ratio"] > cap
-    part["worsening"] = [override.get(name, False)
-                         for name in part["campaign"]]
+    part["worsening"] = part["recent_trend"].astype(str).eq("worsening") \
+        if "recent_trend" in part.columns else False
     return part[columns].reset_index(drop=True)
 
 
@@ -1089,10 +1231,34 @@ LABEL_RANK = {"pause_or_review": 0, "test": 1, "continue": 2,
               "not_comparable": 3, "insufficient_data": 4,
               "not_judged": 5}
 ALL_STATUSES = "All"
-DEFAULT_FOOTNOTE = "Labels are prompts for review, not proof of cause."
 INTENT_COLUMNS = {"directions_share": "Directions",
                   "calls_share": "Calls",
                   "store_visits_share": "Store visits"}
+
+
+# Raw values shown by their readable names in on-screen tables:
+# the labels, plus the trend and volume-flag keys. Display only.
+KEY_TEXT = {"not_active": "Not active"}
+
+
+def readable_keys(table):
+    """A copy of the table for display, with label and flag keys in
+    text columns shown by their readable names ("pause_or_review" ->
+    "Pause or review", "insufficient_data" -> "Insufficient data").
+    Only exact cell values are mapped; CSV downloads keep the keys.
+    """
+    if table is None or table.empty:
+        return table
+    mapping = {key: style["text"] for key, style in LABEL_STYLE.items()}
+    mapping.update(KEY_TEXT)
+    out = table.copy()
+    for column in out.columns:
+        if out[column].dtype == object or \
+                pd.api.types.is_string_dtype(out[column]):
+            out[column] = [mapping.get(value, value)
+                           if isinstance(value, str) else value
+                           for value in out[column]]
+    return out
 
 
 def label_text(label):
@@ -1140,12 +1306,6 @@ def logo_path(config, repo_root=None):
     if not path.is_absolute():
         path = (Path(repo_root) if repo_root else REPO_ROOT) / path
     return path if path.is_file() else None
-
-
-def footnote_text(config):
-    """analysis.footnote_text from the config, or the default."""
-    analysis = config.get("analysis") or {}
-    return analysis.get("footnote_text") or DEFAULT_FOOTNOTE
 
 
 def judged_label_counts(recommendations):
@@ -1238,6 +1398,94 @@ def reference_lines(config, benchmark):
         lines.append((f"{name} {float(ratio):.1f}x", float(ratio),
                       float(benchmark) * float(ratio)))
     return lines
+
+
+def how_to_read_lines(config, kpi, names, recommendations,
+                      benchmarks=None, currency="SEK"):
+    """The Act page's "How to read this" bullets: [(lead, text)].
+
+    lead is the bold term before the colon ("" for none). Values
+    come from the data (kpi_values, the recommendations) and the
+    config (thresholds, recent_label.window_days, groups); nothing
+    is typed in. Without a recent-label window the Period bullet
+    names only the latest run. The "compared with the average of
+    the other campaigns" sentence needs leave-one-out; without it
+    a campaign is compared with the benchmark itself. The last
+    Totals sentence only when the benchmark and the overall cost
+    per tracked action differ (at 2 decimals).
+    """
+    rules = ((config or {}).get("analysis") or {}).get(
+        "recommendation_rules") or {}
+    judged, bench = scope_groups(config, benchmarks)
+    bench_names = names_and([names.get(g, g) for g in bench])
+    judged_names = names_and([names.get(g, g) for g in judged])
+    compared = ("Each campaign is compared with the average of the "
+                "other campaigns." if kpi.get("leave_one_out") else
+                "Each campaign is compared with this average.")
+    window = (rules.get("recent_label") or {}).get("window_days")
+    period = "the latest run with enough data"
+    if window:
+        period += f", or the last {window} days for a running campaign"
+    k = too_little_data_count(recommendations, judged)
+    totals = (f"cover {kpi['judged_campaigns']} campaigns "
+              f"({judged_names}) over the whole data period; {k} of them "
+              f"{'has' if k == 1 else 'have'} too little data for a "
+              f"label.")
+    if round(kpi["benchmark"], 2) != round(kpi["cost_per_tracked_action"],
+                                           2):
+        totals += (f" The benchmark uses the {bench_names} only, so it "
+                   f"differs slightly from the overall cost per tracked "
+                   f"action.")
+    cont = float(rules.get("continue_max_ratio"))
+    test = float(rules.get("test_max_ratio"))
+    return [
+        ("Tracked action", "something Google Ads counts after an ad, "
+         "mostly directions requests and calls (Google Ads calls it a "
+         "conversion). It is not a booking."),
+        ("Benchmark", f"the average cost per tracked action of the "
+         f"{bench_names}, {kpi['benchmark']:,.2f} {currency}. {compared}"),
+        ("Labels", f"up to {cont:.1f}x the benchmark: Continue. Up to "
+         f"{test:.1f}x: Test. Above that: Pause or review."),
+        ("Period", f"{period}. The bars use the figures of that period."),
+        ("Totals", totals),
+        ("", "Filters only change what you see. They never change a "
+         "label, a tile or a total."),
+        ("", "Labels are prompts for review, not proof of cause. They "
+         "compare cost with a benchmark. They don't show why a campaign "
+         "did better or worse."),
+    ]
+
+
+def _ratio_text(value):
+    """A dashed line's ratio in words: "1.0x" -> "the average",
+    "2.0x" -> "twice the average", otherwise "1.5x the average"."""
+    if round(value, 6) == 1.0:
+        return "the average"
+    if round(value, 6) == 2.0:
+        return "twice the average"
+    return f"{value:.1f}x the average"
+
+
+def ratio_note(lines, rows):
+    """The note under the Act ratio chart.
+
+    lines: reference_lines (the dashed lines are the config's
+    continue and test ratios); rows: ratio_bar_rows. The "▶"
+    sentence only when a bar passes the axis, the "Worsening"
+    sentence only when a campaign in the chart is worsening.
+    """
+    ratios = []
+    for _name, ratio, _value in lines[1:] or lines[:1]:
+        if round(ratio, 6) not in [round(r, 6) for r in ratios]:
+            ratios.append(ratio)
+    parts = [f"{ratio:.1f}x = {_ratio_text(ratio)}" for ratio in ratios]
+    note = f"Dashed lines: {', '.join(parts)}."
+    if rows is not None and len(rows) and bool(rows["over"].any()):
+        note += " ▶ = the bar continues past the chart."
+    if rows is not None and len(rows) and bool(rows["worsening"].any()):
+        note += (" Worsening = cost rising recently, so the label moved "
+                 "down.")
+    return note
 
 
 def action_table(recommendations, recent_trend=None):
