@@ -229,7 +229,7 @@ def test_act_table_shows_the_full_action_text():
               "reporting")
     out = app._action_html(pd.DataFrame([_act_row(action=action)]))
     assert ("<td class='act'>Keep running, but test changes"
-            "<div class='cc-act-detail'>cost per tracked action has risen "
+            "<div class='cc-act-detail'>Cost per tracked action has risen "
             "recently: check budget changes &amp; conversion reporting"
             "</div></td>") in out
     assert "…" not in out
@@ -261,7 +261,7 @@ def test_act_table_formats_status_trend_and_period():
             "<span class='nw'>4 Oct 2025</span></td>") in out
     assert ("<td class='per'><span class='nw'>18 Nov 2025 –</span> "
             "<span class='nw'>14 Jul 2026</span></td>") in out
-    assert "best run was run 2, 6 Jun – 4 Oct 2025</div>" in out
+    assert "Best run was run 2, 6 Jun – 4 Oct 2025</div>" in out
     assert "2025-06-06" not in out
     assert "<th class='n'>Ratio</th>" in out
     assert "<th class='n'>Tracked actions</th>" in out

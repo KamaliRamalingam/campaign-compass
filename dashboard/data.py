@@ -622,17 +622,17 @@ def _period_sub(match):
 def split_action(text):
     """(headline, detail) of an action text, split at the first "; ".
 
-    The headline gets a capital first letter; the detail is "" when
-    there is no "; ". Dates written "(2025-06-06 to 2025-10-04)" in
+    The headline and the detail each get a capital first letter; the
+    detail is "" when there is no "; ". Dates written "(2025-06-06 to 2025-10-04)" in
     the detail become format_period text without the brackets, after
-    a comma when they follow a run number ("best run was run 2, 6 Jun
+    a comma when they follow a run number ("Best run was run 2, 6 Jun
     – 4 Oct 2025"). Display only: the action text in the data is not
     changed.
     """
     if text is None or (not isinstance(text, str) and pd.isna(text)):
         return "", ""
     head, _, detail = str(text).partition("; ")
-    detail = _ISO_PERIOD.sub(_period_sub, detail)
+    detail = capitalise_first(_ISO_PERIOD.sub(_period_sub, detail).strip())
     return capitalise_first(head.strip()), detail.strip()
 
 
