@@ -707,6 +707,37 @@ def first_clause(text):
 TILE_LABELS = ("pause_or_review", "test", "continue")
 
 
+def capitalise_first(text):
+    """Text with only its first letter made upper case."""
+    text = "" if text is None else str(text)
+    return text[:1].upper() + text[1:]
+
+
+def tile_title(text, count):
+    """An Act tile's title with its count in brackets: "Test (3)"."""
+    return f"{text} ({int(count)})"
+
+
+def tile_detail(line, with_label=False):
+    """Second line of a campaign in an Act tile.
+
+    "Ended · Do not restart without changes", "Running · Keep
+    running, but test changes", or in the Running now tile the label
+    first: "Test · Keep running, but test changes". Only the first
+    letter of each part is capitalised; the text is the same as in
+    act_summary.
+    """
+    if with_label:
+        first = label_text(line["label"]) or "—"
+    elif line["running"]:
+        first = "running"
+    else:
+        first = line["status"]
+    parts = [capitalise_first(part) for part in (first, line["action"])
+             if part]
+    return " · ".join(parts)
+
+
 def act_summary(recommendations, max_lines=3):
     """Per-tile data for the Act page's four decision tiles.
 

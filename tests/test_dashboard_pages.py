@@ -211,6 +211,36 @@ def test_act_summary_running_marker_and_first_clause():
         ("Alpha", "test"), ("Pmax", "not_comparable")]
 
 
+def test_tile_title_has_count_in_brackets():
+    assert dd.tile_title("Pause or review", 1) == "Pause or review (1)"
+    assert dd.tile_title("Running now", 0) == "Running now (0)"
+
+
+def test_tile_detail_status_then_advice_capitalised():
+    summary = dd.act_summary(_recs_with_ended_pauses())
+    pause_line = summary["tiles"][0]["lines"][0]
+    assert dd.tile_detail(pause_line) == (
+        "Ended · Do not restart without changes")
+    test_line = summary["tiles"][1]["lines"][0]
+    assert dd.tile_detail(test_line) == (
+        "Running · Keep running, but test changes")
+    # Running now: the label first, then the advice.
+    running = summary["running"][0]
+    assert dd.tile_detail(running, with_label=True) == (
+        f"{dd.label_text('test')} · Keep running, but test changes")
+
+
+def test_tile_detail_only_first_letter_changes():
+    line = {"campaign": "A", "label": "test", "status": "ended",
+            "running": False, "action": "restart only with changes"}
+    assert dd.tile_detail(line) == "Ended · Restart only with changes"
+    line["action"] = ""
+    assert dd.tile_detail(line) == "Ended"
+    line["label"] = None
+    assert dd.tile_detail(line, with_label=True) == "—"
+    assert dd.capitalise_first("keep running, But") == "Keep running, But"
+
+
 def test_act_summary_no_active_campaigns():
     recs = _recs()
     recs["status_now"] = "ended"

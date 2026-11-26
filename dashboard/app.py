@@ -74,7 +74,6 @@ STYLE = """
   --cc-gap: calc(13.64px * var(--cc-s));             /* 12px */
   --cc-pad-y: calc(14px * var(--cc-pad-k));
   --cc-pad-x: calc(16px * var(--cc-pad-k));
-  --cc-tile-min: calc(150px * var(--cc-s));
   --cc-page-max: 1500px;                              /* content width */
   --cc-side: 24px;                                    /* side padding */
   --cc-logo-h: 64px;
@@ -318,15 +317,18 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 /* Decision tiles. */
 .cc-tiles {display: grid; grid-template-columns: repeat(4, 1fr);
   gap: var(--cc-gap); align-items: stretch;}
+/* Equal height in the row comes from the grid (align-items:
+   stretch), with no fixed minimum, so short tiles stay compact. */
 .cc-tile {border-radius: 8px; padding: var(--cc-pad-y) var(--cc-pad-x);
-  border-left: 5px solid; color: #3B2F2A; min-height: var(--cc-tile-min);}
-.cc-tile-head {display: flex; align-items: baseline; gap: 10px;}
-.cc-tile-count {font-size: var(--cc-num); font-weight: 300; line-height: 1;}
-.cc-tile-label {font-size: var(--cc-label); font-weight: 600;}
-.cc-tile-line {font-size: var(--cc-small); font-weight: 400;
-  line-height: 1.4; margin-top: 5px;}
-.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 5px;}
-.cc-run {color: #6B5E54; white-space: nowrap;}
+  border-left: 5px solid; color: #3B2F2A;}
+/* One campaign: bold name, then status and advice in the secondary
+   colour (#6B5E54, 4.5:1 or more on the tints), a gap between. */
+.cc-tile-camp {margin-top: 8px;}
+.cc-tile-name {font-size: var(--cc-text); font-weight: 600;
+  line-height: 1.35; color: #3B2F2A;}
+.cc-tile-sub {font-size: var(--cc-small); font-weight: 400;
+  line-height: 1.35; color: #6B5E54; margin-top: 1px;}
+.cc-tile-more {font-size: var(--cc-small); color: #6B5E54; margin-top: 8px;}
 @media (max-width: 900px) {.cc-tiles {grid-template-columns: 1fr 1fr;}}
 
 /* Context: recent-window rows, what-if tile, tags. */
@@ -610,19 +612,19 @@ def _act_definitions(ctx, kpi):
 
 
 def _tile_line(line, with_label=False):
-    """One campaign line in a tile: name, status or label, action."""
-    parts = [f"<b>{html.escape(line['campaign'])}</b>"]
-    if with_label:
-        parts.append(html.escape(
-            f"({dashboard_data.label_text(line['label']) or '—'})"))
-    elif line["running"]:
-        parts.append("<span class='cc-run'>● running</span>")
-    elif line["status"]:
-        parts.append(html.escape(line["status"]))
-    text = " · ".join(parts)
-    if line["action"]:
-        text += f": {html.escape(line['action'])}"
-    return f"<div class='cc-tile-line'>{text}</div>"
+    """One campaign in a tile: the name in bold, then a smaller
+    secondary line with status (or label) and advice."""
+    detail = dashboard_data.tile_detail(line, with_label=with_label)
+    sub = (f"<div class='cc-tile-sub'>{html.escape(detail)}</div>"
+           if detail else "")
+    return (f"<div class='cc-tile-camp'><div class='cc-tile-name'>"
+            f"{html.escape(line['campaign'])}</div>{sub}</div>")
+
+
+def _tile_title(text, count):
+    """A tile's title line, in the card-title style."""
+    return (f"<div class='cc-card-title'>"
+            f"{html.escape(dashboard_data.tile_title(text, count))}</div>")
 
 
 def _tiles_html(summary):
@@ -638,10 +640,8 @@ def _tiles_html(summary):
             "<div class='cc-tile' style='background:"
             f"{dashboard_data.label_tint(label)};border-left-color:"
             f"{dashboard_data.label_colour(label)}'>"
-            "<div class='cc-tile-head'><span class='cc-tile-count'>"
-            f"{tile['count']}</span><span class='cc-tile-label'>"
-            f"{html.escape(dashboard_data.label_text(label))}</span></div>"
-            f"{lines}</div>")
+            + _tile_title(dashboard_data.label_text(label), tile["count"])
+            + f"{lines}</div>")
     running = summary["running"]
     lines = "".join(_tile_line(line, with_label=True) for line in running)
     if not running:
@@ -649,9 +649,7 @@ def _tiles_html(summary):
     tiles.append(
         "<div class='cc-tile' style='background:#FFFFFF;"
         "border:1px solid #D9CFC0;border-left:5px solid #D9CFC0'>"
-        "<div class='cc-tile-head'><span class='cc-tile-count'>"
-        f"{len(running)}</span><span class='cc-tile-label'>Running now"
-        f"</span></div>{lines}</div>")
+        + _tile_title("Running now", len(running)) + f"{lines}</div>")
     return f"<div class='cc-tiles'>{''.join(tiles)}</div>"
 
 
