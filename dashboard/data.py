@@ -84,6 +84,9 @@ OPTIONAL_PATHS = {
     "weekday_leave_one_out":
         "outputs/results/weekday_leave_one_out.csv",
     "weekday_top_days": "outputs/results/weekday_top_days.csv",
+    # Read only for the months the conversion export covers (Method).
+    "conversion_mix_by_campaign_month":
+        "outputs/results/conversion_mix_by_campaign_month.csv",
 }
 
 # Labels hidden on the Summary page unless asked for.
@@ -1735,3 +1738,575 @@ def journey_intent_long(journey):
                           var_name="intent", value_name="share")
     long["intent"] = long["intent"].map(INTENT_COLUMNS)
     return long.reset_index(drop=True)
+
+
+# --- Context, Campaign detail and Method display helpers ----------
+# Display only: each builds text or a renamed copy of a table from
+# values already in the results; nothing is recomputed.
+
+FULL_WEEKDAY = {day[:3]: day for day in WEEKDAYS}
+
+
+def full_weekday(day):
+    """"Fri" -> "Friday"; a full name or anything else unchanged."""
+    return FULL_WEEKDAY.get(str(day)[:3], str(day)) \
+        if str(day)[:3] in FULL_WEEKDAY else str(day)
+
+
+def weekday_outline_text(table):
+    """"Outlined: Thursday (highest cost), Saturday (lowest cost) and
+    Friday (most clicks)." for a weekday table (weekday_core_table
+    columns). A day with two roles is named once ("Friday (highest
+    cost, most clicks)"). "" when there is nothing to outline."""
+    if table is None or table.empty:
+        return ""
+    roles = {}
+    costs = pd.to_numeric(table["cost_per_tracked_action"],
+                          errors="coerce")
+    if costs.notna().any():
+        roles.setdefault(table.loc[costs.idxmax(), "weekday"],
+                         []).append("highest cost")
+        roles.setdefault(table.loc[costs.idxmin(), "weekday"],
+                         []).append("lowest cost")
+    busiest = most_clicks_weekday(table)
+    if busiest is not None:
+        roles.setdefault(busiest, []).append("most clicks")
+    if not roles:
+        return ""
+    parts = [f"{full_weekday(day)} ({', '.join(what)})"
+             for day, what in roles.items()]
+    return f"Outlined: {names_and(parts)}."
+
+
+VOLUME_TEXT = {"ok": "OK", "insufficient_data": "Low volume"}
+
+
+def pooled_weekday_display(pooled, currency):
+    """The pooled weekday table with plain headers (weekday_core_table
+    in, a renamed copy out). Tracked actions per 100 clicks is the
+    conversion rate x 100; the volume flag reads OK / Low volume."""
+    table = pooled.copy()
+    out = pd.DataFrame({
+        "Weekday": [full_weekday(day) for day in table["weekday"]],
+        "Tracked actions": table["tracked_actions"],
+        f"Cost per tracked action ({currency})":
+            table["cost_per_tracked_action"],
+    })
+    if "active_days" in table:
+        out["Active days"] = table["active_days"]
+    if "spend" in table:
+        out[f"Spend ({currency})"] = table["spend"]
+    if "clicks" in table:
+        out["Clicks"] = table["clicks"]
+    if "conversion_rate" in table:
+        out["Tracked actions per 100 clicks"] = \
+            table["conversion_rate"] * 100.0
+    if "share_of_campaign_conversions" in table:
+        out["Share of tracked actions (%)"] = \
+            table["share_of_campaign_conversions"]
+    if "volume_flag" in table:
+        out["Volume"] = [VOLUME_TEXT.get(value, value)
+                         for value in table["volume_flag"]]
+    return out
+
+
+POOLED_WEEKDAY_FORMATS = {
+    "Tracked actions": "%.0f", "Active days": "%.0f", "Clicks": "%.0f",
+    "Tracked actions per 100 clicks": "%.1f",
+    "Share of tracked actions (%)": "%.1f"}
+
+
+def day_text(value):
+    """An ISO date as "16 Aug 2024" ("" when missing)."""
+    if _is_missing(value) or str(value).strip() == "":
+        return ""
+    return _day(pd.Timestamp(value))
+
+
+def month_text(value):
+    """"2024-07" (or "2024-07-01") as "Jul 2024"."""
+    if _is_missing(value) or str(value).strip() == "":
+        return ""
+    return f"{pd.Timestamp(str(value)[:7] + '-01'):%b %Y}"
+
+
+def period_label(value):
+    """A slider value for display: a month "Jul 2024", a date
+    "16 Aug 2024", anything else unchanged."""
+    text = str(value)
+    if re.fullmatch(r"\d{4}-\d{2}", text):
+        return month_text(text)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return day_text(text)
+    return text
+
+
+def top_days_display(top, weekday):
+    """The top weekday dates with plain headers; the weekday column
+    is left out (the title names it)."""
+    name = full_weekday(weekday)
+    out = pd.DataFrame({
+        "Rank": top["rank"],
+        "Date": [day_text(value) for value in top["date"]],
+        "Clicks": top["clicks"],
+        f"Share of {name} clicks (%)":
+            top["share_of_weekday_clicks"] * 100.0,
+        "Tracked actions": top["conversions"],
+        "Tracked actions per click": top["actions_per_click"],
+    })
+    return out
+
+
+def top_days_formats(weekday):
+    """Number formats of top_days_display."""
+    return {"Rank": "%d", "Clicks": "%.0f",
+            f"Share of {full_weekday(weekday)} clicks (%)": "%.1f",
+            "Tracked actions": "%.0f",
+            "Tracked actions per click": "%.3f"}
+
+
+def what_if_note(currency):
+    """The what-if warning (display text, not the CSV note)."""
+    return (f"Rough linear estimate. It assumes every extra {currency} "
+            f"buys actions at today's average cost, and ignores "
+            f"diminishing returns and the campaign mix.")
+
+
+def baseline_label(config):
+    """"Mon-Thu" from analysis.weekday_decomposition.baseline_weekdays."""
+    days = (((config or {}).get("analysis") or {}).get(
+        "weekday_decomposition") or {}).get("baseline_weekdays") or []
+    days = [str(day)[:3] for day in days]
+    if not days:
+        return "baseline"
+    return days[0] if len(days) == 1 else f"{days[0]}-{days[-1]}"
+
+
+def leave_one_out_takeaway(loo_table, weekday, baseline):
+    """"Leaving out {campaign} brings Friday to 0.98x of the Mon-Thu
+    level (with all campaigns: 0.82x)." from
+    leave_one_out_for_weekday (closest to the baseline first); ""
+    without a "(none)" row and at least one other row."""
+    if loo_table is None or loo_table.empty:
+        return ""
+    full = loo_table.loc[loo_table["left_out"] == "(none)"]
+    others = loo_table.loc[loo_table["left_out"] != "(none)"]
+    if full.empty or others.empty:
+        return ""
+    best = others.iloc[0]
+    return (f"Leaving out {best['left_out']} brings {full_weekday(weekday)} "
+            f"to {best['actions_per_click_vs_baseline']:.2f}x of the "
+            f"{baseline} level (with all campaigns: "
+            f"{full['actions_per_click_vs_baseline'].iloc[0]:.2f}x).")
+
+
+def value_text(value):
+    """A key as a tile value: "not_active" -> "Not active"."""
+    if _is_missing(value) or str(value).strip() == "":
+        return MISSING
+    return capitalise_first(str(value).replace("_", " "))
+
+
+def trend_window_caption(config):
+    """"Last 28 days vs the 28 days before." from
+    recent_trend.recent_window_days, or None when it is not set."""
+    days = (((config or {}).get("analysis") or {}).get(
+        "recent_trend") or {}).get("recent_window_days")
+    if not days:
+        return None
+    return f"Last {days} days vs the {days} days before."
+
+
+def _override_labels(text):
+    """("Continue", "Test") from "continue -> test", or None."""
+    if _is_missing(text) or "->" not in str(text):
+        return None
+    before, _, after = str(text).partition("->")
+    return label_text(before.strip()), label_text(after.strip())
+
+
+def why_lines(row, run_count, benchmark_names, window_days=None,
+              names=None, currency="SEK"):
+    """"Why this label" as 2-3 short lines, from the recommendation
+    row's fields (label, label_basis, latest_run_number,
+    runs_with_volume, label period, label_ratio, trend_override,
+    group, reason for a not-comparable cost). run_count: the
+    campaign's runs in recommendations_by_run. No ISO dates."""
+    def get(key):
+        value = row.get(key) if hasattr(row, "get") else None
+        return None if _is_missing(value) else value
+
+    label = get("label")
+    period = format_period(get("label_period_start"),
+                           get("label_period_end"))
+    with_volume = int(get("runs_with_volume") or 0)
+    group = str(get("group") or "")
+    if label == "not_judged":
+        name = (names or {}).get(group, group)
+        return [f"Not judged: the {name} group is not one of the judged "
+                f"groups."]
+    if label == "not_comparable":
+        lines = ["Not compared with the benchmark: judged against its "
+                 "own history."]
+        cost = reason_cost(get("reason"))
+        if cost is not None:
+            lines.append(f"Cost per tracked action was {cost:,.2f} "
+                         f"{currency}.")
+        return lines
+    if label == "insufficient_data" or get("label_ratio") is None:
+        return [f"No run had enough data to judge ({with_volume} of "
+                f"{run_count} runs)." if run_count else
+                "No run had enough data to judge."]
+    lines = []
+    if get("label_basis") == "recent_window":
+        days = f"the last {window_days} days" if window_days else \
+            "the recent window"
+        lines.append(f"Based on {days} ({period}), because the campaign "
+                     f"is running.")
+    else:
+        run = get("latest_run_number")
+        run_text = f"run {int(run)}" if run is not None else "the run"
+        lines.append(f"Based on {run_text} ({period}), the latest run "
+                     f"with enough data.")
+    lines.append(f"Cost per tracked action was {get('label_ratio'):.2f}x "
+                 f"the benchmark of the {benchmark_names}.")
+    moved = _override_labels(get("trend_override"))
+    if moved:
+        lines.append(f"The label moved from {moved[0]} to {moved[1]} "
+                     f"because cost has risen recently.")
+    elif run_count > 1:
+        only = "Only " if with_volume < run_count else ""
+        lines.append(f"{only}{with_volume} of {run_count} runs had enough "
+                     f"data.")
+    return lines
+
+
+def trend_line(trend_row, window_days=None):
+    """"Recent trend: Worsening. Cost per tracked action in the last
+    28 days (13 Oct – 9 Nov 2026) was 1.52x the 28 days before."
+    from a recent_trend.csv row; "" without a row."""
+    if trend_row is None:
+        return ""
+    def get(key):
+        value = trend_row.get(key)
+        return None if _is_missing(value) else value
+    trend = value_text(get("recent_trend"))
+    period = format_period(get("recent_window_start"),
+                           get("recent_window_end"))
+    days = f"the last {window_days} days" if window_days else \
+        "the recent window"
+    ratio = get("recent_vs_prior_ratio")
+    if ratio is None:
+        return f"Recent trend: {trend} ({days}, {period})."
+    before = f"the {window_days} days before" if window_days else \
+        "the window before"
+    return (f"Recent trend: {trend}. Cost per tracked action in {days} "
+            f"({period}) was {ratio:.2f}x {before}.")
+
+
+NO_TREND_TEXT = "No recent trend: this campaign is not running."
+
+
+def low_weekday_volume_text(table, config):
+    """"Based on only {n} tracked actions: read with care." when a
+    campaign's weekday table has fewer than weekday_min_conversions
+    x 7 tracked actions; "" otherwise."""
+    minimum = ((config or {}).get("analysis") or {}).get(
+        "weekday_min_conversions")
+    if not minimum or table is None or table.empty:
+        return ""
+    total = float(pd.to_numeric(table["tracked_actions"],
+                                errors="coerce").sum())
+    if total >= float(minimum) * 7:
+        return ""
+    return f"Based on only {total:,.0f} tracked actions: read with care."
+
+
+def monthly_history_text(table, first_day):
+    """"Months before Jul 2024 come from the older monthly export."
+    when the table has monthly-export rows; "" otherwise."""
+    if table is None or "source" not in table.columns or first_day is None:
+        return ""
+    if not (table["source"] == "month").any():
+        return ""
+    return (f"Months before {pd.Timestamp(first_day):%b %Y} come from the "
+            f"older monthly export.")
+
+
+SOURCE_TEXT = {"day": "Daily export", "month": "Monthly export"}
+
+
+def month_table_display(table, currency):
+    """A monthly trend table with plain headers, months as "Jul 2024"
+    and the source as Daily export / Monthly export."""
+    out = pd.DataFrame({"Month": [month_text(m) for m in table["month"]]})
+    if "source" in table.columns:
+        out["Source"] = [SOURCE_TEXT.get(v, v) for v in table["source"]]
+    for column, title in (
+            ("active_days", "Active days"),
+            ("spend", f"Spend ({currency})"),
+            ("tracked_actions", "Tracked actions"),
+            ("cost_per_tracked_action",
+             f"Cost per tracked action ({currency})"),
+            ("month_note", "Month note")):
+        if column in table.columns:
+            out[title] = list(table[column])
+    return out
+
+
+def week_table_display(table, currency):
+    """The weekly trend table with plain headers and "16 Aug 2024"."""
+    return pd.DataFrame({
+        "Week starting": [day_text(v) for v in table["week_start"]],
+        "Active days": list(table["active_days"]),
+        f"Spend ({currency})": list(table["spend"]),
+        "Tracked actions": list(table["tracked_actions"]),
+        f"Cost per tracked action ({currency})":
+            list(table["cost_per_tracked_action"]),
+    })
+
+
+TREND_TABLE_FORMATS = {"Active days": "%.0f", "Tracked actions": "%.0f"}
+
+
+BENCHMARK_ROWS = {
+    "benchmark": "Benchmark (the one used)",
+    "with_not_comparable": "Including not-comparable groups",
+    "judged_campaigns": "Campaigns in the totals",
+}
+
+
+def _yes_no(value):
+    if _is_missing(value) or str(value).strip() == "":
+        return MISSING
+    return "Yes" if str(value).strip().lower() in ("true", "1") else "No"
+
+
+def benchmarks_display(benchmarks, names, currency):
+    """benchmarks.csv with plain headers and Yes/No."""
+    table = benchmarks
+    return pd.DataFrame({
+        "What": [BENCHMARK_ROWS.get(v, v) for v in table["variant"]],
+        "Groups": [group_text(v, names or {}) for v in table["groups"]],
+        "Campaign left out?": [_yes_no(v) for v in table["leave_one_out"]],
+        "Campaigns": list(table["campaigns"]),
+        f"Spend ({currency})": list(table["spend"]),
+        "Tracked actions": list(table["tracked_actions"]),
+        f"Cost per tracked action ({currency})":
+            list(table["cost_per_tracked_action"]),
+        "Lowest when one campaign is left out": list(table["loo_min"]),
+        "Highest when one campaign is left out": list(table["loo_max"]),
+    })
+
+
+BENCHMARK_FORMATS = {
+    "Campaigns": "%d", "Tracked actions": "%.0f",
+    "Lowest when one campaign is left out": "%.2f",
+    "Highest when one campaign is left out": "%.2f"}
+BENCHMARK_NOTE = ("Lowest and highest: the benchmark worked out again "
+                  "with each campaign left out in turn.")
+
+
+# Plain names and meanings of the config settings shown on Method:
+# key -> (setting, what it means, unit). Keys without an entry are
+# shown by their key.
+SETTING_TEXT = {
+    "volume_rule.min_conversions": (
+        "Minimum tracked actions", "A run needs at least this many "
+        "tracked actions to get a label", "tracked actions"),
+    "volume_rule.min_days_active": (
+        "Minimum active days", "A run needs at least this many active "
+        "days to get a label", "days"),
+    "recommendation_rules.continue_max_ratio": (
+        "Continue up to", "Highest ratio to the benchmark labelled "
+        "Continue", "x"),
+    "recommendation_rules.test_max_ratio": (
+        "Test up to", "Highest ratio labelled Test; above it: Pause or "
+        "review", "x"),
+    "recommendation_rules.repeat_min_runs": (
+        "Runs before repeating", "Runs with enough data needed before a "
+        "campaign counts as worth repeating", "runs"),
+    "recommendation_rules.benchmark.groups": (
+        "Benchmark groups", "Groups whose average cost per tracked "
+        "action is the benchmark", None),
+    "recommendation_rules.benchmark.leave_one_out": (
+        "Leave the campaign out", "Each campaign is compared with the "
+        "average of the other campaigns", None),
+    "recommendation_rules.not_comparable_groups": (
+        "Not comparable groups", "Groups never compared with the "
+        "benchmark", None),
+    "recommendation_rules.judged_groups": (
+        "Judged groups", "Groups whose campaigns get a label", None),
+    "recommendation_rules.recent_label.window_days": (
+        "Recent label window", "A running campaign is labelled from its "
+        "last days of data", "days"),
+    "recommendation_rules.active_window_days": (
+        "Active window", "A campaign is active if it ran this close to "
+        "the last date in the data", "days"),
+    "recommendation_rules.sensitivity_continue_max_ratio": (
+        "Sensitivity: Continue limits", "Continue limits tried in the "
+        "sensitivity check", "x"),
+    "recommendation_rules.sensitivity_test_max_ratio": (
+        "Sensitivity: Test limits", "Test limits tried in the "
+        "sensitivity check", "x"),
+    "recent_trend.recent_window_days": (
+        "Recent window", "Days in the recent window; the window before "
+        "has the same length", "days"),
+    "recent_trend.conversion_lag_days": (
+        "Reporting lag", "Most recent days left out because tracked "
+        "actions can arrive late", "days"),
+    "recent_trend.worsening_ratio": (
+        "Worsening vs the run", "Recent cost at least this many times "
+        "the run average: worsening", "x"),
+    "recent_trend.improving_ratio": (
+        "Improving vs the run", "Recent cost at most this many times "
+        "the run average: improving", "x"),
+    "recent_trend.worsening_vs_prior_ratio": (
+        "Worsening vs the window before", "Recent cost at least this "
+        "many times the window before: worsening", "x"),
+    "recent_trend.improving_vs_prior_ratio": (
+        "Improving vs the window before", "Recent cost at most this many "
+        "times the window before: improving", "x"),
+    "recent_trend.min_tracked_actions_in_window": (
+        "Minimum tracked actions per window", "Fewer in either window "
+        "gives no trend", "tracked actions"),
+    "recent_trend.trend_overrides.worsening": (
+        "Label change when worsening", "An active campaign with a "
+        "worsening trend moves down a label", None),
+    "recent_trend.run_average": (
+        "Run average", "Which days the run average uses", None),
+    "recent_trend.lag_check_days": (
+        "Lag check", "Lags tried in the lag check", "days"),
+    "weekday_min_conversions": (
+        "Weekday minimum", "A weekday below this many tracked actions is "
+        "marked low volume", "tracked actions"),
+    "run_gap_days": (
+        "Run gap", "More days than this without activity start a new "
+        "run", "days"),
+}
+
+
+def _setting_value(key, value, unit, names):
+    """A config value for display: lists joined with their unit,
+    dicts as "Continue → Test", group lists by name, booleans Yes/No."""
+    if key.endswith("groups") and isinstance(value, list):
+        return ", ".join((names or {}).get(str(g), str(g)) for g in value)
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, dict):
+        return ", ".join(f"{label_text(a) or a} → {label_text(b) or b}"
+                         for a, b in value.items())
+
+    def one(item):
+        if unit == "x" and isinstance(item, (int, float)):
+            text = f"{float(item):.2f}".rstrip("0")
+            return (text + "0" if text.endswith(".") else text) + "x"
+        if isinstance(item, str):
+            return capitalise_first(item.replace("_", " "))
+        return f"{item:g}" if isinstance(item, float) else str(item)
+
+    if isinstance(value, list):
+        text = ", ".join(one(item) for item in value)
+    else:
+        text = one(value)
+    if unit and unit != "x" and not isinstance(value, str):
+        text += f" {unit}"
+    return text
+
+
+def settings_display(config, names=None):
+    """The settings table on Method: Setting | What it means | Value |
+    Key, from the same config sections as rules_table."""
+    analysis = (config or {}).get("analysis") or {}
+    items = []
+    for section in ("volume_rule", "recommendation_rules",
+                    "recent_trend"):
+        for key, value in (analysis.get(section) or {}).items():
+            path = f"{section}.{key}"
+            if isinstance(value, dict) and path not in SETTING_TEXT:
+                for inner, inner_value in value.items():
+                    items.append((f"{path}.{inner}", inner_value))
+            else:
+                items.append((path, value))
+    for key in ("weekday_min_conversions", "run_gap_days"):
+        if key in analysis:
+            items.append((key, analysis[key]))
+    rows = []
+    for key, value in items:
+        name, meaning, unit = SETTING_TEXT.get(key, (key, "", None))
+        rows.append({"Setting": name, "What it means": meaning,
+                     "Value": _setting_value(key, value, unit, names),
+                     "Key": key})
+    return pd.DataFrame(rows, columns=["Setting", "What it means",
+                                       "Value", "Key"])
+
+
+ACTION_GROUP_TEXT = {"high_intent": "High intent",
+                     "engagement": "Engagement", "unmapped": "Unmapped"}
+
+
+def what_counts_caption(mix_by_campaign, mix_by_month=None):
+    """"Covers all 16 campaigns in the conversion export, Jun 2019 –
+    Nov 2026." (the months only when the monthly table is there)."""
+    count = int(mix_by_campaign["campaign"].nunique())
+    text = f"Covers all {count} campaigns in the conversion export"
+    if mix_by_month is not None and not mix_by_month.empty:
+        text += (f", {month_text(mix_by_month['month'].min())} – "
+                 f"{month_text(mix_by_month['month'].max())}")
+    return text + "."
+
+
+JOURNEY_HEADERS = {
+    "campaign": "Campaign", "spend": "Spend ({c})", "clicks": "Clicks",
+    "cost_per_click": "Cost per click ({c})",
+    "tracked_actions": "Tracked actions",
+    "engagement_actions": "Engagement actions",
+    "directions_share": "Directions (%)", "calls_share": "Calls (%)",
+    "store_visits_share": "Store visits (%)",
+    "tracked_actions_per_click": "Tracked actions per click",
+    "engagement_per_tracked_action":
+        "Engagement actions per tracked action",
+    "cost_per_tracked_action": "Cost per tracked action ({c})",
+}
+JOURNEY_FORMATS = {
+    "Spend ({c})": "%.0f", "Clicks": "%.0f", "Tracked actions": "%.0f",
+    "Engagement actions": "%.0f", "Directions (%)": "%.1f",
+    "Calls (%)": "%.1f", "Store visits (%)": "%.1f",
+    "Tracked actions per click": "%.3f",
+    "Engagement actions per tracked action": "%.2f",
+    "Cost per click ({c})": "%.2f",
+    "Cost per tracked action ({c})": "%.2f"}
+JOURNEY_NOTE = ("Whole data period. The Act page shows only the period "
+                "behind each label, so numbers differ.")
+
+
+def journey_table_display(journey, currency):
+    """journey_display with plain headers ((%) shares)."""
+    table = journey_display(journey)
+    return table.rename(columns={
+        column: title.format(c=currency)
+        for column, title in JOURNEY_HEADERS.items()
+        if column in table.columns})
+
+
+def journey_formats(currency):
+    return {title.format(c=currency): fmt
+            for title, fmt in JOURNEY_FORMATS.items()}
+
+
+def sensitivity_display(sensitivity, names=None):
+    """recommendation_sensitivity.csv with plain headers, readable
+    labels and Yes/No (display only; the CSV keeps the keys)."""
+    table = sensitivity
+    return pd.DataFrame({
+        "Campaign": list(table["campaign"]),
+        "Group": [group_text(g, names or {}) for g in table["group"]],
+        "Continue up to": list(table["continue_max_ratio"]),
+        "Test up to": list(table["test_max_ratio"]),
+        "Label": [label_text(v) for v in table["label"]],
+        "Same label in every combination":
+            [_yes_no(v) for v in table["label_stable"]],
+    })
+
+
+SENSITIVITY_FORMATS = {"Continue up to": "%.2fx", "Test up to": "%.2fx"}

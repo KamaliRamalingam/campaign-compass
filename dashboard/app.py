@@ -354,6 +354,7 @@ div[class*="st-key-cc_detail_"] > [data-testid="stLayoutWrapper"]
 .stApp .cc-table.cc-tight th {white-space: normal !important;
   vertical-align: bottom; text-transform: none; letter-spacing: 0;}
 .cc-table .nw {white-space: nowrap;}
+.cc-table .cc-key {font-size: var(--cc-t-cap); color: #7A6B5F;}
 .cc-table .cmp {min-width: 7.5em;}
 /* Narrower windows: the ranked table gets compact so it fits its
    card (the 2-column layout stays). */
@@ -537,15 +538,21 @@ def _open_detail(campaign):
     st.switch_page(PAGE_OBJECTS["Campaign detail"])
 
 
-def _html_table(table, column_config=None):
+def _html_table(table, column_config=None, formats=None, muted=()):
     """A table as escaped HTML that fits its card.
 
     Headers wrap, every column stays visible (a horizontal scroll
     only as a last resort), missing values show as "—" and numbers
     are rounded for display only (data.display_value). Labels and
-    formats come from column_config when given.
+    formats come from column_config when given; formats maps a
+    column to a printf pattern ("%.1f"). Columns in muted are small
+    and grey (for example a raw config key).
     """
-    config = column_config or {}
+    config = dict(column_config or {})
+    for column, pattern in (formats or {}).items():
+        cfg = dict(config.get(column) or {})
+        cfg["type_config"] = {"format": pattern}
+        config[column] = cfg
     columns = list(table.columns)
     labels, patterns, numeric = [], [], []
     for column in columns:
@@ -560,7 +567,8 @@ def _html_table(table, column_config=None):
     body = []
     for row in table.itertuples(index=False, name=None):
         cells = "".join(
-            f"<td{' class=n' if is_number else ''}>"
+            f"<td{' class=n' if is_number else ''}"
+            f"{' class=cc-key' if column in muted else ''}>"
             f"{html.escape(dashboard_data.display_value(column, value, pattern))}"
             "</td>"
             for column, value, pattern, is_number in zip(
@@ -572,16 +580,19 @@ def _html_table(table, column_config=None):
 
 
 def _table(table, file_name=None, column_config=None, key=None,
-           height="auto", hide=()):
+           height="auto", hide=(), display=None, formats=None, muted=()):
     """A table as escaped HTML, with a CSV download of the raw table.
 
     The download is the table's raw values (no display rounding) and
     all its columns; hide only leaves columns out of the display (for
-    example a campaign name already shown on the page).
+    example a campaign name already shown on the page). display, when
+    given, is the table shown instead (plain headers and values from
+    a data.*_display helper); the download stays the raw table.
     """
-    shown = table.drop(columns=[column for column in hide
-                                if column in table.columns]) \
-        if table is not None else table
+    source = display if display is not None else table
+    shown = source.drop(columns=[column for column in hide
+                                 if column in source.columns]) \
+        if source is not None else source
     # Group keys shown by their display names; the download keeps keys.
     shown = dashboard_data.with_group_names(
         shown, _CTX.get("group_names") or {}, _CTX.get("journey_pool"))
@@ -590,7 +601,7 @@ def _table(table, file_name=None, column_config=None, key=None,
     if shown is None or shown.empty:
         st.caption("No rows.")
     else:
-        st.markdown(_html_table(shown, column_config),
+        st.markdown(_html_table(shown, column_config, formats, muted),
                     unsafe_allow_html=True)
     if file_name:
         st.download_button(
@@ -855,13 +866,6 @@ def _page_act(ctx):
 
 # --- Context ------------------------------------------------------
 
-BENCHMARK_NAMES = {
-    "benchmark": "Benchmark (pooled, the one used)",
-    "with_not_comparable": "Including not-comparable groups",
-    "judged_campaigns": "Judged campaigns (KPI cards)",
-}
-
-
 def _takeaway(text):
     """The one-sentence takeaway under a card's question."""
     st.markdown(f"<p class='cc-take'>{html.escape(text)}</p>",
@@ -1013,13 +1017,14 @@ def _card_weekday(ctx, pooled):
                                        note="most pooled clicks"),
                     width="stretch", key="ctx_weekday_chart",
                     config={"displayModeBar": False})
-    if busiest is not None:
-        st.caption(f"Outlined: {busiest}, the weekday with the most "
-                   "pooled clicks. Pooled over the time groups in the "
-                   "config.")
+    outline = dashboard_data.weekday_outline_text(pooled)
+    if outline:
+        st.caption(f"{outline} Pooled over the campaign groups.")
     with st.expander("Pooled weekday table"):
-        _table(dashboard_data.display_table(pooled), "weekday_pooled.csv",
-               key="ctx_weekday_pooled")
+        _table(pooled, "weekday_pooled.csv", key="ctx_weekday_pooled",
+               display=dashboard_data.pooled_weekday_display(
+                   pooled, currency),
+               formats=dashboard_data.POOLED_WEEKDAY_FORMATS)
 
 
 def _card_what_if(ctx, rows, span):
@@ -1034,7 +1039,6 @@ def _card_what_if(ctx, rows, span):
 
     change = span["display"] if span is not None else first("display")
     scenario = (span or {}).get("scenario") or first("scenario")
-    note = (span or {}).get("note") or first("note")
     if change is None or (not isinstance(change, str) and pd.isna(change)):
         st.info("No what-if rows for this client.")
         return
@@ -1050,9 +1054,9 @@ def _card_what_if(ctx, rows, span):
         st.markdown(f"<p class='cc-take' style='margin-top:12px'>"
                     f"{html.escape(str(scenario))}.</p>",
                     unsafe_allow_html=True)
-    if note and not pd.isna(note):
-        st.markdown(f"<p class='cc-take'>⚠️ {html.escape(str(note))}.</p>",
-                    unsafe_allow_html=True)
+    st.markdown(f"<p class='cc-take'>"
+                f"{html.escape(dashboard_data.what_if_note(currency))}</p>",
+                unsafe_allow_html=True)
     with st.expander("What-if by variant"):
         _what_if(rows, None, currency)
 
@@ -1076,14 +1080,15 @@ def _journey_tables(ctx, expanded=False):
     for a half-width card)."""
     tables = ctx["tables"]
     journey_raw = tables["journey_by_campaign"]
+    currency = ctx["currency"]
     with st.expander("Journey table", expanded=expanded):
-        journey = dashboard_data.display_table(
-            dashboard_data.journey_display(journey_raw)).rename(columns={
-                "directions share": "directions share (%)",
-                "calls share": "calls share (%)",
-                "store visits share": "store visits share (%)"})
-        _table(journey, "journey.csv", key="ctx_journey", column_config={
-            "campaign": WIDE("Campaign", width="large", pinned=True)})
+        st.caption(dashboard_data.JOURNEY_NOTE)
+        _table(journey_raw, "journey.csv", key="ctx_journey",
+               display=dashboard_data.journey_table_display(
+                   dashboard_data.with_group_names(
+                       journey_raw, ctx["group_names"],
+                       ctx.get("journey_pool")), currency),
+               formats=dashboard_data.journey_formats(currency))
     break_even = ctx["break_even"]
     if break_even is not None:
         with st.expander("Break-even (illustration: tracked actions are "
@@ -1108,7 +1113,7 @@ def _completeness(ctx, campaign):
     else:
         summary = dashboard_data.lag_check_summary(lag_check)
         _takeaway(dashboard_data.lag_takeaway(summary, configured))
-        st.markdown("**Lag check by lag**")
+        st.markdown("**Lag check**")
         st.caption("Tracked actions can arrive days late. The lag check "
                    "reruns the recent signals with other lags and counts "
                    "what changes.")
@@ -1121,13 +1126,14 @@ def _completeness(ctx, campaign):
             _table(lag_check, "lag_check.csv", key="ctx_lag_all")
     if campaign is not None:
         st.markdown(f"**Monthly trend: {campaign}**")
-        st.caption("month note: partial (the campaign ran only part of "
+        st.caption("Month note: partial (the campaign ran only part of "
                    "the month) or lagged (days still being reported).")
         table = dashboard_data.trend_with_flags(
             tables["timeline_by_campaign"], campaign)
-        _table(dashboard_data.display_table(table),
-               f"monthly_{campaign}.csv", key="ctx_month_table",
-               column_config={"month note": WIDE("Month note")})
+        _table(table, f"monthly_{campaign}.csv", key="ctx_month_table",
+               display=dashboard_data.month_table_display(
+                   table, ctx["currency"]),
+               formats=dashboard_data.TREND_TABLE_FORMATS)
 
 
 def _distorting(ctx):
@@ -1146,30 +1152,41 @@ def _distorting(ctx):
                     "this client (analysis.weekday_decomposition in its "
                     "config).")
         else:
-            _weekday_breakdown(mix, loo, top, focus)
+            _weekday_breakdown(
+                mix, loo, top, focus,
+                dashboard_data.baseline_label(ctx["config"]))
 
 
-def _weekday_breakdown(mix, loo, top, focus):
-    """Who makes up one weekday, and the weekday with each left out."""
+def _weekday_breakdown(mix, loo, top, focus, baseline="Mon-Thu"):
+    """Who makes up one weekday, and the weekday with each left out.
+
+    The picker shows full weekday names; its values stay the short
+    names the tables use."""
     short = [day[:3] for day in dashboard_data.WEEKDAYS
              if day[:3] in set(mix["weekday"])]
     weekday = st.selectbox(
         "Weekday to break down", short,
         index=short.index(focus) if focus in short else 0,
+        format_func=dashboard_data.full_weekday,
         key=_ckey("ctx_weekday"),
         help="Default: the weekday with the most pooled clicks")
+    name = dashboard_data.full_weekday(weekday)
+    loo_table = dashboard_data.leave_one_out_for_weekday(loo, weekday)
+    takeaway = dashboard_data.leave_one_out_takeaway(
+        loo_table, weekday, baseline)
+    if takeaway:
+        _takeaway(takeaway)
     left, right = st.columns([1, 1], gap="large")
     with left:
-        st.markdown(f"**Who makes up {weekday}?**")
+        st.markdown(f"**Who makes up {name}?**")
         share = dashboard_data.weekday_focus_table(mix, weekday)
-        st.plotly_chart(charts.share_bar(share, weekday), width="stretch",
-                        key="ctx_share_chart")
+        st.plotly_chart(charts.share_bar(share, name), width="stretch",
+                        key="ctx_share_chart",
+                        config={"displayModeBar": False})
     with right:
-        st.markdown(f"**{weekday} with one campaign left out**")
-        st.caption("Closest to the Mon-Thu baseline first: that campaign "
-                   "explains most of the weekday's difference.")
-        loo_table = dashboard_data.leave_one_out_for_weekday(
-            loo, weekday)
+        st.markdown(f"**{name} with one campaign left out**")
+        st.caption(f"Closest to the {baseline} baseline first: that "
+                   f"campaign explains most of the weekday's difference.")
         loo_columns = [column for column in (
             "left_out", "actions_per_click_vs_baseline",
             "actions_per_click", "clicks") if column in loo_table]
@@ -1178,16 +1195,19 @@ def _weekday_breakdown(mix, loo, top, focus):
                column_config={
                    "left_out": WIDE("Left out", pinned=True),
                    "actions_per_click_vs_baseline": NUM(
-                       "vs Mon-Thu", format="%.2fx"),
-                   "actions_per_click": NUM("Actions / click",
+                       f"vs {baseline}", format="%.2fx"),
+                   "actions_per_click": NUM("Tracked actions per click",
                                             format="%.3f"),
                    "clicks": NUM("Clicks", format="%.0f")})
     if top is not None and not top.empty:
         top_weekday = top["weekday"].iloc[0]
-        st.markdown(f"**Top {len(top)} {top_weekday}s by pooled clicks** "
+        top_name = dashboard_data.full_weekday(top_weekday)
+        st.markdown(f"**Top {len(top)} {top_name}s by pooled clicks** "
                     f"(together {top['share_of_weekday_clicks'].sum():.1%}"
-                    f" of {top_weekday} clicks)")
-        _table(top, "weekday_top_days.csv", key="ctx_top")
+                    f" of {top_name} clicks)")
+        _table(top, "weekday_top_days.csv", key="ctx_top",
+               display=dashboard_data.top_days_display(top, top_weekday),
+               formats=dashboard_data.top_days_formats(top_weekday))
 
 
 def _what_if(rows, span, currency):
@@ -1220,14 +1240,12 @@ def _context_method(ctx, expanded=False):
     config = ctx["config"]
     with st.expander("Method and definitions", expanded=expanded):
         st.markdown("**Benchmarks**")
-        benchmarks = tables["benchmarks"].copy()
-        benchmarks.insert(0, "what", benchmarks["variant"].map(
-            BENCHMARK_NAMES).fillna(benchmarks["variant"]))
-        _table(benchmarks.drop(columns=["variant"]), "benchmarks.csv",
-               key="ctx_benchmarks", column_config={
-                   "what": WIDE("What", width="large", pinned=True)})
-        st.caption("loo_min / loo_max: the range of leave-one-out "
-                   "benchmarks, each campaign judged without itself.")
+        benchmarks = tables["benchmarks"]
+        _table(benchmarks, "benchmarks.csv", key="ctx_benchmarks",
+               display=dashboard_data.benchmarks_display(
+                   benchmarks, ctx["group_names"], ctx["currency"]),
+               formats=dashboard_data.BENCHMARK_FORMATS)
+        st.caption(dashboard_data.BENCHMARK_NOTE)
 
         st.markdown("**Do the labels hold if the thresholds move?**")
         sensitivity = tables["recommendation_sensitivity"]
@@ -1239,37 +1257,44 @@ def _context_method(ctx, expanded=False):
         if not unstable.empty:
             st.markdown("**Labels that move**")
             _table(unstable, None, key="ctx_sensitivity_unstable",
-                   column_config={
-                       "campaign": WIDE("Campaign", width="large",
-                                        pinned=True)})
+                   display=dashboard_data.sensitivity_display(
+                       unstable, ctx["group_names"]),
+                   formats=dashboard_data.SENSITIVITY_FORMATS)
         with st.expander(f"Show all {len(sensitivity)} rows"):
             _table(sensitivity, "recommendation_sensitivity.csv",
-                   key="ctx_sensitivity", column_config={
-                       "campaign": WIDE("Campaign", width="large",
-                                        pinned=True)})
+                   key="ctx_sensitivity",
+                   display=dashboard_data.sensitivity_display(
+                       sensitivity, ctx["group_names"]),
+                   formats=dashboard_data.SENSITIVITY_FORMATS)
 
         st.markdown("**Volume rule and thresholds (from the config)**")
         _table(dashboard_data.rules_table(config, ctx["group_names"]),
-               "rules.csv",
-               key="ctx_rules", column_config={
-                   "setting": WIDE("Setting", width="large"),
-                   "value": WIDE("Value", width="medium")})
+               "rules.csv", key="ctx_rules",
+               display=dashboard_data.settings_display(
+                   config, ctx["group_names"]),
+               muted=("Key",))
 
         st.markdown("**What counts as a tracked action**")
         mix = tables["conversion_mix_by_campaign"]
         shares = dashboard_data.conversion_shares(mix)
-        display = shares[["action", "action_group", "tracked_actions",
-                          "share_pct"]].copy()
-        display.columns = ["Action", "Action group", "Tracked actions",
-                           "Share of tracked actions (%)"]
-        _table(display, "tracked_actions_by_action.csv",
-               key="ctx_conversion",
+        raw = shares[["action", "action_group", "tracked_actions",
+                      "share_pct"]].copy()
+        raw.columns = ["Action", "Action group", "Tracked actions",
+                       "Share of tracked actions (%)"]
+        display = raw.copy()
+        display["Action group"] = display["Action group"].map(
+            lambda g: dashboard_data.ACTION_GROUP_TEXT.get(g, g))
+        st.caption(dashboard_data.what_counts_caption(
+            mix, ctx["optional"].get("conversion_mix_by_campaign_month")))
+        _table(raw, "tracked_actions_by_action.csv",
+               key="ctx_conversion", display=display,
                column_config={"Action": WIDE("Action", width="large")})
         st.caption(
             "Engagement actions (menu views, website visits, other "
             "engagements) are "
-            f"{dashboard_data.engagement_share_all(mix):.2%} of All conv. "
-            "but are not counted as tracked actions.")
+            f"{dashboard_data.engagement_share_all(mix):.2%} of all tracked "
+            "and engagement actions but are not counted as tracked "
+            "actions.")
 
 
 def _page_context(ctx):
@@ -1325,8 +1350,8 @@ def _period_slider(values, label, key, default=None):
     if len(options) < 2:
         return None, None
     value = default or (options[0], options[-1])
-    return st.select_slider(label, options=options,
-                            value=value, key=key)
+    return st.select_slider(label, options=options, value=value, key=key,
+                            format_func=dashboard_data.period_label)
 
 
 def _detail_trend(ctx, campaign):
@@ -1370,9 +1395,11 @@ def _detail_trend(ctx, campaign):
         freq="MS" if x_field == "month" else "W-MON"),
         width="stretch", key=f"detail_trend_{key}")
     if "month_note" in table.columns:
-        st.caption("Hollow ring = partial or lagged month. Monthly "
-                   "source: day is the daily export, month is the "
-                   "monthly-history export.")
+        st.caption("Hollow ring = partial or lagged month.")
+    history = dashboard_data.monthly_history_text(
+        table, ctx["date_range"][0])
+    if history:
+        st.caption(history)
     return view, table, key
 
 
@@ -1384,11 +1411,14 @@ def _trend_table(trend, campaign):
     if trend is None:
         return
     view, table, key = trend
+    currency = _CTX.get("currency", "SEK")
+    shown = (dashboard_data.month_table_display(table, currency)
+             if key == "month" else
+             dashboard_data.week_table_display(table, currency))
     with st.expander(f"{view} table", expanded=True):
-        _table(dashboard_data.display_table(table),
-               f"{key}ly_{campaign}.csv", key=f"detail_trend_table_{key}",
-               column_config={"month note": WIDE("Month note",
-                                                 width="medium")})
+        _table(table, f"{key}ly_{campaign}.csv",
+               key=f"detail_trend_table_{key}", display=shown,
+               formats=dashboard_data.TREND_TABLE_FORMATS)
 
 
 def _stat_tile(column, title, value_html, caption=""):
@@ -1404,8 +1434,7 @@ def _stat_tile(column, title, value_html, caption=""):
 RUN_COLUMNS = (
     ("run_number", "Run", "{:.0f}", True),
     ("run_label", "Run label", None, False),
-    ("start", "Start", None, False),
-    ("end", "End", None, False),
+    ("period", "Period", None, False),
     ("active_days", "Days", "{:.0f}", True),
     ("spend", "Spend ({currency})", "{:,.0f}", True),
     ("conversions", "Tracked actions", "{:,.0f}", True),
@@ -1416,7 +1445,18 @@ RUN_COLUMNS = (
 
 
 def _runs_html(runs, currency):
-    """The runs table as HTML: run label as a pill, "—" if missing."""
+    """The runs table as HTML: run label as a pill, "—" if missing.
+
+    Start and end are shown as one period ("31 May – 13 Jul 2026");
+    a run labelled insufficient data shows "—" for its ratio (it was
+    not judged). The CSV download keeps the ISO start and end."""
+    runs = runs.copy()
+    if "start" in runs.columns and "end" in runs.columns:
+        runs["period"] = [dashboard_data.format_period(a, b)
+                          for a, b in zip(runs["start"], runs["end"])]
+    if "ratio_to_benchmark" in runs.columns and "run_label" in runs.columns:
+        runs.loc[runs["run_label"] == "insufficient_data",
+                 "ratio_to_benchmark"] = float("nan")
     columns = [spec for spec in RUN_COLUMNS if spec[0] in runs.columns]
     head = "".join(
         f"<th{' class=n' if numeric else ''}>"
@@ -1431,6 +1471,8 @@ def _runs_html(runs, currency):
                 cells.append(f"<td>{_pill(value)}</td>")
             elif pattern:
                 cells.append(f"<td class='n'>{_fmt(value, pattern)}</td>")
+            elif key == "period":
+                cells.append(f"<td>{_period_html(value)}</td>")
             else:
                 cells.append(
                     f"<td class='nw'>{html.escape(_readable(value, True))}"
@@ -1468,7 +1510,38 @@ def _runs_card(ctx, campaign):
         key="detail_runs_download", width="stretch")
     st.markdown(_runs_html(runs, currency), unsafe_allow_html=True)
     st.caption("Each run judged on its own; the final label comes from "
-               "the latest run with enough volume or the recent window.")
+               "the latest run with enough data or the recent window.")
+
+
+def _recent_window_days(config):
+    """recent_trend.recent_window_days from the config, or None."""
+    return (((config or {}).get("analysis") or {}).get(
+        "recent_trend") or {}).get("recent_window_days")
+
+
+def _trend_row(recent_trend, campaign):
+    """The campaign's recent_trend.csv row (a Series), or None."""
+    if recent_trend is None or recent_trend.empty:
+        return None
+    part = recent_trend.loc[recent_trend["campaign"] == campaign]
+    return None if part.empty else part.iloc[0]
+
+
+def _why_lines(ctx, row, campaign):
+    """"Why this label" lines (data.why_lines) for one campaign."""
+    config = ctx["config"]
+    names = ctx["group_names"]
+    _judged, bench = dashboard_data.scope_groups(
+        config, ctx["tables"]["benchmarks"])
+    runs = ctx["tables"]["recommendations_by_run"]
+    run_count = int((runs["campaign"] == campaign).sum())
+    window = (((config.get("analysis") or {}).get(
+        "recommendation_rules") or {}).get("recent_label") or {}).get(
+        "window_days")
+    return dashboard_data.why_lines(
+        row, run_count,
+        dashboard_data.names_and([names.get(g, g) for g in bench]),
+        window, names, ctx["currency"])
 
 
 def _page_detail(ctx):
@@ -1510,14 +1583,15 @@ def _page_detail(ctx):
                   if detail["label_period"] else ""))
     _stat_tile(tiles[1], "Status now",
                "<div class='cc-stat-v'>" + html.escape(
-                   (detail["status_now"] or "—").replace("_", " "))
+                   dashboard_data.value_text(detail["status_now"]))
                + "</div>",
-               "Active if it ran in the last days of the data.")
+               "Based on the last days of the data.")
     _stat_tile(tiles[2], "Recent trend",
                "<div class='cc-stat-v'>" + html.escape(
-                   (detail["recent_trend"] or "—").replace("_", " "))
+                   dashboard_data.value_text(detail["recent_trend"]))
                + "</div>",
-               "Recent window against the prior window.")
+               dashboard_data.trend_window_caption(ctx["config"])
+               or "Recent window against the prior window.")
     _stat_tile(tiles[3], "Ratio to benchmark",
                "<div class='cc-stat-v'>"
                + _fmt(ratio, "{:.2f}x") + "</div>",
@@ -1527,23 +1601,26 @@ def _page_detail(ctx):
     action, why = st.container(key="cc_detail_reasons").columns([1, 1.6])
     with _box(action):
         _card_title("Action")
-        st.markdown(f"<p style='font-size:var(--cc-t-body);font-weight:600;"
-                    f"margin:0'>{html.escape(detail['action'] or '—')}</p>",
-                    unsafe_allow_html=True)
+        headline, extra = dashboard_data.split_action(detail["action"])
+        st.markdown(
+            f"<p style='font-weight:600;margin:0'>"
+            f"{html.escape(headline or '—')}</p>"
+            + (f"<div class='cc-act-detail'>{html.escape(extra)}</div>"
+               if extra else ""), unsafe_allow_html=True)
     with _box(why):
         _card_title("Why this label")
-        st.markdown(f"<p class='cc-take'>{html.escape(detail['reason'])}"
-                    "</p>", unsafe_allow_html=True)
-        if detail["trend_window"]:
-            st.markdown(
-                f"<p class='cc-take'><b>Trend</b> (recent window "
-                f"{html.escape(detail['trend_window'])}, prior window "
-                f"{html.escape(detail['prior_window'])}): "
-                f"{html.escape(detail['trend_reason'])}</p>",
-                unsafe_allow_html=True)
+        st.markdown("".join(
+            f"<p class='cc-take' style='margin:0 0 2px'>{html.escape(line)}"
+            "</p>" for line in _why_lines(ctx, row, campaign)),
+            unsafe_allow_html=True)
+        trend_row = _trend_row(tables["recent_trend"], campaign)
+        line = dashboard_data.trend_line(
+            trend_row, _recent_window_days(ctx["config"]))
+        if line:
+            st.markdown(f"<p class='cc-take'>{html.escape(line)}</p>",
+                        unsafe_allow_html=True)
         else:
-            st.caption("No recent trend: the campaign is not active or "
-                       "its group is not judged.")
+            st.caption(dashboard_data.NO_TREND_TEXT)
 
     # Runs with the trend table under them | the trend chart. The
     # right column is filled first: the table follows its view and
@@ -1570,15 +1647,25 @@ def _page_detail(ctx):
                     by_campaign, campaign)
                 st.caption("This campaign's cost per tracked action by "
                            "weekday.")
-                st.plotly_chart(charts.weekday_bar(weekday, currency),
-                                width="stretch", key="detail_weekday",
-                                config={"displayModeBar": False})
+                st.plotly_chart(charts.weekday_bar(
+                    weekday, currency,
+                    highlight=dashboard_data.most_clicks_weekday(weekday)),
+                    width="stretch", key="detail_weekday",
+                    config={"displayModeBar": False})
+                notes = " ".join(text for text in (
+                    dashboard_data.weekday_outline_text(weekday),
+                    dashboard_data.low_weekday_volume_text(
+                        weekday, ctx["config"])) if text)
+                if notes:
+                    st.caption(notes)
                 with st.expander("Weekday table"):
-                    _table(dashboard_data.display_table(weekday),
-                           f"weekday_{campaign}.csv",
-                           key="detail_weekday_table", hide=("campaign",))
+                    _table(weekday, f"weekday_{campaign}.csv",
+                           key="detail_weekday_table",
+                           display=dashboard_data.pooled_weekday_display(
+                               weekday, currency),
+                           formats=dashboard_data.POOLED_WEEKDAY_FORMATS)
     with journey_col:
-        with st.expander("Acquisition journey"):
+        with st.expander("How do people reach the restaurant?"):
             journey = dashboard_data.journey_row(
                 tables["journey_by_campaign"], campaign)
             if journey.empty:
@@ -1606,9 +1693,9 @@ def _page_detail(ctx):
                            "engagement_actions": NUM(
                                "Engagement actions", format="%.0f"),
                            "tracked_actions_per_click": NUM(
-                               "Actions / click", format="%.3f"),
+                               "Tracked actions per click", format="%.3f"),
                            "cost_per_tracked_action": NUM(
-                               f"Cost per action ({currency})",
+                               f"Cost per tracked action ({currency})",
                                format="%.2f")})
 
 
