@@ -20,6 +20,11 @@ data/**
 secrets/
 credentials*.json
 token*.json
+# Google Ads API credentials for the daily fetch (issue #74).
+# config/ads_api.yaml.example is a tracked template; the real
+# config/ads_api.yaml and the library's google-ads.yaml are not.
+config/ads_api.yaml
+google-ads.yaml
 
 # Python
 __pycache__/

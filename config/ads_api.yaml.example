@@ -1,0 +1,12 @@
+# Google Ads API credentials for the daily fetch (src/fetch_ads.py).
+# Copy this file to config/ads_api.yaml and fill in your values.
+# config/ads_api.yaml is git-ignored: never commit it, and never
+# paste its contents into chat, a pull request, or an issue.
+# See docs/daily-fetch.md for how to get each value.
+developer_token: "YOUR_DEVELOPER_TOKEN"
+client_id: "YOUR_OAUTH_CLIENT_ID"
+client_secret: "YOUR_OAUTH_CLIENT_SECRET"
+refresh_token: "YOUR_REFRESH_TOKEN"
+customer_id: "YOUR_CUSTOMER_ID"
+# Optional: only when access is through a manager (MCC) account.
+login_customer_id: ""
