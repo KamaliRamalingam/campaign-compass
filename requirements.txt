@@ -2,3 +2,5 @@ pandas
 pyyaml
 pytest
 matplotlib
+streamlit
+plotly
