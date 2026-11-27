@@ -2,6 +2,14 @@
 # Local runner (T0c). One command for the student:
 #   bash run.sh [--config config/validation.yaml]
 #   bash run.sh --client synthetic_b
+#   bash run.sh --fetch
+#
+# --fetch (issue #74) fetches the exports from the Google Ads
+# API (src/fetch_ads.py) before the pipeline runs, and skips
+# the validation stage: the data came from the API itself, so
+# there is no UI export to check the totals against. Needs
+# config/ads_api.yaml (see docs/daily-fetch.md). Only for the
+# restaurant client; rejected for synthetic_b.
 #
 # Creates .venv if missing, installs requirements.txt, then runs the
 # stages that exist so far (validation, load, clean, overview, metrics,
@@ -34,6 +42,7 @@ cd "$(dirname "$0")"
 CONFIG="config/validation.yaml"
 CONFIG_GIVEN=0
 CLIENT="restaurant"
+FETCH=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --config)
@@ -45,9 +54,13 @@ while [ $# -gt 0 ]; do
             CLIENT="$2"
             shift 2
             ;;
+        --fetch)
+            FETCH=1
+            shift
+            ;;
         *)
             echo "ERROR: unknown argument: $1" >&2
-            echo "Usage: bash run.sh [--config config/validation.yaml] [--client synthetic_b]" >&2
+            echo "Usage: bash run.sh [--config config/validation.yaml] [--client synthetic_b] [--fetch]" >&2
             exit 1
             ;;
     esac
@@ -63,7 +76,13 @@ elif [ "$CLIENT" = "restaurant" ]; then
     REPORT="outputs/reports/validation-report.md"
 else
     echo "ERROR: unknown client: $CLIENT" >&2
-    echo "Usage: bash run.sh [--config config/validation.yaml] [--client synthetic_b]" >&2
+    echo "Usage: bash run.sh [--config config/validation.yaml] [--client synthetic_b] [--fetch]" >&2
+    exit 1
+fi
+# --fetch is only for the restaurant client: synthetic_b
+# generates its own data, so there is nothing to fetch.
+if [ "$FETCH" -eq 1 ] && [ "$CLIENT" = "synthetic_b" ]; then
+    echo "ERROR: --fetch is only for the restaurant client; synthetic_b generates its own data" >&2
     exit 1
 fi
 # An explicit --config always wins for the validation config.
@@ -84,6 +103,13 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/pip install -q -r requirements.txt
 
+# The load config, or its local override config/local/<name>.yaml
+# if it exists. Resolved here (not at the load stage) so the
+# fetch stage below updates the same file the load stage reads.
+if [ -f "config/local/$(basename "$LOAD_CONFIG")" ]; then
+    LOAD_CONFIG="config/local/$(basename "$LOAD_CONFIG")"
+fi
+
 # Run one stage; on failure stop the whole run (no later stage
 # runs on stale or missing outputs).
 #   run_stage <name> <command...>
@@ -101,23 +127,38 @@ if [ "$CLIENT" = "synthetic_b" ]; then
     run_stage generate .venv/bin/python src/make_synthetic.py --config "$LOAD_CONFIG"
 fi
 
+# Stage 0b (restaurant only, --fetch): fetch the exports from
+# the Google Ads API (src/fetch_ads.py). Writes fresh files
+# under data/raw/ and points the config at them. Needs
+# config/ads_api.yaml (see docs/daily-fetch.md). Skipped
+# without --fetch.
+if [ "$FETCH" -eq 1 ]; then
+    .venv/bin/pip install -q -r requirements-fetch.txt
+    run_stage fetch .venv/bin/python src/fetch_ads.py --config "$LOAD_CONFIG"
+fi
+
 # Stage 1: export validation (T0b). Report under outputs/reports/
 # (or outputs/synthetic_b/reports/ for the synthetic client).
+# Skipped with --fetch: the data came from the Ads API itself,
+# so there is no UI export to check the totals against (the
+# fetch prints its own summary instead).
 mkdir -p "$(dirname "$REPORT")"
-if ! .venv/bin/python src/validate_exports.py --config "$VALIDATION_CONFIG" --out "$REPORT"; then
+if [ "$FETCH" -eq 1 ]; then
+    echo "Skipping validation: data came from the Ads API (see docs/daily-fetch.md)"
+else
+    if ! .venv/bin/python src/validate_exports.py --config "$VALIDATION_CONFIG" --out "$REPORT"; then
+        echo "Report: $REPORT"
+        echo "FAIL: stage 'validation' failed; later stages were not run"
+        exit 1
+    fi
     echo "Report: $REPORT"
-    echo "FAIL: stage 'validation' failed; later stages were not run"
-    exit 1
 fi
-echo "Report: $REPORT"
 
 # Stage 2: load the exports (T1). Writes standardised tables under
 # outputs/interim/ (or outputs/synthetic_b/interim/). Uses the
 # client config, or its local override config/local/<name>.yaml
-# if it exists.
-if [ -f "config/local/$(basename "$LOAD_CONFIG")" ]; then
-    LOAD_CONFIG="config/local/$(basename "$LOAD_CONFIG")"
-fi
+# if it exists (resolved above, so the fetch stage updated the
+# same file).
 echo "Load config: $LOAD_CONFIG"
 run_stage load .venv/bin/python src/load.py --config "$LOAD_CONFIG"
 

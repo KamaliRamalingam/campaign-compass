@@ -52,6 +52,8 @@ def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
                 project / "src" / "what_if.py")
     shutil.copy(REPO / "src" / "break_even.py",
                 project / "src" / "break_even.py")
+    shutil.copy(REPO / "src" / "fetch_ads.py",
+                project / "src" / "fetch_ads.py")
     shutil.copy(REPO / "src" / "paths.py",
                 project / "src" / "paths.py")
     shutil.copy(REPO / "run.sh", project / "run.sh")
@@ -62,6 +64,8 @@ def _make_project(tmp_path, clicks=34, cost=68.0, conversions=16.0):
     # on her Mac with `chmod +x run.sh`.
     (project / "run.sh").chmod(0o755)
     (project / "requirements.txt").write_text("")
+    shutil.copy(REPO / "requirements-fetch.txt",
+                project / "requirements-fetch.txt")
     # Tiny made-up raw file. Campaign name "Alpha" is made up.
     # Seven days, one full week, so the what-if has weekend data.
     (project / "data" / "raw" / "day.csv").write_text(
@@ -350,6 +354,40 @@ def test_run_sh_stops_at_validation_when_input_missing(tmp_path):
     assert "Overall: PASS" not in result.stdout
     assert not (project / "outputs" / "interim"
                 / "campaign_by_month.csv").exists()
+
+
+def test_run_sh_fetch_missing_credentials_fails(tmp_path):
+    # Issue #74: --fetch without config/ads_api.yaml fails at the
+    # fetch stage, before validation runs and before any later
+    # stage reads the (missing) fresh exports.
+    project = _make_project(tmp_path)
+    result = subprocess.run(
+        ["./run.sh", "--fetch"], cwd=project,
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    output = result.stdout + result.stderr
+    assert "Ads API credentials not found" in output
+    assert "FAIL: stage 'fetch' failed" in output
+    assert "PASS: all stages passed" not in result.stdout
+    assert not (project / "outputs" / "reports"
+                / "validation-report.md").exists()
+    assert not (project / "outputs" / "interim"
+                / "campaign_by_day.csv").exists()
+
+
+def test_run_sh_fetch_rejected_for_synthetic_b(tmp_path):
+    # Issue #74: --fetch is only for the restaurant client.
+    project = _make_project(tmp_path)
+    result = subprocess.run(
+        ["./run.sh", "--client", "synthetic_b", "--fetch"],
+        cwd=project, capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "--fetch is only for the restaurant client" in (
+        result.stdout + result.stderr
+    )
+    assert "PASS: all stages passed" not in result.stdout
 
 
 def test_run_sh_stops_at_first_failed_later_stage(tmp_path):
